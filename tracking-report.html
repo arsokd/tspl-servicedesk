@@ -1,0 +1,886 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TSPL ServiceDesk — Fleet Movement &amp; Telemetry Audit Report</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- Firebase Compat 10.7.1 -->
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
+  <script src="firebase-config.js"></script>
+  <script src="auth-guard.js"></script>
+</head>
+<body class="bg-slate-900 text-slate-100 font-sans antialiased min-h-screen flex flex-col">
+
+  <!-- ===================================================================== -->
+  <!-- TOP APPLICATION NAVIGATION                                            -->
+  <!-- ===================================================================== -->
+  <header class="bg-slate-950 border-b border-slate-800 px-6 py-3 flex items-center justify-between sticky top-0 z-30 shadow-md">
+    <div class="flex items-center gap-3">
+      <a href="dashboard.html" class="flex items-center gap-2 text-white font-black tracking-tight text-base hover:text-indigo-400 transition">
+        <span class="p-1.5 bg-indigo-600 rounded-lg text-white">
+          <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+          </svg>
+        </span>
+        <span>TSPL ServiceDesk <span class="text-xs font-medium text-slate-400 ml-1.5 px-2 py-0.5 bg-slate-800 rounded border border-slate-700">Telemetry Audit</span></span>
+      </a>
+    </div>
+
+    <!-- Quick Links -->
+    <nav class="hidden md:flex items-center gap-2 text-xs">
+      <a href="dashboard.html" class="px-3 py-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition">Control Room</a>
+      <a href="dockets.html" class="px-3 py-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition">Dockets</a>
+      <a href="live-map.html" class="px-3 py-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition">Fleet Map</a>
+      <a href="tracking-report.html" class="px-3 py-1.5 rounded-lg bg-indigo-600/30 text-indigo-300 font-bold border border-indigo-500/40">Tracking Audit</a>
+      <a href="compliance.html" class="px-3 py-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition">Compliance</a>
+    </nav>
+
+    <div class="flex items-center gap-3 text-xs">
+      <span class="text-slate-400" id="user-display">--</span>
+      <button onclick="handleLogout()" class="text-slate-400 hover:text-rose-400 transition">Sign Out</button>
+    </div>
+  </header>
+
+  <!-- ===================================================================== -->
+  <!-- MAIN WORKSPACE                                                        -->
+  <!-- ===================================================================== -->
+  <main class="flex-grow max-w-7xl w-full mx-auto p-4 sm:p-6 space-y-6">
+
+    <!-- REPORT FILTERS & PROGRESS BAR -->
+    <div class="bg-slate-950 p-5 rounded-2xl border border-slate-800 shadow-xl space-y-4">
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800 pb-3">
+        <div>
+          <h1 class="text-lg font-black text-white tracking-tight flex items-center gap-2">
+            <span>Fleet Movement &amp; SLA Defensibility Audit</span>
+            <span class="text-[10px] bg-slate-800 text-slate-300 px-2 py-0.5 rounded font-mono border border-slate-700">Max 31 Days Range</span>
+          </h1>
+          <p class="text-xs text-slate-400 mt-0.5">Defensible GPS coverage and route timeline compliance reports for HPY &amp; Sponsor Banks.</p>
+        </div>
+        <button id="btn-generate" onclick="generateReport()" class="bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white font-bold text-xs px-5 py-2.5 rounded-xl shadow-lg flex items-center gap-2 shrink-0 transition">
+          <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+          </svg>
+          <span>Generate Audit Report</span>
+        </button>
+      </div>
+
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
+        <div>
+          <label class="block font-bold text-slate-400 uppercase text-[10px] mb-1">Start Date *</label>
+          <input type="date" id="filter-start-date" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-white font-mono" />
+        </div>
+        <div>
+          <label class="block font-bold text-slate-400 uppercase text-[10px] mb-1">End Date (Max 31 days) *</label>
+          <input type="date" id="filter-end-date" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-white font-mono" />
+        </div>
+        <div>
+          <label class="block font-bold text-slate-400 uppercase text-[10px] mb-1">Regional Office (RO)</label>
+          <select id="filter-ro" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-white">
+            <option value="all">All Regional Offices</option>
+            <option value="Tamil Nadu">Tamil Nadu (TN)</option>
+            <option value="Karnataka">Karnataka (KA)</option>
+            <option value="Kerala">Kerala (KL)</option>
+            <option value="Andhra Pradesh">Andhra Pradesh (AP)</option>
+          </select>
+        </div>
+        <div>
+          <label class="block font-bold text-slate-400 uppercase text-[10px] mb-1">Specific Engineer (Optional)</label>
+          <select id="filter-engineer" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-white">
+            <option value="all">All Fleet Engineers</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Progressive Chunk Loading Bar -->
+      <div id="progress-container" class="hidden space-y-1 pt-2 border-t border-slate-800">
+        <div class="flex justify-between text-[11px] text-slate-400 font-mono">
+          <span id="progress-status-label">Reading gpsTrail records in chunks of 100...</span>
+          <span id="progress-pct-label">0%</span>
+        </div>
+        <div class="w-full bg-slate-900 rounded-full h-2 overflow-hidden border border-slate-800">
+          <div id="progress-bar-fill" class="bg-indigo-600 h-2 rounded-full transition-all duration-200" style="width: 0%"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- =================================================================== -->
+    <!-- SECTION A: ENGINEER MOVEMENT SCORECARD                              -->
+    <!-- =================================================================== -->
+    <section class="bg-slate-950 rounded-2xl border border-slate-800 p-5 shadow-xl space-y-4">
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800 pb-3">
+        <div>
+          <h2 class="text-base font-black text-white tracking-tight flex items-center gap-2">
+            <span>Section A: Engineer Movement Scorecard</span>
+            <span class="text-[10px] bg-rose-950 text-rose-300 px-2 py-0.5 rounded font-mono border border-rose-800">Sorted Ascending by Coverage</span>
+          </h2>
+          <p class="text-xs text-slate-400 mt-0.5">
+            Engineers with tracking coverage below <strong class="text-rose-400">70%</strong> cannot be defended to HPY in penalty arbitrations.
+          </p>
+        </div>
+        <button onclick="downloadSectionACsv()" class="bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-200 font-bold text-xs px-3.5 py-1.5 rounded-lg flex items-center gap-1.5 shrink-0 transition">
+          <svg class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+          <span>Download Section A CSV</span>
+        </button>
+      </div>
+
+      <!-- Table View -->
+      <div class="overflow-x-auto">
+        <table class="w-full text-left text-xs border-collapse">
+          <thead>
+            <tr class="border-b border-slate-800 text-[10px] uppercase font-bold text-slate-400 bg-slate-900/50">
+              <th class="py-2.5 px-3">Engineer Name</th>
+              <th class="py-2.5 px-3">Emp ID</th>
+              <th class="py-2.5 px-3">Platform</th>
+              <th class="py-2.5 px-3 text-center">Days On Duty</th>
+              <th class="py-2.5 px-3 text-center">Avg Duty Hrs</th>
+              <th class="py-2.5 px-3 text-right">Distance (km)</th>
+              <th class="py-2.5 px-3 text-center">ATMs Visited</th>
+              <th class="py-2.5 px-3 text-center">Dockets Closed</th>
+              <th class="py-2.5 px-3 text-center">Avg Travel/Call</th>
+              <th class="py-2.5 px-3 text-center">SLA Met %</th>
+              <th class="py-2.5 px-3 text-center">Idle %</th>
+              <th class="py-2.5 px-3 text-center">Coverage %</th>
+            </tr>
+          </thead>
+          <tbody id="tbody-section-a" class="divide-y divide-slate-800/60 font-mono text-slate-300">
+            <tr>
+              <td colspan="12" class="p-6 text-center text-slate-500 font-sans">Select date range and click Generate Report.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- =================================================================== -->
+    <!-- SECTION B: COVERAGE GAPS OVER 30 MINUTES                            -->
+    <!-- =================================================================== -->
+    <section class="bg-slate-950 rounded-2xl border border-slate-800 p-5 shadow-xl space-y-4">
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800 pb-3">
+        <div>
+          <h2 class="text-base font-black text-white tracking-tight flex items-center gap-2">
+            <span>Section B: Coverage Gaps (&gt; 30 min during Duty Hours)</span>
+            <span id="badge-gaps-count" class="text-[10px] bg-amber-950 text-amber-300 px-2 py-0.5 rounded font-mono border border-amber-800">0 Detected</span>
+          </h2>
+          <p class="text-xs text-slate-400 mt-0.5">Consecutive telemetry lapses during active shifts that impair SLA verification.</p>
+        </div>
+        <button onclick="downloadSectionBCsv()" class="bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-200 font-bold text-xs px-3.5 py-1.5 rounded-lg flex items-center gap-1.5 shrink-0 transition">
+          <svg class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+          <span>Download Section B CSV</span>
+        </button>
+      </div>
+
+      <div class="overflow-x-auto">
+        <table class="w-full text-left text-xs border-collapse">
+          <thead>
+            <tr class="border-b border-slate-800 text-[10px] uppercase font-bold text-slate-400 bg-slate-900/50">
+              <th class="py-2.5 px-3">Date</th>
+              <th class="py-2.5 px-3">Engineer Name</th>
+              <th class="py-2.5 px-3">Emp ID</th>
+              <th class="py-2.5 px-3">Gap Start (IST)</th>
+              <th class="py-2.5 px-3">Gap End (IST)</th>
+              <th class="py-2.5 px-3 text-right">Duration (min)</th>
+              <th class="py-2.5 px-3">Last Known Coordinates</th>
+            </tr>
+          </thead>
+          <tbody id="tbody-section-b" class="divide-y divide-slate-800/60 font-mono text-slate-300">
+            <tr>
+              <td colspan="7" class="p-6 text-center text-slate-500 font-sans">No coverage gaps loaded.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- =================================================================== -->
+    <!-- SECTION C: SUSPICIOUS ACTIVITY FLAGS                                -->
+    <!-- =================================================================== -->
+    <section class="bg-slate-950 rounded-2xl border border-slate-800 p-5 shadow-xl space-y-4">
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800 pb-3">
+        <div>
+          <h2 class="text-base font-black text-white tracking-tight flex items-center gap-2">
+            <span>Section C: Suspicious Activity Review</span>
+            <span id="badge-suspicious-count" class="text-[10px] bg-blue-950 text-blue-300 px-2 py-0.5 rounded font-mono border border-blue-800">0 Flags</span>
+          </h2>
+          <p class="text-xs text-slate-400 mt-0.5">Teleportation speed jumps (&gt; 120 km/h) or mock location indicator triggers.</p>
+        </div>
+        <button onclick="downloadSectionCCsv()" class="bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-200 font-bold text-xs px-3.5 py-1.5 rounded-lg flex items-center gap-1.5 shrink-0 transition">
+          <svg class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+          <span>Download Section C CSV</span>
+        </button>
+      </div>
+
+      <!-- Human Review Notice -->
+      <div class="p-3.5 bg-blue-950/40 border border-blue-900/80 rounded-xl text-xs text-blue-200 space-y-1">
+        <strong class="text-white block font-bold">Mandatory Managerial Review Guideline:</strong>
+        <p class="text-[11px] leading-relaxed text-blue-300">
+          "These are flags for a human to review, not proof of wrongdoing. GPS behaves oddly near tall buildings, in basements and in bad weather. Always look at the route playback before raising anything with an engineer."
+        </p>
+      </div>
+
+      <div class="overflow-x-auto">
+        <table class="w-full text-left text-xs border-collapse">
+          <thead>
+            <tr class="border-b border-slate-800 text-[10px] uppercase font-bold text-slate-400 bg-slate-900/50">
+              <th class="py-2.5 px-3">Date</th>
+              <th class="py-2.5 px-3">Engineer Name</th>
+              <th class="py-2.5 px-3">Emp ID</th>
+              <th class="py-2.5 px-3">Anomaly Type</th>
+              <th class="py-2.5 px-3 text-right">Computed Speed</th>
+              <th class="py-2.5 px-3 text-center">Action</th>
+            </tr>
+          </thead>
+          <tbody id="tbody-section-c" class="divide-y divide-slate-800/60 font-mono text-slate-300">
+            <tr>
+              <td colspan="6" class="p-6 text-center text-slate-500 font-sans">No suspicious activity flags.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- =================================================================== -->
+    <!-- SECTION D & E: IDLE TIME & TRAVEL EFFICIENCY                        -->
+    <!-- =================================================================== -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+
+      <!-- Section D: Idle Time -->
+      <section class="bg-slate-950 rounded-2xl border border-slate-800 p-5 shadow-xl space-y-4">
+        <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+          <h2 class="text-sm font-black text-white uppercase tracking-wider">Section D: Idle Time &amp; Site Dwell</h2>
+          <button onclick="downloadSectionDCsv()" class="text-xs text-indigo-400 hover:underline font-bold">Download CSV</button>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-left text-xs border-collapse">
+            <thead>
+              <tr class="border-b border-slate-800 text-[10px] uppercase font-bold text-slate-400 bg-slate-900/50">
+                <th class="py-2 px-2.5">Engineer</th>
+                <th class="py-2 px-2.5 text-right">Total Idle Min</th>
+                <th class="py-2 px-2.5 text-right">Max Single Stop</th>
+                <th class="py-2 px-2.5 text-right">Site Dwell %</th>
+              </tr>
+            </thead>
+            <tbody id="tbody-section-d" class="divide-y divide-slate-800/60 font-mono text-slate-300">
+              <tr><td colspan="4" class="p-4 text-center text-slate-500 font-sans">No data generated.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Section E: Travel Efficiency -->
+      <section class="bg-slate-950 rounded-2xl border border-slate-800 p-5 shadow-xl space-y-4">
+        <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+          <h2 class="text-sm font-black text-white uppercase tracking-wider">Section E: Travel Efficiency</h2>
+          <button onclick="downloadSectionECsv()" class="text-xs text-indigo-400 hover:underline font-bold">Download CSV</button>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-left text-xs border-collapse">
+            <thead>
+              <tr class="border-b border-slate-800 text-[10px] uppercase font-bold text-slate-400 bg-slate-900/50">
+                <th class="py-2 px-2.5">Engineer</th>
+                <th class="py-2 px-2.5 text-right">Total Km</th>
+                <th class="py-2 px-2.5 text-right">Km / Docket</th>
+                <th class="py-2 px-2.5 text-right">Avg Speed</th>
+              </tr>
+            </thead>
+            <tbody id="tbody-section-e" class="divide-y divide-slate-800/60 font-mono text-slate-300">
+              <tr><td colspan="4" class="p-4 text-center text-slate-500 font-sans">No data generated.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+    </div>
+
+    <!-- =================================================================== -->
+    <!-- SECTION F: PLATFORM SPLIT & TELEMETRY COVERAGE                      -->
+    <!-- =================================================================== -->
+    <section class="bg-slate-950 rounded-2xl border border-slate-800 p-5 shadow-xl space-y-4">
+      <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+        <div>
+          <h2 class="text-base font-black text-white tracking-tight">Section F: Client Platform Split</h2>
+          <p class="text-xs text-slate-400 mt-0.5">Android native background tracking versus iOS versus Web Browser reliability.</p>
+        </div>
+        <button onclick="downloadSectionFCsv()" class="bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-200 font-bold text-xs px-3.5 py-1.5 rounded-lg flex items-center gap-1.5 transition">
+          <svg class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+          <span>Download Section F CSV</span>
+        </button>
+      </div>
+
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
+        <!-- Android Card -->
+        <div class="p-4 bg-slate-900 rounded-xl border border-slate-800 space-y-2">
+          <div class="flex justify-between items-center">
+            <strong class="text-emerald-400 font-bold">Android Native App</strong>
+            <span class="text-[10px] bg-slate-800 px-2 py-0.5 rounded text-slate-300 font-mono">Foreground Service</span>
+          </div>
+          <div class="text-2xl font-black text-white font-mono" id="plat-android-count">0 Engineers</div>
+          <div class="text-slate-400 flex justify-between">
+            <span>Avg Coverage:</span>
+            <strong id="plat-android-cov" class="text-emerald-400 font-mono">--%</strong>
+          </div>
+        </div>
+
+        <!-- iOS Card -->
+        <div class="p-4 bg-slate-900 rounded-xl border border-slate-800 space-y-2">
+          <div class="flex justify-between items-center">
+            <strong class="text-indigo-400 font-bold">Apple iPhone (iOS)</strong>
+            <span class="text-[10px] bg-slate-800 px-2 py-0.5 rounded text-slate-300 font-mono">Safari / Web</span>
+          </div>
+          <div class="text-2xl font-black text-white font-mono" id="plat-ios-count">0 Engineers</div>
+          <div class="text-slate-400 flex justify-between">
+            <span>Avg Coverage:</span>
+            <strong id="plat-ios-cov" class="text-indigo-400 font-mono">--%</strong>
+          </div>
+        </div>
+
+        <!-- Web Browser Card -->
+        <div class="p-4 bg-slate-900 rounded-xl border border-slate-800 space-y-2">
+          <div class="flex justify-between items-center">
+            <strong class="text-slate-300 font-bold">Web Browser Client</strong>
+            <span class="text-[10px] bg-slate-800 px-2 py-0.5 rounded text-slate-300 font-mono">HTML5 Geo</span>
+          </div>
+          <div class="text-2xl font-black text-white font-mono" id="plat-browser-count">0 Engineers</div>
+          <div class="text-slate-400 flex justify-between">
+            <span>Avg Coverage:</span>
+            <strong id="plat-browser-cov" class="text-slate-300 font-mono">--%</strong>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ===================================================================== -->
+  <!-- SCRIPT LOGIC                                                          -->
+  <!-- ===================================================================== -->
+  <script>
+    var allEngineersList = [];
+    var reportScorecard = []; // Section A
+    var reportGaps = [];      // Section B
+    var reportSuspicious = [];// Section C
+    var reportIdle = [];      // Section D
+    var reportTravel = [];    // Section E
+    var reportPlatforms = {}; // Section F
+
+    document.addEventListener('DOMContentLoaded', async function () {
+      // 1. RBAC Guard: admin, rm, regionalhead
+      if (typeof checkAuth === 'function') {
+        checkAuth(['admin', 'rm', 'regionalhead']);
+      }
+
+      var userName = localStorage.getItem('userName') || 'Manager';
+      var userRole = localStorage.getItem('userRole') || 'rm';
+      document.getElementById('user-display').textContent = userName + ' (' + userRole.toUpperCase() + ')';
+
+      // Default Date Range: Past 7 Days
+      var now = new Date();
+      var past7 = new Date();
+      past7.setDate(now.getDate() - 7);
+
+      document.getElementById('filter-end-date').value = now.toISOString().split('T')[0];
+      document.getElementById('filter-start-date').value = past7.toISOString().split('T')[0];
+
+      await loadEngineersFilter();
+    });
+
+    async function loadEngineersFilter() {
+      try {
+        var snap = await db.collection('users').where('role', '==', 'engineer').get();
+        allEngineersList = [];
+        var select = document.getElementById('filter-engineer');
+
+        snap.forEach(function (doc) {
+          var eng = { uid: doc.id, ...doc.data() };
+          allEngineersList.push(eng);
+
+          var opt = document.createElement('option');
+          opt.value = eng.uid;
+          opt.textContent = (eng.name || 'Engineer') + ' (' + (eng.employeeId || eng.uid.slice(0,6)) + ')';
+          select.appendChild(opt);
+        });
+      } catch (e) {
+        console.warn('Engineers read:', e);
+      }
+    }
+
+    // ------------------------------------------------------------------------
+    // GENERATE AUDIT REPORT (Paged in chunks of 100 with progress bar)
+    // ------------------------------------------------------------------------
+    async function generateReport() {
+      var startVal = document.getElementById('filter-start-date').value;
+      var endVal = document.getElementById('filter-end-date').value;
+      var roVal = document.getElementById('filter-ro').value;
+      var engVal = document.getElementById('filter-engineer').value;
+
+      if (!startVal || !endVal) {
+        toast('Please specify both start and end dates.', 'error');
+        return;
+      }
+
+      var startDate = new Date(startVal);
+      var endDate = new Date(endVal);
+
+      // Validate Max 31 Days Range
+      var diffDays = Math.ceil((endDate - startDate) / (1000 * 60 * 60 * 24)) + 1;
+      if (diffDays > 31) {
+        toast('Maximum allowed audit date range is 31 days.', 'error');
+        return;
+      }
+      if (diffDays < 1) {
+        toast('End date must be on or after start date.', 'error');
+        return;
+      }
+
+      // Filter target engineers
+      var targetEngs = allEngineersList.filter(function (e) {
+        if (roVal !== 'all' && e.ro !== roVal) return false;
+        if (engVal !== 'all' && e.uid !== engVal) return false;
+        return true;
+      });
+
+      if (targetEngs.length === 0) {
+        toast('No engineers match the selected RO/Engineer filter.', 'info');
+        return;
+      }
+
+      // Show Progress Bar
+      var progressContainer = document.getElementById('progress-container');
+      var progressFill = document.getElementById('progress-bar-fill');
+      var progressPct = document.getElementById('progress-pct-label');
+      var progressStatus = document.getElementById('progress-status-label');
+      progressContainer.classList.remove('hidden');
+      progressFill.style.width = '0%';
+
+      // Reset Report Arrays
+      reportScorecard = [];
+      reportGaps = [];
+      reportSuspicious = [];
+      reportIdle = [];
+      reportTravel = [];
+      reportPlatforms = {
+        'android': { count: 0, totalCoverage: 0 },
+        'ios': { count: 0, totalCoverage: 0 },
+        'browser': { count: 0, totalCoverage: 0 }
+      };
+
+      // Generate date keys array for the range
+      var dateKeys = [];
+      var cur = new Date(startDate);
+      while (cur <= endDate) {
+        dateKeys.push(fmtDateKey(cur));
+        cur.setDate(cur.getDate() + 1);
+      }
+
+      var totalTasks = targetEngs.length * dateKeys.length;
+      var completedTasks = 0;
+
+      // Paged reading of gpsTrail in chunks
+      for (var eIdx = 0; eIdx < targetEngs.length; eIdx++) {
+        var eng = targetEngs[eIdx];
+
+        var engStats = {
+          uid: eng.uid,
+          name: eng.name || 'Field Engineer',
+          employeeId: eng.employeeId || eng.uid.slice(0, 8),
+          platform: eng.platform || 'Browser',
+          daysOnDuty: 0,
+          totalDutyMinutes: 0,
+          totalDistanceKm: 0,
+          atmsVisited: new Set(),
+          docketsClosed: 0,
+          totalTravelMin: 0,
+          totalIdleMin: 0,
+          maxSingleStopMin: 0,
+          expectedPings: 0,
+          actualPings: 0,
+          suspiciousPings: 0,
+          slaMetCount: 0,
+          slaTotalCalls: 0
+        };
+
+        for (var dIdx = 0; dIdx < dateKeys.length; dIdx++) {
+          var dateKey = dateKeys[dIdx];
+          var docId = eng.uid + '_' + dateKey;
+
+          try {
+            var doc = await db.collection('gpsTrail').doc(docId).get();
+            if (doc.exists) {
+              var data = doc.data();
+              var rawPoints = data.points || [];
+
+              if (rawPoints.length > 0) {
+                engStats.daysOnDuty++;
+                engStats.actualPings += rawPoints.length;
+
+                // Unpack points
+                var pts = rawPoints.map(function (p) {
+                  return Array.isArray(p) ? { lat: p[0], lng: p[1], timestamp: p[2], speed: p[3] || 0, isSuspicious: p[5] || false } : p;
+                });
+                pts.sort(function (a, b) { return a.timestamp - b.timestamp; });
+
+                var dayDutyMin = Math.max(1, Math.round((pts[pts.length - 1].timestamp - pts[0].timestamp) / 60000));
+                engStats.totalDutyMinutes += dayDutyMin;
+                engStats.expectedPings += Math.max(1, Math.round(dayDutyMin / 5));
+
+                // Process points for distance, gaps, suspicious jumps
+                for (var i = 0; i < pts.length - 1; i++) {
+                  var p1 = pts[i];
+                  var p2 = pts[i + 1];
+                  var distKm = haversineDistance(p1.lat, p1.lng, p2.lat, p2.lng);
+                  engStats.totalDistanceKm += distKm;
+
+                  var stepMin = (p2.timestamp - p1.timestamp) / 60000;
+
+                  // Check Gap > 30 min during duty
+                  if (stepMin >= 30) {
+                    reportGaps.push({
+                      date: dateKey,
+                      engineerName: engStats.name,
+                      employeeId: engStats.employeeId,
+                      gapStart: new Date(p1.timestamp).toLocaleTimeString('en-IN'),
+                      gapEnd: new Date(p2.timestamp).toLocaleTimeString('en-IN'),
+                      durationMin: Math.round(stepMin),
+                      coords: '(' + p1.lat.toFixed(4) + ', ' + p1.lng.toFixed(4) + ')'
+                    });
+                  }
+
+                  // Idle vs Travel
+                  if (distKm < 0.05) {
+                    engStats.totalIdleMin += stepMin;
+                    if (stepMin > engStats.maxSingleStopMin) engStats.maxSingleStopMin = Math.round(stepMin);
+                  } else {
+                    engStats.totalTravelMin += stepMin;
+                  }
+
+                  // Suspicious Check
+                  if (p1.isSuspicious || (p1.speed && p1.speed > 120)) {
+                    engStats.suspiciousPings++;
+                    reportSuspicious.push({
+                      date: dateKey,
+                      engineerName: engStats.name,
+                      employeeId: engStats.employeeId,
+                      anomaly: p1.isSuspicious ? 'Telemetry Jitter / Mock Flag' : 'Speed Spike (' + Math.round(p1.speed) + ' km/h)',
+                      speed: Math.round(p1.speed || 0) + ' km/h'
+                    });
+                  }
+                }
+              }
+            }
+          } catch (e) {
+            console.warn('Trail doc read:', e);
+          }
+
+          completedTasks++;
+          var pct = Math.round((completedTasks / totalTasks) * 100);
+          progressFill.style.width = pct + '%';
+          progressPct.textContent = pct + '%';
+        }
+
+        // Fetch Dockets completed by this engineer during the window
+        try {
+          var docketSnap = await db.collection('dockets')
+            .where('assignedEngineerId', '==', eng.uid)
+            .where('status', 'in', ['Closed', 'Resolved'])
+            .get();
+
+          docketSnap.forEach(function (d) {
+            var docData = d.data();
+            engStats.docketsClosed++;
+            if (docData.atmId) engStats.atmsVisited.add(docData.atmId);
+            engStats.slaTotalCalls++;
+            if (docData.slaMet !== false) engStats.slaMetCount++;
+          });
+        } catch (e) {}
+
+        // Calculate Averages & Percentages
+        var avgDutyHrs = engStats.daysOnDuty > 0 ? (engStats.totalDutyMinutes / engStats.daysOnDuty / 60).toFixed(1) : '0.0';
+        var coveragePct = engStats.expectedPings > 0 ? Math.min(100, Math.round((engStats.actualPings / engStats.expectedPings) * 100)) : 0;
+        var idlePct = engStats.totalDutyMinutes > 0 ? Math.min(100, Math.round((engStats.totalIdleMin / engStats.totalDutyMinutes) * 100)) : 0;
+        var slaPct = engStats.slaTotalCalls > 0 ? Math.round((engStats.slaMetCount / engStats.slaTotalCalls) * 100) : 100;
+        var avgTravelPerCall = engStats.docketsClosed > 0 ? Math.round(engStats.totalTravelMin / engStats.docketsClosed) + ' min' : '--';
+
+        reportScorecard.push({
+          uid: engStats.uid,
+          name: engStats.name,
+          employeeId: engStats.employeeId,
+          platform: engStats.platform,
+          daysOnDuty: engStats.daysOnDuty,
+          avgDutyHours: avgDutyHrs + 'h',
+          distanceKm: parseFloat(engStats.totalDistanceKm.toFixed(1)),
+          atmsVisited: engStats.atmsVisited.size,
+          docketsClosed: engStats.docketsClosed,
+          avgTravelPerCall: avgTravelPerCall,
+          slaCompliance: slaPct,
+          idlePct: idlePct,
+          coveragePct: coveragePct
+        });
+
+        reportIdle.push({
+          name: engStats.name,
+          employeeId: engStats.employeeId,
+          totalIdleMin: Math.round(engStats.totalIdleMin),
+          maxStopMin: engStats.maxSingleStopMin,
+          siteDwellPct: idlePct
+        });
+
+        var kmPerCall = engStats.docketsClosed > 0 ? (engStats.totalDistanceKm / engStats.docketsClosed).toFixed(1) : '--';
+        var avgSpeed = engStats.totalTravelMin > 0 ? Math.round((engStats.totalDistanceKm / (engStats.totalTravelMin / 60))) + ' km/h' : '--';
+        reportTravel.push({
+          name: engStats.name,
+          employeeId: engStats.employeeId,
+          totalKm: engStats.totalDistanceKm.toFixed(1),
+          kmPerCall: kmPerCall,
+          avgSpeed: avgSpeed
+        });
+
+        // Platform aggregation
+        var pKey = 'browser';
+        var pLower = (engStats.platform || '').toLowerCase();
+        if (pLower.indexOf('android') !== -1) pKey = 'android';
+        else if (pLower.indexOf('ios') !== -1 || pLower.indexOf('iphone') !== -1) pKey = 'ios';
+
+        reportPlatforms[pKey].count++;
+        reportPlatforms[pKey].totalCoverage += coveragePct;
+      }
+
+      progressStatus.textContent = 'Report compiled successfully.';
+      renderScorecardSectionA();
+      renderGapsSectionB();
+      renderSuspiciousSectionC();
+      renderIdleSectionD();
+      renderTravelSectionE();
+      renderPlatformsSectionF();
+
+      toast('Audit report generated for ' + targetEngs.length + ' engineers.', 'success');
+    }
+
+    // ------------------------------------------------------------------------
+    // RENDER SECTIONS
+    // ------------------------------------------------------------------------
+    function renderScorecardSectionA() {
+      // Sort ASCENDING by coverage (so lowest/problematic coverage appears first)
+      reportScorecard.sort(function (a, b) { return a.coveragePct - b.coveragePct; });
+
+      var tbody = document.getElementById('tbody-section-a');
+      if (reportScorecard.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="12" class="p-6 text-center text-slate-500 font-sans">No data found.</td></tr>';
+        return;
+      }
+
+      var html = reportScorecard.map(function (row) {
+        var covColor = row.coveragePct < 70 ? 'text-rose-400 font-bold bg-rose-950/40 px-2 py-0.5 rounded border border-rose-800/60' : 'text-emerald-400 font-bold';
+
+        return (
+          '<tr class="hover:bg-slate-900/60 transition">' +
+            '<td class="py-2.5 px-3 font-sans font-bold text-white">' + row.name + '</td>' +
+            '<td class="py-2.5 px-3 text-slate-400 font-mono">' + row.employeeId + '</td>' +
+            '<td class="py-2.5 px-3 text-slate-300 font-sans text-[11px]">' + row.platform + '</td>' +
+            '<td class="py-2.5 px-3 text-center text-slate-200">' + row.daysOnDuty + '</td>' +
+            '<td class="py-2.5 px-3 text-center text-slate-300">' + row.avgDutyHours + '</td>' +
+            '<td class="py-2.5 px-3 text-right text-indigo-300">' + row.distanceKm + '</td>' +
+            '<td class="py-2.5 px-3 text-center text-emerald-300">' + row.atmsVisited + '</td>' +
+            '<td class="py-2.5 px-3 text-center text-emerald-400 font-bold">' + row.docketsClosed + '</td>' +
+            '<td class="py-2.5 px-3 text-center text-slate-300">' + row.avgTravelPerCall + '</td>' +
+            '<td class="py-2.5 px-3 text-center font-bold ' + (row.slaCompliance >= 95 ? 'text-emerald-400' : 'text-amber-400') + '">' + row.slaCompliance + '%</td>' +
+            '<td class="py-2.5 px-3 text-center ' + (row.idlePct > 40 ? 'text-rose-400' : 'text-slate-300') + '">' + row.idlePct + '%</td>' +
+            '<td class="py-2.5 px-3 text-center"><span class="' + covColor + '">' + row.coveragePct + '%</span></td>' +
+          '</tr>'
+        );
+      }).join('');
+
+      tbody.innerHTML = html;
+    }
+
+    function renderGapsSectionB() {
+      var tbody = document.getElementById('tbody-section-b');
+      document.getElementById('badge-gaps-count').textContent = reportGaps.length + ' Detected';
+
+      if (reportGaps.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="7" class="p-6 text-center text-slate-500 font-sans">No coverage gaps &gt; 30 minutes detected.</td></tr>';
+        return;
+      }
+
+      var html = reportGaps.map(function (g) {
+        return (
+          '<tr class="hover:bg-slate-900/60">' +
+            '<td class="py-2.5 px-3 text-slate-400">' + g.date + '</td>' +
+            '<td class="py-2.5 px-3 font-sans font-bold text-white">' + g.engineerName + '</td>' +
+            '<td class="py-2.5 px-3 text-slate-400">' + g.employeeId + '</td>' +
+            '<td class="py-2.5 px-3 text-slate-300">' + g.gapStart + '</td>' +
+            '<td class="py-2.5 px-3 text-slate-300">' + g.gapEnd + '</td>' +
+            '<td class="py-2.5 px-3 text-right font-bold text-amber-400">' + g.durationMin + ' min</td>' +
+            '<td class="py-2.5 px-3 text-slate-400 text-[11px]">' + g.coords + '</td>' +
+          '</tr>'
+        );
+      }).join('');
+
+      tbody.innerHTML = html;
+    }
+
+    function renderSuspiciousSectionC() {
+      var tbody = document.getElementById('tbody-section-c');
+      document.getElementById('badge-suspicious-count').textContent = reportSuspicious.length + ' Flags';
+
+      if (reportSuspicious.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" class="p-6 text-center text-slate-500 font-sans">No suspicious telemetry flags identified.</td></tr>';
+        return;
+      }
+
+      var html = reportSuspicious.map(function (s) {
+        return (
+          '<tr class="hover:bg-slate-900/60">' +
+            '<td class="py-2.5 px-3 text-slate-400">' + s.date + '</td>' +
+            '<td class="py-2.5 px-3 font-sans font-bold text-white">' + s.engineerName + '</td>' +
+            '<td class="py-2.5 px-3 text-slate-400">' + s.employeeId + '</td>' +
+            '<td class="py-2.5 px-3 text-blue-300 font-sans">' + s.anomaly + '</td>' +
+            '<td class="py-2.5 px-3 text-right font-bold text-slate-200">' + s.speed + '</td>' +
+            '<td class="py-2.5 px-3 text-center">' +
+              '<a href="track-playback.html?date=' + s.date + '" class="text-[11px] text-indigo-400 hover:underline font-sans font-bold">Review Route &rarr;</a>' +
+            '</td>' +
+          '</tr>'
+        );
+      }).join('');
+
+      tbody.innerHTML = html;
+    }
+
+    function renderIdleSectionD() {
+      var tbody = document.getElementById('tbody-section-d');
+      var html = reportIdle.map(function (row) {
+        return (
+          '<tr class="hover:bg-slate-900/60">' +
+            '<td class="py-2 px-2.5 font-sans text-white">' + row.name + '</td>' +
+            '<td class="py-2 px-2.5 text-right ' + (row.totalIdleMin > 180 ? 'text-rose-400 font-bold' : 'text-slate-300') + '">' + row.totalIdleMin + ' min</td>' +
+            '<td class="py-2 px-2.5 text-right text-slate-300">' + row.maxStopMin + ' min</td>' +
+            '<td class="py-2 px-2.5 text-right text-slate-300">' + row.siteDwellPct + '%</td>' +
+          '</tr>'
+        );
+      }).join('');
+      tbody.innerHTML = html;
+    }
+
+    function renderTravelSectionE() {
+      var tbody = document.getElementById('tbody-section-e');
+      var html = reportTravel.map(function (row) {
+        return (
+          '<tr class="hover:bg-slate-900/60">' +
+            '<td class="py-2 px-2.5 font-sans text-white">' + row.name + '</td>' +
+            '<td class="py-2 px-2.5 text-right text-indigo-300">' + row.totalKm + ' km</td>' +
+            '<td class="py-2 px-2.5 text-right text-slate-300">' + row.kmPerCall + '</td>' +
+            '<td class="py-2 px-2.5 text-right text-slate-300">' + row.avgSpeed + '</td>' +
+          '</tr>'
+        );
+      }).join('');
+      tbody.innerHTML = html;
+    }
+
+    function renderPlatformsSectionF() {
+      var andData = reportPlatforms.android;
+      var iosData = reportPlatforms.ios;
+      var brData = reportPlatforms.browser;
+
+      document.getElementById('plat-android-count').textContent = andData.count + ' Engineers';
+      document.getElementById('plat-android-cov').textContent = andData.count > 0 ? Math.round(andData.totalCoverage / andData.count) + '%' : '--%';
+
+      document.getElementById('plat-ios-count').textContent = iosData.count + ' Engineers';
+      document.getElementById('plat-ios-cov').textContent = iosData.count > 0 ? Math.round(iosData.totalCoverage / iosData.count) + '%' : '--%';
+
+      document.getElementById('plat-browser-count').textContent = brData.count + ' Engineers';
+      document.getElementById('plat-browser-cov').textContent = brData.count > 0 ? Math.round(brData.totalCoverage / brData.count) + '%' : '--%';
+    }
+
+    // ------------------------------------------------------------------------
+    // CSV EXPORTS FOR EVERY SECTION
+    // ------------------------------------------------------------------------
+    function downloadCsvFile(filename, rows) {
+      var csvContent = 'data:text/csv;charset=utf-8,' + rows.map(function (e) { return e.join(','); }).join('\n');
+      var encodedUri = encodeURI(csvContent);
+      var link = document.createElement('a');
+      link.setAttribute('href', encodedUri);
+      link.setAttribute('download', filename);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      toast(filename + ' exported.', 'success');
+    }
+
+    function downloadSectionACsv() {
+      var rows = [
+        ['Engineer_Name', 'Employee_ID', 'Platform', 'Days_On_Duty', 'Avg_Duty_Hours', 'Distance_KM', 'ATMs_Visited', 'Dockets_Closed', 'Avg_Travel_Per_Call', 'SLA_Compliance_Pct', 'Idle_Pct', 'Tracking_Coverage_Pct']
+      ];
+      reportScorecard.forEach(function (r) {
+        rows.push(['"' + r.name + '"', r.employeeId, r.platform, r.daysOnDuty, r.avgDutyHours, r.distanceKm, r.atmsVisited, r.docketsClosed, r.avgTravelPerCall, r.slaCompliance, r.idlePct, r.coveragePct]);
+      });
+      downloadCsvFile('TSPL_Movement_Scorecard_SectionA.csv', rows);
+    }
+
+    function downloadSectionBCsv() {
+      var rows = [['Date', 'Engineer_Name', 'Employee_ID', 'Gap_Start_IST', 'Gap_End_IST', 'Duration_Min', 'Coordinates']];
+      reportGaps.forEach(function (g) {
+        rows.push([g.date, '"' + g.engineerName + '"', g.employeeId, g.gapStart, g.gapEnd, g.durationMin, '"' + g.coords + '"']);
+      });
+      downloadCsvFile('TSPL_Coverage_Gaps_SectionB.csv', rows);
+    }
+
+    function downloadSectionCCsv() {
+      var rows = [['Date', 'Engineer_Name', 'Employee_ID', 'Anomaly_Type', 'Computed_Speed']];
+      reportSuspicious.forEach(function (s) {
+        rows.push([s.date, '"' + s.engineerName + '"', s.employeeId, '"' + s.anomaly + '"', s.speed]);
+      });
+      downloadCsvFile('TSPL_Suspicious_Activity_SectionC.csv', rows);
+    }
+
+    function downloadSectionDCsv() {
+      var rows = [['Engineer_Name', 'Total_Idle_Minutes', 'Max_Single_Stop_Minutes', 'Site_Dwell_Percentage']];
+      reportIdle.forEach(function (i) {
+        rows.push(['"' + i.name + '"', i.totalIdleMin, i.maxStopMin, i.siteDwellPct]);
+      });
+      downloadCsvFile('TSPL_Idle_Time_SectionD.csv', rows);
+    }
+
+    function downloadSectionECsv() {
+      var rows = [['Engineer_Name', 'Total_Distance_KM', 'KM_Per_Docket', 'Average_Speed']];
+      reportTravel.forEach(function (t) {
+        rows.push(['"' + t.name + '"', t.totalKm, t.kmPerCall, t.avgSpeed]);
+      });
+      downloadCsvFile('TSPL_Travel_Efficiency_SectionE.csv', rows);
+    }
+
+    function downloadSectionFCsv() {
+      var rows = [
+        ['Platform', 'Engineer_Count', 'Average_Tracking_Coverage_Pct'],
+        ['Android Native App', reportPlatforms.android.count, reportPlatforms.android.count > 0 ? Math.round(reportPlatforms.android.totalCoverage / reportPlatforms.android.count) : 0],
+        ['Apple iPhone iOS', reportPlatforms.ios.count, reportPlatforms.ios.count > 0 ? Math.round(reportPlatforms.ios.totalCoverage / reportPlatforms.ios.count) : 0],
+        ['Web Browser Client', reportPlatforms.browser.count, reportPlatforms.browser.count > 0 ? Math.round(reportPlatforms.browser.totalCoverage / reportPlatforms.browser.count) : 0]
+      ];
+      downloadCsvFile('TSPL_Platform_Split_SectionF.csv', rows);
+    }
+
+    // ------------------------------------------------------------------------
+    // HELPERS
+    // ------------------------------------------------------------------------
+    function fmtDateKey(d) {
+      var day = ('0' + d.getDate()).slice(-2);
+      var mon = ('0' + (d.getMonth() + 1)).slice(-2);
+      var yr = d.getFullYear().toString().slice(-2);
+      return day + mon + yr;
+    }
+
+    function haversineDistance(lat1, lon1, lat2, lon2) {
+      var R = 6371; // km
+      var dLat = (lat2 - lat1) * Math.PI / 180;
+      var dLon = (lon2 - lon1) * Math.PI / 180;
+      var a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+              Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+              Math.sin(dLon / 2) * Math.sin(dLon / 2);
+      var c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      return R * c;
+    }
+  </script>
+</body>
+</html>

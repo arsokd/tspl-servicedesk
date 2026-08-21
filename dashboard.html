@@ -1,0 +1,615 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dashboard — TSPL ServiceDesk</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Firebase Compat 10.7.1 -->
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-storage-compat.js"></script>
+  <script src="firebase-config.js"></script>
+  <script src="auth-guard.js"></script>
+</head>
+<body class="bg-slate-100 min-h-screen flex flex-col font-sans antialiased text-slate-800">
+
+  <!-- Main Navigation injected by auth-guard.js -->
+  <div id="main-nav"></div>
+
+  <main class="flex-grow max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 space-y-6">
+
+    <!-- Top Header & Refresh / Timestamp Control -->
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div>
+        <h1 class="text-2xl font-bold text-slate-900 tracking-tight">Operations Dashboard</h1>
+        <p class="text-xs text-slate-500 mt-0.5">Real-time ATM service telemetry, contractual SLA trackers & pre-aggregated metrics.</p>
+      </div>
+      <div class="flex items-center gap-3">
+        <span id="last-rebuilt-text" class="text-xs text-slate-500 font-mono">Last updated: --</span>
+        <button 
+          id="btn-refresh" 
+          onclick="loadDashboardData()" 
+          class="bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 text-xs font-semibold py-1.5 px-3 rounded shadow-sm transition flex items-center gap-1.5"
+        >
+          <svg class="h-3.5 w-3.5 text-slate-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+          </svg>
+          Refresh
+        </button>
+      </div>
+    </div>
+
+    <!-- Missing Stats Notice (Hidden unless document not found) -->
+    <div id="stats-missing-alert" class="hidden p-4 bg-amber-50 border border-amber-200 rounded-lg text-amber-900 flex items-center justify-between">
+      <div class="flex items-center gap-3 text-sm">
+        <svg class="h-5 w-5 text-[#D97706]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+        </svg>
+        <span>Scoreboard not set up yet. Ask your administrator to run the one-time setup.</span>
+      </div>
+      <a href="setup-data.html" class="text-xs bg-[#D97706] hover:bg-amber-700 text-white font-semibold px-3 py-1.5 rounded transition">Go to Setup</a>
+    </div>
+
+    <!-- SECTION 1: THE SLA STRIP (Most Critical) -->
+    <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5 space-y-3">
+      <div class="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center justify-between">
+        <span>HPY contract: 2 hours response, 2 hours resolution, 24x7. Penalties apply per instance.</span>
+        <a href="sla-board.html" class="text-xs text-[#4F46E5] hover:underline font-semibold lowercase">open sla board &rarr;</a>
+      </div>
+
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <!-- 1. Breaching Under 30 Min -->
+        <a href="sla-board.html" class="block p-4 rounded-lg bg-red-50 border border-red-200 hover:bg-red-100/70 transition group">
+          <div class="text-[11px] font-semibold uppercase tracking-wider text-red-700">Breaching in &lt; 30 Min</div>
+          <div id="stat-sla-risk" class="text-3xl font-extrabold text-[#DC2626] mt-1 group-hover:scale-105 transition-transform duration-150">0</div>
+          <div class="text-[11px] text-red-600 mt-1 font-medium">Critical response / fix window</div>
+        </a>
+
+        <!-- 2. Breached Today -->
+        <div class="p-4 rounded-lg bg-red-50 border border-red-200">
+          <div class="text-[11px] font-semibold uppercase tracking-wider text-red-700">Breached Today</div>
+          <div id="stat-sla-breached" class="text-3xl font-extrabold text-[#DC2626] mt-1">0</div>
+          <div class="text-[11px] text-red-600 mt-1 font-medium">Recorded with dependency snapshot</div>
+        </div>
+
+        <!-- 3. Closed Within SLA Today -->
+        <div class="p-4 rounded-lg bg-emerald-50 border border-emerald-200">
+          <div class="text-[11px] font-semibold uppercase tracking-wider text-emerald-700">Closed Within SLA Today</div>
+          <div id="stat-sla-met" class="text-3xl font-extrabold text-[#16A34A] mt-1">0</div>
+          <div class="text-[11px] text-emerald-600 mt-1 font-medium">Promptly resolved</div>
+        </div>
+
+        <!-- 4. SLA Compliance % Today -->
+        <div id="card-sla-compliance" class="p-4 rounded-lg bg-emerald-50 border border-emerald-200">
+          <div class="text-[11px] font-semibold uppercase tracking-wider text-slate-700">SLA Compliance % Today</div>
+          <div id="stat-sla-pct" class="text-3xl font-extrabold text-[#16A34A] mt-1">100%</div>
+          <div id="stat-sla-pct-sub" class="text-[11px] text-emerald-600 mt-1 font-medium">Target: &ge; 90%</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- SECTION 2: SIX SUMMARY CARDS -->
+    <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-4">
+      <div class="bg-white rounded-lg p-4 border border-slate-200 shadow-sm">
+        <div class="text-xs font-medium text-slate-500">Total Open Dockets</div>
+        <div id="stat-open" class="text-2xl font-bold text-slate-900 mt-1">0</div>
+      </div>
+      <div class="bg-white rounded-lg p-4 border border-slate-200 shadow-sm">
+        <div class="text-xs font-medium text-slate-500">Engineer Dependency</div>
+        <div id="stat-engineer-dep" class="text-2xl font-bold text-[#DC2626] mt-1">0 <span id="stat-engineer-dep-pct" class="text-xs font-normal text-slate-500">(0%)</span></div>
+      </div>
+      <div class="bg-white rounded-lg p-4 border border-slate-200 shadow-sm">
+        <div class="text-xs font-medium text-slate-500">Waiting Bank / CRA</div>
+        <div id="stat-bank-cra" class="text-2xl font-bold text-[#D97706] mt-1">0</div>
+      </div>
+      <div class="bg-white rounded-lg p-4 border border-slate-200 shadow-sm">
+        <div class="text-xs font-medium text-slate-500">Waiting on Parts</div>
+        <div id="stat-scm" class="text-2xl font-bold text-[#D97706] mt-1">0</div>
+      </div>
+      <div class="bg-white rounded-lg p-4 border border-slate-200 shadow-sm">
+        <div class="text-xs font-medium text-slate-500">&gt; 14 Days Old</div>
+        <div id="stat-age-14plus" class="text-2xl font-bold text-red-600 mt-1">0</div>
+      </div>
+      <div class="bg-white rounded-lg p-4 border border-slate-200 shadow-sm">
+        <div class="text-xs font-medium text-slate-500">Closed Today</div>
+        <div id="stat-closed-today" class="text-2xl font-bold text-[#16A34A] mt-1">0</div>
+      </div>
+    </div>
+
+    <!-- SECTION 3: LIVE FIELD FORCE (RTDB Realtime) -->
+    <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5 space-y-3">
+      <div class="flex items-center justify-between">
+        <h2 class="text-sm font-bold text-slate-900 uppercase tracking-wider flex items-center gap-2">
+          <span class="h-2 w-2 rounded-full bg-emerald-500 animate-pulse"></span>
+          Live Field Force Telemetry
+        </h2>
+        <a href="live-map.html" class="text-xs text-[#4F46E5] hover:underline font-semibold lowercase">open full map &rarr;</a>
+      </div>
+
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
+        <a href="live-map.html?filter=onduty" class="p-3 bg-slate-50 hover:bg-slate-100 rounded-lg border border-slate-200 transition">
+          <div class="text-xs text-slate-500 font-medium">On Duty Now</div>
+          <div id="rt-on-duty" class="text-xl font-bold text-slate-900 mt-0.5">0</div>
+        </a>
+        <a href="live-map.html?filter=travelling" class="p-3 bg-slate-50 hover:bg-slate-100 rounded-lg border border-slate-200 transition">
+          <div class="text-xs text-slate-500 font-medium">Travelling to ATM</div>
+          <div id="rt-travelling" class="text-xl font-bold text-indigo-600 mt-0.5">0</div>
+        </a>
+        <a href="live-map.html?filter=atsite" class="p-3 bg-slate-50 hover:bg-slate-100 rounded-lg border border-slate-200 transition">
+          <div class="text-xs text-slate-500 font-medium">At Site / WIP</div>
+          <div id="rt-at-site" class="text-xl font-bold text-emerald-600 mt-0.5">0</div>
+        </a>
+        <a href="live-map.html?filter=dark" class="p-3 bg-red-50 hover:bg-red-100/80 rounded-lg border border-red-200 transition">
+          <div class="text-xs text-red-700 font-medium">Gone Dark (&gt;10 min)</div>
+          <div id="rt-gone-dark" class="text-xl font-bold text-red-600 mt-0.5">0</div>
+        </a>
+      </div>
+    </div>
+
+    <!-- SECTION 4 & 5: DEPENDENCY SPLIT & AGEING TABLE -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+
+      <!-- SECTION 4: DEPENDENCY SPLIT -->
+      <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5 flex flex-col justify-between space-y-4">
+        <div>
+          <h2 class="text-sm font-bold text-slate-900 uppercase tracking-wider">Dependency Breakdown</h2>
+          <p class="text-xs text-slate-600 font-medium mt-1">
+            <span class="text-[#DC2626] font-bold">Red bars</span> are TSPL's responsibility. 
+            <span class="text-[#D97706] font-bold">Amber bars</span> are waiting on someone else.
+          </p>
+        </div>
+
+        <div id="dependency-bars" class="space-y-3 flex-grow my-auto">
+          <!-- Dynamically populated horizontal bars -->
+          <div class="text-xs text-slate-400 py-4 text-center">Loading dependency metrics...</div>
+        </div>
+      </div>
+
+      <!-- SECTION 5: AGEING TABLE -->
+      <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5 flex flex-col justify-between space-y-3">
+        <div>
+          <h2 class="text-sm font-bold text-slate-900 uppercase tracking-wider">Open Ticket Ageing (Days)</h2>
+          <p class="text-xs text-slate-500 mt-0.5">Click any ageing band to view the filtered docket registry.</p>
+        </div>
+
+        <div class="overflow-x-auto border border-slate-200 rounded-lg">
+          <table class="w-full text-xs text-left">
+            <thead class="bg-slate-50 text-slate-600 uppercase text-[10px] font-semibold border-b border-slate-200">
+              <tr>
+                <th class="px-4 py-2.5">Ageing Bracket</th>
+                <th class="px-4 py-2.5 text-right">Docket Count</th>
+                <th class="px-4 py-2.5 text-right">Action</th>
+              </tr>
+            </thead>
+            <tbody id="ageing-tbody" class="divide-y divide-slate-200 font-medium">
+              <!-- Dynamically populated 7 bands -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- SECTION 6: CRITICAL WATCHLIST (Live SLA Countdown) -->
+    <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5 space-y-4">
+      <div class="flex items-center justify-between">
+        <div>
+          <h2 class="text-sm font-bold text-slate-900 uppercase tracking-wider">Critical SLA Watchlist (Oldest Open Calls)</h2>
+          <p class="text-xs text-slate-500 mt-0.5">Ordered by call date time. Live countdown dynamically recalculates every second.</p>
+        </div>
+        <a href="dockets.html" class="text-xs text-[#4F46E5] hover:underline font-semibold">view all dockets &rarr;</a>
+      </div>
+
+      <div class="overflow-x-auto border border-slate-200 rounded-lg">
+        <table class="w-full text-xs text-left">
+          <thead class="bg-slate-50 text-slate-600 uppercase text-[10px] font-semibold border-b border-slate-200">
+            <tr>
+              <th class="px-3 py-2.5">Docket No</th>
+              <th class="px-3 py-2.5">ATM ID</th>
+              <th class="px-3 py-2.5">Bank</th>
+              <th class="px-3 py-2.5">Sub Status</th>
+              <th class="px-3 py-2.5">Current Dependency</th>
+              <th class="px-3 py-2.5">Call Logged</th>
+              <th class="px-3 py-2.5 text-right">SLA Countdown</th>
+            </tr>
+          </thead>
+          <tbody id="watchlist-tbody" class="divide-y divide-slate-200">
+            <tr>
+              <td colspan="7" class="text-center py-6 text-slate-400">Loading critical open dockets...</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- SECTION 7: TRACKING ALERTS TODAY -->
+    <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5 space-y-4">
+      <div class="flex items-center justify-between">
+        <div>
+          <h2 class="text-sm font-bold text-slate-900 uppercase tracking-wider">Field Tracking Anomalies & Alerts Today</h2>
+          <p class="text-xs text-slate-500 mt-0.5">Automated telemetry flags (Excessive speed, frozen coordinates, or abnormal jumps).</p>
+        </div>
+      </div>
+
+      <div class="overflow-x-auto border border-slate-200 rounded-lg">
+        <table class="w-full text-xs text-left">
+          <thead class="bg-slate-50 text-slate-600 uppercase text-[10px] font-semibold border-b border-slate-200">
+            <tr>
+              <th class="px-3 py-2.5">Time</th>
+              <th class="px-3 py-2.5">Engineer</th>
+              <th class="px-3 py-2.5">RO</th>
+              <th class="px-3 py-2.5">Alert Flag</th>
+              <th class="px-3 py-2.5 text-right">Action</th>
+            </tr>
+          </thead>
+          <tbody id="alerts-tbody" class="divide-y divide-slate-200">
+            <tr>
+              <td colspan="5" class="text-center py-6 text-slate-400">No active tracking alerts for today.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </main>
+
+  <script>
+    var cachedWatchlist = [];
+    var tickerInterval = null;
+
+    document.addEventListener('DOMContentLoaded', function () {
+      // Role Authentication Check
+      if (typeof checkAuth === 'function') {
+        checkAuth(['admin', 'callcentre', 'techsupport', 'rm', 'regionalhead', 'unithead']);
+      }
+      if (typeof buildNav === 'function') {
+        buildNav('dashboard.html');
+      }
+
+      loadDashboardData();
+      listenLiveFieldForce();
+
+      // Live ticker interval every second
+      tickerInterval = setInterval(updateWatchlistTickers, 1000);
+    });
+
+    // ========================================================================
+    // 1. PRIMARY METRICS LOAD (ONE DOC: stats/{statsDocId()})
+    // ========================================================================
+    async function loadDashboardData() {
+      var btn = document.getElementById('btn-refresh');
+      showLoader(btn, 'Syncing...');
+
+      var docId = statsDocId ? statsDocId() : 'live';
+
+      try {
+        var snap = await db.collection('stats').doc(docId).get();
+        if (!snap.exists) {
+          document.getElementById('stats-missing-alert').classList.remove('hidden');
+        } else {
+          document.getElementById('stats-missing-alert').classList.add('hidden');
+          var s = snap.data();
+          renderStatsData(s);
+        }
+
+        // Parallel small capped queries
+        await Promise.all([
+          loadCriticalWatchlist(),
+          loadTrackingAlerts()
+        ]);
+
+      } catch (err) {
+        console.error('Failed to load dashboard metrics:', err);
+        toast('Error loading dashboard: ' + err.message, 'error');
+      } finally {
+        hideLoader(btn);
+      }
+    }
+
+    function renderStatsData(s) {
+      // Timestamp
+      var rebuiltAt = s.lastRebuiltAt ? fmtDateTime(s.lastRebuiltAt) : '--';
+      document.getElementById('last-rebuilt-text').textContent = 'Last updated: ' + rebuiltAt;
+
+      // Section 1: SLA Strip
+      var slaRisk = s.slaAtRisk || 0;
+      var slaBreached = s.slaBreachedToday || 0;
+      var closedToday = s.closedToday || 0;
+      var metToday = Math.max(0, closedToday - slaBreached);
+
+      var totalEvaluated = metToday + slaBreached;
+      var compliancePct = totalEvaluated > 0 ? Math.round((metToday / totalEvaluated) * 100) : 100;
+
+      document.getElementById('stat-sla-risk').textContent = slaRisk;
+      document.getElementById('stat-sla-breached').textContent = slaBreached;
+      document.getElementById('stat-sla-met').textContent = metToday;
+
+      var pctEl = document.getElementById('stat-sla-pct');
+      var pctCard = document.getElementById('card-sla-compliance');
+      var pctSub = document.getElementById('stat-sla-pct-sub');
+      pctEl.textContent = compliancePct + '%';
+
+      if (compliancePct >= 90) {
+        pctCard.className = 'p-4 rounded-lg bg-emerald-50 border border-emerald-200';
+        pctEl.className = 'text-3xl font-extrabold text-[#16A34A] mt-1';
+        pctSub.className = 'text-[11px] text-emerald-600 mt-1 font-medium';
+        pctSub.textContent = 'High Compliance (>= 90%)';
+      } else if (compliancePct >= 70) {
+        pctCard.className = 'p-4 rounded-lg bg-amber-50 border border-amber-200';
+        pctEl.className = 'text-3xl font-extrabold text-[#D97706] mt-1';
+        pctSub.className = 'text-[11px] text-amber-600 mt-1 font-medium';
+        pctSub.textContent = 'Warning (70% - 90%)';
+      } else {
+        pctCard.className = 'p-4 rounded-lg bg-red-50 border border-red-200';
+        pctEl.className = 'text-3xl font-extrabold text-[#DC2626] mt-1';
+        pctSub.className = 'text-[11px] text-red-600 mt-1 font-medium';
+        pctSub.textContent = 'Critical Breach (< 70%)';
+      }
+
+      // Section 2: Six Summary Cards
+      var totalOpen = s.open || 0;
+      var engDep = (s.dep_Engineer_Dependency || 0) + (s.dep_WIP || 0);
+      var engDepPct = totalOpen > 0 ? Math.round((engDep / totalOpen) * 100) : 0;
+      var bankCra = (s.dep_Bank_Dependency || 0) + (s.dep_CRA_Delay || 0);
+      var scmDep = s.dep_SCM_Dependency || 0;
+      var age14 = s.age_g || 0;
+
+      document.getElementById('stat-open').textContent = totalOpen;
+      document.getElementById('stat-engineer-dep').innerHTML = engDep + ' <span class="text-xs font-normal text-slate-500">(' + engDepPct + '%)</span>';
+      document.getElementById('stat-bank-cra').textContent = bankCra;
+      document.getElementById('stat-scm').textContent = scmDep;
+      document.getElementById('stat-age-14plus').textContent = age14;
+      document.getElementById('stat-closed-today').textContent = closedToday;
+
+      // Section 4: Dependency Bars (Sorted descending)
+      var depList = [
+        { label: 'Engineer Dependency', key: 'dep_Engineer_Dependency', countsTSPL: true },
+        { label: 'Work in Progress (WIP)', key: 'dep_WIP', countsTSPL: true },
+        { label: 'Bank Dependency', key: 'dep_Bank_Dependency', countsTSPL: false },
+        { label: 'CRA / Custodian Delay', key: 'dep_CRA_Delay', countsTSPL: false },
+        { label: 'SCM / Parts Pending', key: 'dep_SCM_Dependency', countsTSPL: false },
+        { label: 'HD / Dispatch Queue', key: 'dep_HD_Dependency', countsTSPL: false },
+        { label: 'TSS Dependency', key: 'dep_TSS_Dependency', countsTSPL: false },
+        { label: 'Third Party Dependency', key: 'dep_Third_Party_Dependency', countsTSPL: false },
+        { label: 'Force Majeure', key: 'dep_Force_Majeure', countsTSPL: false },
+        { label: 'Access Time Exceeded', key: 'dep_Access_Time_Exceeded', countsTSPL: false }
+      ];
+
+      depList.forEach(function (item) {
+        item.count = s[item.key] || 0;
+      });
+
+      depList.sort(function (a, b) {
+        return b.count - a.count;
+      });
+
+      var barsHtml = '';
+      depList.forEach(function (item) {
+        if (item.count === 0 && totalOpen > 0) return;
+        var pct = totalOpen > 0 ? Math.round((item.count / totalOpen) * 100) : 0;
+        var color = item.countsTSPL ? '#DC2626' : '#D97706';
+        var badgeText = item.countsTSPL ? 'TSPL Clock Active' : 'Paused';
+
+        barsHtml += 
+          '<div>' +
+            '<div class="flex justify-between items-center text-xs mb-1">' +
+              '<span class="font-semibold text-slate-700">' + item.label + ' <span class="text-[10px] text-slate-400 font-normal">(' + badgeText + ')</span></span>' +
+              '<span class="font-mono font-bold" style="color: ' + color + '">' + item.count + ' (' + pct + '%)</span>' +
+            '</div>' +
+            '<div class="w-full bg-slate-100 rounded-full h-2 overflow-hidden">' +
+              '<div class="h-2 rounded-full transition-all duration-300" style="width: ' + pct + '%; background-color: ' + color + '"></div>' +
+            '</div>' +
+          '</div>';
+      });
+
+      if (!barsHtml) {
+        barsHtml = '<div class="text-xs text-slate-400 text-center py-4">No active dependency data.</div>';
+      }
+      document.getElementById('dependency-bars').innerHTML = barsHtml;
+
+      // Section 5: Ageing Table (7 Bands)
+      var ageBands = [
+        { band: 'a) 0-2days', key: 'age_a', isRed: false },
+        { band: 'b) 3-4days', key: 'age_b', isRed: false },
+        { band: 'c) 5-6days', key: 'age_c', isRed: false },
+        { band: 'd) 7days', key: 'age_d', isRed: false },
+        { band: 'e) 8-10days', key: 'age_e', isRed: false },
+        { band: 'f) 11-14days', key: 'age_f', isRed: true },
+        { band: 'g) >14days', key: 'age_g', isRed: true }
+      ];
+
+      var ageRowsHtml = '';
+      ageBands.forEach(function (b) {
+        var count = s[b.key] || 0;
+        var rowBg = b.isRed ? 'bg-red-50/70 hover:bg-red-100 text-red-950' : 'hover:bg-slate-50';
+        var badgeColor = b.isRed ? 'text-red-700 font-bold' : 'text-slate-800 font-semibold';
+
+        ageRowsHtml += 
+          '<tr class="' + rowBg + ' transition cursor-pointer" onclick="window.location.href=\'dockets.html?ageing=' + encodeURIComponent(b.band) + '\'">' +
+            '<td class="px-4 py-2.5 font-medium">' + b.band + '</td>' +
+            '<td class="px-4 py-2.5 text-right font-mono ' + badgeColor + '">' + count + '</td>' +
+            '<td class="px-4 py-2.5 text-right">' +
+              '<a href="dockets.html?ageing=' + encodeURIComponent(b.band) + '" class="text-[#4F46E5] hover:underline font-semibold">View</a>' +
+            '</td>' +
+          '</tr>';
+      });
+      document.getElementById('ageing-tbody').innerHTML = ageRowsHtml;
+    }
+
+    // ========================================================================
+    // 2. LIVE FIELD FORCE TELEMETRY (RTDB Listener)
+    // ========================================================================
+    function listenLiveFieldForce() {
+      var rtdbRef = scopedLiveLocationsRef();
+
+      rtdbRef.on('value', function (snap) {
+        var data = snap.val() || {};
+        var onDuty = 0;
+        var travelling = 0;
+        var atSite = 0;
+        var goneDark = 0;
+        var now = Date.now();
+
+        for (var uid in data) {
+          var eng = data[uid];
+          var lastTime = eng.updatedAt || 0;
+          var isDark = (now - lastTime) > (10 * 60 * 1000); // 10 minutes
+
+          if (isDark) {
+            goneDark++;
+          } else if (eng.online === true || eng.mode !== 'off') {
+            onDuty++;
+            if (eng.mode === 'travelling') travelling++;
+            if (eng.mode === 'atsite' || eng.mode === 'wip') atSite++;
+          }
+        }
+
+        document.getElementById('rt-on-duty').textContent = onDuty;
+        document.getElementById('rt-travelling').textContent = travelling;
+        document.getElementById('rt-at-site').textContent = atSite;
+        document.getElementById('rt-gone-dark').textContent = goneDark;
+      });
+    }
+
+    // ========================================================================
+    // 3. CRITICAL WATCHLIST (scopedDocketQuery, limit 20, oldest open)
+    // ========================================================================
+    async function loadCriticalWatchlist() {
+      var baseQuery = scopedDocketQuery()
+        .where('isClosed', '==', false)
+        .orderBy('callDateTime', 'asc')
+        .limit(20);
+
+      var snap = await baseQuery.get();
+      cachedWatchlist = [];
+
+      var tbody = document.getElementById('watchlist-tbody');
+      if (snap.empty) {
+        tbody.innerHTML = '<tr><td colspan="7" class="text-center py-6 text-slate-400">No open critical dockets found.</td></tr>';
+        return;
+      }
+
+      snap.forEach(function (doc) {
+        var d = doc.data();
+        d.id = doc.id;
+        cachedWatchlist.push(d);
+      });
+
+      renderWatchlistRows();
+    }
+
+    function renderWatchlistRows() {
+      var tbody = document.getElementById('watchlist-tbody');
+      if (cachedWatchlist.length === 0) return;
+
+      var rows = cachedWatchlist.map(function (d) {
+        var sla = slaStatus(d);
+        var tickerText = slaCountdownText(sla.minsRemaining);
+        var badgeBg = 'bg-emerald-100 text-[#16A34A]';
+
+        if (sla.ragColour === 'breach') {
+          badgeBg = 'bg-red-100 text-[#DC2626] font-bold animate-pulse';
+        } else if (sla.ragColour === 'red') {
+          badgeBg = 'bg-red-100 text-[#DC2626] font-semibold';
+        } else if (sla.ragColour === 'amber') {
+          badgeBg = 'bg-amber-100 text-[#D97706] font-semibold';
+        }
+
+        var isEngDep = d.currentDependency === 'Engineer Dependency' || d.currentDependency === 'WIP';
+        var depColor = isEngDep ? 'text-[#DC2626] font-bold' : 'text-slate-600';
+
+        return (
+          '<tr class="hover:bg-slate-50 transition cursor-pointer" onclick="window.location.href=\'docket-detail.html?id=' + d.id + '\'">' +
+            '<td class="px-3 py-2 font-mono font-bold text-[#4F46E5]">' + (d.docketNo || d.id) + '</td>' +
+            '<td class="px-3 py-2 font-medium text-slate-800">' + (d.atmId || '--') + '</td>' +
+            '<td class="px-3 py-2 text-slate-700">' + (d.bank || '--') + '</td>' +
+            '<td class="px-3 py-2 text-slate-600">' + (d.subStatus || '--') + '</td>' +
+            '<td class="px-3 py-2 ' + depColor + '">' + (d.currentDependency || 'Engineer Dependency') + '</td>' +
+            '<td class="px-3 py-2 text-slate-500 font-mono text-[11px]">' + fmtDateTime(d.callDateTime) + '</td>' +
+            '<td class="px-3 py-2 text-right">' +
+              '<span class="inline-block px-2.5 py-1 rounded text-[11px] font-mono ' + badgeBg + '">' +
+                tickerText +
+              '</span>' +
+            '</td>' +
+          '</tr>'
+        );
+      }).join('');
+
+      tbody.innerHTML = rows;
+    }
+
+    function updateWatchlistTickers() {
+      if (cachedWatchlist.length > 0) {
+        renderWatchlistRows();
+      }
+    }
+
+    // ========================================================================
+    // 4. TRACKING ANOMALIES & ALERTS TODAY
+    // ========================================================================
+    async function loadTrackingAlerts() {
+      var tbody = document.getElementById('alerts-tbody');
+      var role = localStorage.getItem('userRole');
+      var ro = localStorage.getItem('userRo');
+
+      try {
+        var query = db.collection('trackingAlerts')
+          .where('acknowledged', '==', false)
+          .orderBy('timestamp', 'desc')
+          .limit(20);
+
+        if ((role === 'rm' || role === 'regionalhead') && ro) {
+          query = query.where('ro', '==', ro);
+        }
+
+        var snap = await query.get();
+        if (snap.empty) {
+          tbody.innerHTML = '<tr><td colspan="5" class="text-center py-6 text-slate-400">No active tracking anomalies logged today.</td></tr>';
+          return;
+        }
+
+        var rowsHtml = '';
+        snap.forEach(function (doc) {
+          var a = doc.data();
+          rowsHtml += 
+            '<tr class="hover:bg-slate-50 transition">' +
+              '<td class="px-3 py-2 font-mono text-slate-500">' + fmtDateTime(a.timestamp) + '</td>' +
+              '<td class="px-3 py-2 font-medium text-slate-900">' + (a.engineerName || a.uid) + '</td>' +
+              '<td class="px-3 py-2 text-slate-600">' + (a.ro || '--') + '</td>' +
+              '<td class="px-3 py-2 text-[#DC2626] font-semibold">' + (a.flag || a.message || 'GPS Anomaly') + '</td>' +
+              '<td class="px-3 py-2 text-right">' +
+                '<button onclick="acknowledgeAlert(\'' + doc.id + '\', this)" class="text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 px-2.5 py-1 rounded border border-slate-300 font-medium transition">' +
+                  'Acknowledge' +
+                '</button>' +
+              '</td>' +
+            '</tr>';
+        });
+
+        tbody.innerHTML = rowsHtml;
+
+      } catch (e) {
+        console.warn('Tracking alerts query:', e);
+      }
+    }
+
+    async function acknowledgeAlert(alertId, btnEl) {
+      showLoader(btnEl, 'Saving...');
+      try {
+        await db.collection('trackingAlerts').doc(alertId).update({
+          acknowledged: true,
+          acknowledgedBy: localStorage.getItem('userName') || 'User',
+          acknowledgedAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+        toast('Alert acknowledged', 'success');
+        loadTrackingAlerts();
+      } catch (err) {
+        toast('Error acknowledging alert: ' + err.message, 'error');
+        hideLoader(btnEl);
+      }
+    }
+  </script>
+</body>
+</html>

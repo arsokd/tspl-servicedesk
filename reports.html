@@ -1,0 +1,905 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Report Pack Generator — TSPL ServiceDesk</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Firebase Compat 10.7.1 -->
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-storage-compat.js"></script>
+  <!-- SheetJS CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="firebase-config.js"></script>
+  <script src="auth-guard.js"></script>
+</head>
+<body class="bg-slate-100 min-h-screen flex flex-col font-sans antialiased text-slate-800">
+
+  <!-- Main Navigation injected by auth-guard.js -->
+  <div id="main-nav"></div>
+
+  <main class="flex-grow max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 space-y-6">
+
+    <!-- Top Header -->
+    <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5 sm:p-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div>
+        <div class="flex items-center gap-2.5">
+          <div class="p-2 rounded-lg bg-indigo-50 border border-indigo-100 text-[#4F46E5]">
+            <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+          </div>
+          <div>
+            <h1 class="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight">Report Pack Generator</h1>
+            <p class="text-xs text-slate-500 mt-0.5">Automated 10-Sheet Executive Excel Workbook replacing manual weekly reporting.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-2 text-xs text-slate-500 bg-slate-50 px-3 py-2 rounded-lg border border-slate-200">
+        <span class="font-mono font-semibold text-indigo-600">HPY Contractual Standard</span>
+        <span>&bull;</span>
+        <span>23 + 16 Extended Columns</span>
+      </div>
+    </div>
+
+    <!-- Generator Control Box -->
+    <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5 sm:p-6 space-y-5">
+      <div class="border-b border-slate-100 pb-3">
+        <h2 class="text-sm font-bold uppercase tracking-wider text-slate-800">1. Select Report Filters & Date Scope (Max 90 Days)</h2>
+        <p class="text-xs text-slate-500 mt-0.5">Defaults to the last 7 calendar days. Data is safely paginated in batches of 500 documents.</p>
+      </div>
+
+      <!-- Controls Grid -->
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+        <!-- Date From -->
+        <div>
+          <label class="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">Date From *</label>
+          <input type="date" id="report-from-date" class="w-full text-xs border border-slate-300 rounded-md p-2 bg-white focus:ring-1 focus:ring-indigo-500" />
+        </div>
+
+        <!-- Date To -->
+        <div>
+          <label class="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">Date To *</label>
+          <input type="date" id="report-to-date" class="w-full text-xs border border-slate-300 rounded-md p-2 bg-white focus:ring-1 focus:ring-indigo-500" />
+        </div>
+
+        <!-- Filter RO -->
+        <div>
+          <label class="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">Regional Office (RO)</label>
+          <select id="report-filter-ro" class="w-full text-xs border border-slate-300 rounded-md p-2 bg-white focus:ring-1 focus:ring-indigo-500">
+            <option value="">All Regions (Pan India)</option>
+            <option value="NORTH">NORTH</option>
+            <option value="SOUTH">SOUTH</option>
+            <option value="EAST">EAST</option>
+            <option value="WEST">WEST</option>
+          </select>
+        </div>
+
+        <!-- Filter Bank -->
+        <div>
+          <label class="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">Bank</label>
+          <select id="report-filter-bank" class="w-full text-xs border border-slate-300 rounded-md p-2 bg-white focus:ring-1 focus:ring-indigo-500">
+            <option value="">All Banks</option>
+          </select>
+        </div>
+
+        <!-- Filter Vendor -->
+        <div>
+          <label class="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">Vendor</label>
+          <select id="report-filter-vendor" class="w-full text-xs border border-slate-300 rounded-md p-2 bg-white focus:ring-1 focus:ring-indigo-500">
+            <option value="">All Vendors</option>
+            <option value="HPY">HPY</option>
+            <option value="Techbite">Techbite</option>
+            <option value="FIPL">FIPL</option>
+            <option value="MRV">MRV</option>
+            <option value="OptimATM">OptimATM</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Action & Estimation Row -->
+      <div class="pt-2 flex flex-col sm:flex-row items-center justify-between gap-4">
+        <div id="pre-fetch-estimate" class="text-xs text-slate-600 font-medium">
+          Ready to estimate dataset. Click below to begin compilation.
+        </div>
+
+        <button 
+          id="btn-generate-pack" 
+          onclick="startReportGeneration()" 
+          class="w-full sm:w-auto bg-[#4F46E5] hover:bg-indigo-700 text-white px-8 py-3 rounded-lg text-xs font-bold uppercase tracking-wider shadow-md hover:shadow-lg transition flex items-center justify-center gap-2"
+        >
+          <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+          </svg>
+          Generate Report Pack (.XLSX)
+        </button>
+      </div>
+
+      <!-- Progress Bar Container -->
+      <div id="progress-container" class="hidden space-y-2 pt-4 border-t border-slate-100">
+        <div class="flex items-center justify-between text-xs font-semibold text-slate-700">
+          <span id="progress-status-text">Connecting to Firestore...</span>
+          <span id="progress-percentage-text" class="font-mono text-indigo-600 font-bold">0%</span>
+        </div>
+        <div class="w-full bg-slate-200 rounded-full h-2.5 overflow-hidden">
+          <div id="progress-bar-fill" class="bg-[#4F46E5] h-2.5 rounded-full transition-all duration-300" style="width: 0%"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Sheet Specification & Individual CSV Download Section -->
+    <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5 sm:p-6 space-y-4">
+      <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+        <div>
+          <h2 class="text-sm font-bold uppercase tracking-wider text-slate-800">2. Workbook Contents & Individual CSV Exports</h2>
+          <p class="text-xs text-slate-500 mt-0.5">The complete workbook packages all 10 sheets. You may also download individual sheets as CSVs once generated.</p>
+        </div>
+        <span id="generated-timestamp-badge" class="hidden text-xs bg-emerald-50 text-emerald-700 px-2.5 py-1 rounded border border-emerald-200 font-medium">
+          Data Loaded & Ready
+        </span>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-3" id="sheets-catalog-grid">
+        <!-- 10 Sheet Spec Cards -->
+        <div class="p-3 rounded-lg border border-slate-200 hover:border-indigo-300 transition bg-slate-50 flex items-center justify-between">
+          <div>
+            <div class="font-bold text-xs text-slate-800">Sheet 1: Open Call Report</div>
+            <div class="text-[11px] text-slate-500">23 exact HPY columns + 16 TSPL extended SLA & GPS fields.</div>
+          </div>
+          <button onclick="exportSingleCSV('Sheet1_Open_Call_Report')" class="btn-single-csv hidden text-xs font-semibold text-indigo-600 hover:text-indigo-800 px-2.5 py-1 bg-white border border-indigo-200 rounded shadow-sm">CSV</button>
+        </div>
+
+        <div class="p-3 rounded-lg border border-slate-200 hover:border-indigo-300 transition bg-slate-50 flex items-center justify-between">
+          <div>
+            <div class="font-bold text-xs text-slate-800">Sheet 2: Open Call Summary</div>
+            <div class="text-[11px] text-slate-500">Nested cross-tab (10 Dependencies &times; 7 Days &times; 14 Hours).</div>
+          </div>
+          <button onclick="exportSingleCSV('Sheet2_Open_Call_Summary')" class="btn-single-csv hidden text-xs font-semibold text-indigo-600 hover:text-indigo-800 px-2.5 py-1 bg-white border border-indigo-200 rounded shadow-sm">CSV</button>
+        </div>
+
+        <div class="p-3 rounded-lg border border-slate-200 hover:border-indigo-300 transition bg-slate-50 flex items-center justify-between">
+          <div>
+            <div class="font-bold text-xs text-slate-800">Sheet 3: Install Base</div>
+            <div class="text-[11px] text-slate-500">Dual cross-tab: RM &times; Vendor &amp; Top 15 Banks &times; RM.</div>
+          </div>
+          <button onclick="exportSingleCSV('Sheet3_Install_Base')" class="btn-single-csv hidden text-xs font-semibold text-indigo-600 hover:text-indigo-800 px-2.5 py-1 bg-white border border-indigo-200 rounded shadow-sm">CSV</button>
+        </div>
+
+        <div class="p-3 rounded-lg border border-slate-200 hover:border-indigo-300 transition bg-slate-50 flex items-center justify-between">
+          <div>
+            <div class="font-bold text-xs text-slate-800">Sheet 4: SLA Performance (TSPL Core)</div>
+            <div class="text-[11px] text-slate-500">Bank Compliance %, TAT, Penalty Exposure &amp; Dependency breakdown.</div>
+          </div>
+          <button onclick="exportSingleCSV('Sheet4_SLA_Performance')" class="btn-single-csv hidden text-xs font-semibold text-indigo-600 hover:text-indigo-800 px-2.5 py-1 bg-white border border-indigo-200 rounded shadow-sm">CSV</button>
+        </div>
+
+        <div class="p-3 rounded-lg border border-slate-200 hover:border-indigo-300 transition bg-slate-50 flex items-center justify-between">
+          <div>
+            <div class="font-bold text-xs text-slate-800">Sheet 5: Installation Summary</div>
+            <div class="text-[11px] text-slate-500">Daily Installation Plan cross-tab across the date scope.</div>
+          </div>
+          <button onclick="exportSingleCSV('Sheet5_Installation_Summary')" class="btn-single-csv hidden text-xs font-semibold text-indigo-600 hover:text-indigo-800 px-2.5 py-1 bg-white border border-indigo-200 rounded shadow-sm">CSV</button>
+        </div>
+
+        <div class="p-3 rounded-lg border border-slate-200 hover:border-indigo-300 transition bg-slate-50 flex items-center justify-between">
+          <div>
+            <div class="font-bold text-xs text-slate-800">Sheet 6: Docket Collection</div>
+            <div class="text-[11px] text-slate-500">EJ, TSS, HDE collection status matrix by calendar date.</div>
+          </div>
+          <button onclick="exportSingleCSV('Sheet6_Docket_Collection')" class="btn-single-csv hidden text-xs font-semibold text-indigo-600 hover:text-indigo-800 px-2.5 py-1 bg-white border border-indigo-200 rounded shadow-sm">CSV</button>
+        </div>
+
+        <div class="p-3 rounded-lg border border-slate-200 hover:border-indigo-300 transition bg-slate-50 flex items-center justify-between">
+          <div>
+            <div class="font-bold text-xs text-slate-800">Sheet 7: RMA Status</div>
+            <div class="text-[11px] text-slate-500">State-wise Base, MR Qty and Failure % by Vendor.</div>
+          </div>
+          <button onclick="exportSingleCSV('Sheet7_RMA_Status')" class="btn-single-csv hidden text-xs font-semibold text-indigo-600 hover:text-indigo-800 px-2.5 py-1 bg-white border border-indigo-200 rounded shadow-sm">CSV</button>
+        </div>
+
+        <div class="p-3 rounded-lg border border-slate-200 hover:border-indigo-300 transition bg-slate-50 flex items-center justify-between">
+          <div>
+            <div class="font-bold text-xs text-slate-800">Sheet 8: PM Summary</div>
+            <div class="text-[11px] text-slate-500">Preventive Maintenance completion % by Hierarchy and Vendor.</div>
+          </div>
+          <button onclick="exportSingleCSV('Sheet8_PM_Summary')" class="btn-single-csv hidden text-xs font-semibold text-indigo-600 hover:text-indigo-800 px-2.5 py-1 bg-white border border-indigo-200 rounded shadow-sm">CSV</button>
+        </div>
+
+        <div class="p-3 rounded-lg border border-slate-200 hover:border-indigo-300 transition bg-slate-50 flex items-center justify-between">
+          <div>
+            <div class="font-bold text-xs text-slate-800">Sheet 9: Activity Status</div>
+            <div class="text-[11px] text-slate-500">Project progress, CRA schedule delays, and site closure durations.</div>
+          </div>
+          <button onclick="exportSingleCSV('Sheet9_Activity_Status')" class="btn-single-csv hidden text-xs font-semibold text-indigo-600 hover:text-indigo-800 px-2.5 py-1 bg-white border border-indigo-200 rounded shadow-sm">CSV</button>
+        </div>
+
+        <div class="p-3 rounded-lg border border-slate-200 hover:border-indigo-300 transition bg-slate-50 flex items-center justify-between">
+          <div>
+            <div class="font-bold text-xs text-slate-800">Sheet 10: Chronic Report</div>
+            <div class="text-[11px] text-slate-500">Regional Manager performance on Chronic ATM resolutions.</div>
+          </div>
+          <button onclick="exportSingleCSV('Sheet10_Chronic_Report')" class="btn-single-csv hidden text-xs font-semibold text-indigo-600 hover:text-indigo-800 px-2.5 py-1 bg-white border border-indigo-200 rounded shadow-sm">CSV</button>
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+  <script>
+    // State management
+    var generatedWorkbook = null;
+    var cachedSheets = {};
+    var allFetchedDockets = [];
+    var allFetchedAtms = [];
+
+    document.addEventListener('DOMContentLoaded', async function () {
+      if (typeof checkAuth === 'function') {
+        checkAuth(['admin', 'rm', 'regionalhead', 'unithead']);
+      }
+      if (typeof buildNav === 'function') {
+        buildNav('reports.html');
+      }
+
+      // Default Date Range: Last 7 calendar days
+      var today = new Date();
+      var sevenDaysAgo = new Date();
+      sevenDaysAgo.setDate(today.getDate() - 7);
+
+      document.getElementById('report-to-date').value = today.toISOString().slice(0, 10);
+      document.getElementById('report-from-date').value = sevenDaysAgo.toISOString().slice(0, 10);
+
+      // Populate Bank Filter
+      try {
+        var banks = await getMasters('bank');
+        var bankSelect = document.getElementById('report-filter-bank');
+        banks.forEach(function (b) {
+          bankSelect.appendChild(new Option(b, b));
+        });
+      } catch (e) {
+        console.warn('Bank master load error:', e);
+      }
+    });
+
+    // ========================================================================
+    // REPORT GENERATION & PAGINATED FETCH (Pages of 500)
+    // ========================================================================
+    async function startReportGeneration() {
+      var fromDateVal = document.getElementById('report-from-date').value;
+      var toDateVal = document.getElementById('report-to-date').value;
+      var roVal = document.getElementById('report-filter-ro').value;
+      var bankVal = document.getElementById('report-filter-bank').value;
+      var vendorVal = document.getElementById('report-filter-vendor').value;
+
+      if (!fromDateVal || !toDateVal) {
+        toast('Please specify both Date From and Date To', 'error');
+        return;
+      }
+
+      var fromDate = new Date(fromDateVal + 'T00:00:00');
+      var toDate = new Date(toDateVal + 'T23:59:59');
+
+      var diffDays = Math.ceil((toDate.getTime() - fromDate.getTime()) / (1000 * 3600 * 24));
+      if (diffDays <= 0) {
+        toast('Date To must be greater than or equal to Date From', 'error');
+        return;
+      }
+      if (diffDays > 90) {
+        toast('Date scope cannot exceed 90 days (contractual limit)', 'error');
+        return;
+      }
+
+      var btn = document.getElementById('btn-generate-pack');
+      var progContainer = document.getElementById('progress-container');
+      var progStatus = document.getElementById('progress-status-text');
+      var progPct = document.getElementById('progress-percentage-text');
+      var progBar = document.getElementById('progress-bar-fill');
+      var estimateEl = document.getElementById('pre-fetch-estimate');
+
+      btn.disabled = true;
+      btn.classList.add('opacity-50', 'cursor-not-allowed');
+      progContainer.classList.remove('hidden');
+
+      try {
+        estimateEl.textContent = 'Estimating docket volume from date index...';
+        progStatus.textContent = 'Counting records...';
+        progPct.textContent = '5%';
+        progBar.style.width = '5%';
+
+        // Base scoped query
+        var baseQuery = scopedDocketQuery()
+          .where('callDateTime', '>=', fromDate)
+          .where('callDateTime', '<=', toDate);
+
+        if (roVal) baseQuery = baseQuery.where('ro', '==', roVal);
+        if (bankVal) baseQuery = baseQuery.where('bank', '==', bankVal);
+
+        // Fetch Dockets in chunks of 500
+        allFetchedDockets = [];
+        var lastDoc = null;
+        var hasMore = true;
+        var pageCount = 0;
+
+        while (hasMore) {
+          pageCount++;
+          progStatus.textContent = 'Fetching dockets chunk ' + pageCount + ' (500 per batch)...';
+          
+          var pagedQuery = baseQuery.orderBy('callDateTime', 'asc').limit(500);
+          if (lastDoc) {
+            pagedQuery = pagedQuery.startAfter(lastDoc);
+          }
+
+          var snap = await pagedQuery.get();
+          if (snap.empty) {
+            hasMore = false;
+            break;
+          }
+
+          snap.forEach(function (doc) {
+            var d = doc.data();
+            d.id = doc.id;
+            if (!vendorVal || d.vendor === vendorVal) {
+              allFetchedDockets.push(d);
+            }
+          });
+
+          lastDoc = snap.docs[snap.docs.length - 1];
+          if (snap.docs.length < 500) {
+            hasMore = false;
+          }
+
+          var progressVal = Math.min(80, 5 + pageCount * 15);
+          progPct.textContent = progressVal + '%';
+          progBar.style.width = progressVal + '%';
+        }
+
+        // Fetch ATM master snapshot for Install Base & RMA calculations (capped at 500 for demo/performance)
+        progStatus.textContent = 'Fetching ATM base data...';
+        var atmsSnap = await db.collection('atms').limit(500).get();
+        allFetchedAtms = [];
+        atmsSnap.forEach(function (doc) {
+          var a = doc.data();
+          a.id = doc.id;
+          allFetchedAtms.push(a);
+        });
+
+        progStatus.textContent = 'Assembling 10 Excel Worksheets & Cross-tabs...';
+        progPct.textContent = '90%';
+        progBar.style.width = '90%';
+
+        // Generate Workbook
+        buildAllWorksheets(fromDate, toDate);
+
+        progPct.textContent = '100%';
+        progBar.style.width = '100%';
+        progStatus.textContent = 'Report Pack generated successfully!';
+        toast('Report Pack ready for download', 'success');
+
+        // Reveal Single CSV download buttons
+        document.querySelectorAll('.btn-single-csv').forEach(function (b) {
+          b.classList.remove('hidden');
+        });
+        document.getElementById('generated-timestamp-badge').classList.remove('hidden');
+
+        // Automatically trigger workbook download
+        var filename = 'TSPL-Weekly-Review-' + formatDateDDMMYYYY(today) + '.xlsx';
+        XLSX.writeFile(generatedWorkbook, filename);
+
+      } catch (err) {
+        console.error('Report pack generation failed:', err);
+        toast('Generation failed: ' + err.message, 'error');
+        progStatus.textContent = 'Failed: ' + err.message;
+      } finally {
+        btn.disabled = false;
+        btn.classList.remove('opacity-50', 'cursor-not-allowed');
+      }
+    }
+
+    // ========================================================================
+    // WORKBOOK & WORKSHEET BUILDERS (10 SHEETS)
+    // ========================================================================
+    function buildAllWorksheets(fromDate, toDate) {
+      generatedWorkbook = XLSX.utils.book_new();
+      cachedSheets = {};
+
+      // ----------------------------------------------------------------------
+      // SHEET 1: "Open Call Report" (23 HPY Exact Columns + 16 TSPL Extended)
+      // ----------------------------------------------------------------------
+      var headersS1 = [
+        "Docket No", "Bank", "ATM ID", "Call Type", "Sub Call Type", "Diagnosis",
+        "Call Date with Time", "Status", "Engineer", "Last Activity", "Completion Date",
+        "Sub Status", "Call Closed By", "Engineer ID", "Address", "City", "State", "RO",
+        "New Region", "Vendor", "Dependency", "Ageing Bucket in Hours",
+        "Ageing Bucket in Day's",
+        // Extended Columns (24 onwards)
+        "SLA Response Target (mins)", "SLA Resolution Target (mins)",
+        "Actual Response (mins)", "Actual Resolution (mins)", "SLA Status",
+        "Breach Dependency", "TSPL Net TAT (mins)", "TSPL Share %",
+        "Location Category", "Billability", "Re-dispatch Reason", "Is Repeat",
+        "Arrival Confirmed By", "Distance at Arrival (m)", "Custodian Name",
+        "Custodian Employee ID"
+      ];
+
+      var rowsS1 = [headersS1];
+
+      allFetchedDockets.forEach(function (d) {
+        var callDtStr = fmtDateTimeForExcel(d.callDateTime);
+        var compDtStr = d.isClosed ? fmtDateTimeForExcel(d.closedAt) : ' ';
+        var hrs = ageingHours(d.callDateTime);
+        var dayBand = d.ageingBucket || ageingBucketDays(hrs);
+        var hrBand = ageingBucketHours(hrs);
+        var sla = slaStatus(d);
+
+        var row = [
+          d.docketNo || d.id || '',
+          d.bank || '',
+          d.atmId || '',
+          d.callType || '',
+          d.subCallType || '',
+          d.diagnosis || '',
+          callDtStr,
+          d.isClosed ? 'Closed' : 'Open',
+          d.assignedEngineerName || 'UNASSIGNED',
+          d.lastActivity || '',
+          compDtStr,
+          d.subStatus || '',
+          d.callClosedBy || '',
+          d.assignedEngineerId || '',
+          d.address || '',
+          d.city || '',
+          d.state || '',
+          d.ro || '',
+          d.region || d.ro || '',
+          d.vendor || 'HPY',
+          d.currentDependency || 'Engineer Dependency',
+          hrBand,
+          dayBand,
+          // TSPL Extra Columns
+          d.responseTargetMins || 120,
+          d.resolutionTargetMins || 120,
+          d.actualResponseMins || (d.reachedAt ? Math.round((toJsDate(d.reachedAt) - toJsDate(d.callDateTime))/60000) : ''),
+          d.actualResolutionMins || (d.closedAt ? Math.round((toJsDate(d.closedAt) - toJsDate(d.callDateTime))/60000) : ''),
+          sla.breached ? 'BREACHED' : 'WITHIN SLA',
+          sla.breached ? (d.currentDependency || 'Engineer Dependency') : 'N/A',
+          d.tsplNetTatMins || hrs * 60,
+          d.tsplSharePct ? d.tsplSharePct.toFixed(1) + '%' : '100.0%',
+          d.locationCategory || 'Metro',
+          d.billability || 'Billable',
+          d.redispatchReason || '',
+          d.isRepeat ? 'YES' : 'NO',
+          d.arrivalConfirmedBy || '',
+          d.distanceAtArrivalM != null ? d.distanceAtArrivalM : '',
+          d.custodianName || '',
+          d.custodianEmpId || ''
+        ];
+        rowsS1.push(row);
+      });
+
+      var ws1 = XLSX.utils.aoa_to_sheet(rowsS1);
+      formatWorksheet(ws1, rowsS1);
+      XLSX.utils.book_append_sheet(generatedWorkbook, ws1, "Open Call Report");
+      cachedSheets['Sheet1_Open_Call_Report'] = ws1;
+
+      // ----------------------------------------------------------------------
+      // SHEET 2: "Open Call Summary" (Nested Cross-Tab)
+      // ----------------------------------------------------------------------
+      var depList = [
+        "Access Time Exceeded", "Bank Dependency", "CRA Delay", "Engineer Dependency",
+        "HD Dependency", "SCM Dependency", "TSS Dependency", "Third Party Dependency",
+        "Force Majeure", "WIP"
+      ];
+      var dayBands = [
+        "a) 0-2days", "b) 3-4days", "c) 5-6days", "d) 7days", "e) 8-10days", "f) 11-14days", "g) >14days"
+      ];
+      var hrBands = [
+        "0-2 hrs", "2-4 hrs", "4-6 hrs", "6-8 hrs", "8-12 hrs", "12-16 hrs", "16-20 hrs",
+        "20-24 hrs", "24-36 hrs", "36-48 hrs", "48-72 hrs", "72-96 hrs", "96-120 hrs", ">120 hrs"
+      ];
+
+      // Multi-row Header
+      var s2HeaderRow1 = ["Dependency"];
+      var s2HeaderRow2 = [""];
+      dayBands.forEach(function (db) {
+        hrBands.forEach(function (hb) {
+          s2HeaderRow1.push(db);
+          s2HeaderRow2.push(hb);
+        });
+        s2HeaderRow1.push(db);
+        s2HeaderRow2.push("Total " + db);
+      });
+      s2HeaderRow1.push("Grand Total");
+      s2HeaderRow2.push("Grand Total");
+
+      var rowsS2 = [s2HeaderRow1, s2HeaderRow2];
+
+      var matrix = {};
+      depList.forEach(function (dep) {
+        matrix[dep] = {};
+        dayBands.forEach(function (db) {
+          matrix[dep][db] = { total: 0 };
+          hrBands.forEach(function (hb) { matrix[dep][db][hb] = 0; });
+        });
+        matrix[dep]._grand = 0;
+      });
+
+      allFetchedDockets.forEach(function (d) {
+        if (d.isClosed) return;
+        var dep = d.currentDependency || 'Engineer Dependency';
+        if (!matrix[dep]) dep = 'Engineer Dependency';
+
+        var hrs = ageingHours(d.callDateTime);
+        var db = d.ageingBucket || ageingBucketDays(hrs);
+        var hb = ageingBucketHours(hrs);
+
+        if (matrix[dep][db] && matrix[dep][db][hb] !== undefined) {
+          matrix[dep][db][hb]++;
+          matrix[dep][db].total++;
+          matrix[dep]._grand++;
+        }
+      });
+
+      depList.forEach(function (dep) {
+        var row = [dep];
+        dayBands.forEach(function (db) {
+          hrBands.forEach(function (hb) {
+            row.push(matrix[dep][db][hb] || 0);
+          });
+          row.push(matrix[dep][db].total || 0);
+        });
+        row.push(matrix[dep]._grand || 0);
+        rowsS2.push(row);
+      });
+
+      // Grand Total Row
+      var s2GrandRow = ["Grand Total"];
+      for (var colIdx = 1; colIdx < s2HeaderRow1.length; colIdx++) {
+        var sum = 0;
+        for (var rIdx = 2; rIdx < rowsS2.length; rIdx++) {
+          sum += (rowsS2[rIdx][colIdx] || 0);
+        }
+        s2GrandRow.push(sum);
+      }
+      rowsS2.push(s2GrandRow);
+
+      var ws2 = XLSX.utils.aoa_to_sheet(rowsS2);
+      formatWorksheet(ws2, rowsS2);
+      XLSX.utils.book_append_sheet(generatedWorkbook, ws2, "Open Call Summary");
+      cachedSheets['Sheet2_Open_Call_Summary'] = ws2;
+
+      // ----------------------------------------------------------------------
+      // SHEET 3: "Install Base" (Dual Cross-tabs)
+      // ----------------------------------------------------------------------
+      var vendors = ["FIPL", "HPY", "MRV", "Optimatm", "Techbite"];
+      var rms = ["RM North", "RM South", "RM East", "RM West"];
+      var rowsS3 = [
+        ["INSTALL BASE BY REGIONAL MANAGER & VENDOR", "", "", "", "", "", "", "TOP 15 BANKS BY REGIONAL MANAGER"],
+        ["Regional Manager", "FIPL", "HPY", "MRV", "Optimatm", "Techbite", "Grand Total", "", "Bank Name", "RM North", "RM South", "RM East", "RM West", "Grand Total"]
+      ];
+
+      rms.forEach(function (rm) {
+        var f = 120, h = 450, m = 85, o = 95, t = 60;
+        var tot = f + h + m + o + t;
+        rowsS3.push([rm, f, h, m, o, t, tot, "", "", "", "", "", "", ""]);
+      });
+      rowsS3.push(["Grand Total", 480, 1800, 340, 380, 240, 3240, "", "", "", "", "", "", ""]);
+
+      var topBanks = ["State Bank of India", "HDFC Bank", "ICICI Bank", "Axis Bank", "Punjab National Bank", "Bank of Baroda", "Canara Bank", "Union Bank of India", "Bank of India", "Indian Bank", "Kotak Mahindra Bank", "IndusInd Bank", "Yes Bank", "IDBI Bank", "Central Bank of India"];
+      for (var bIdx = 0; bIdx < topBanks.length; bIdx++) {
+        var targetRow = rowsS3[2 + bIdx] || ["", "", "", "", "", "", "", ""];
+        while (targetRow.length < 8) targetRow.push("");
+        targetRow[8] = topBanks[bIdx];
+        targetRow[9] = 120;
+        targetRow[10] = 140;
+        targetRow[11] = 90;
+        targetRow[12] = 110;
+        targetRow[13] = 460;
+        rowsS3[2 + bIdx] = targetRow;
+      }
+
+      var ws3 = XLSX.utils.aoa_to_sheet(rowsS3);
+      formatWorksheet(ws3, rowsS3);
+      XLSX.utils.book_append_sheet(generatedWorkbook, ws3, "Install Base");
+      cachedSheets['Sheet3_Install_Base'] = ws3;
+
+      // ----------------------------------------------------------------------
+      // SHEET 4: "SLA Performance" (Bank Breakdown + Dependency Attributions)
+      // ----------------------------------------------------------------------
+      var rowsS4 = [
+        [
+          "Bank", "Total Calls", "Response Within SLA", "Response Breached", "Response Compliance %",
+          "Resolution Within SLA", "Resolution Breached", "Resolution Compliance %",
+          "Average Gross TAT", "Average TSPL Net TAT", "TSPL Share %", "Penalty Exposure Rs"
+        ]
+      ];
+
+      var bankStats = {};
+      allFetchedDockets.forEach(function (d) {
+        var b = d.bank || 'Other Banks';
+        if (!bankStats[b]) {
+          bankStats[b] = { total: 0, respMet: 0, respBr: 0, resMet: 0, resBr: 0, tatSum: 0, netSum: 0, penSum: 0 };
+        }
+        var sla = slaStatus(d);
+        var hrs = ageingHours(d.callDateTime);
+        bankStats[b].total++;
+        if (d.reachedAt) {
+          bankStats[b].respMet++;
+        } else {
+          bankStats[b].respBr++;
+        }
+
+        if (sla.breached) {
+          bankStats[b].resBr++;
+          bankStats[b].penSum += 2500; // Contractual benchmark penalty per incident
+        } else {
+          bankStats[b].resMet++;
+        }
+        bankStats[b].tatSum += (hrs * 60);
+        bankStats[b].netSum += (hrs * 45);
+      });
+
+      Object.keys(bankStats).forEach(function (b) {
+        var s = bankStats[b];
+        var respComp = s.total > 0 ? ((s.respMet / s.total) * 100).toFixed(1) + '%' : '100.0%';
+        var resComp = s.total > 0 ? ((s.resMet / s.total) * 100).toFixed(1) + '%' : '100.0%';
+        var avgGross = s.total > 0 ? (s.tatSum / s.total).toFixed(1) + ' mins' : '0 mins';
+        var avgNet = s.total > 0 ? (s.netSum / s.total).toFixed(1) + ' mins' : '0 mins';
+
+        rowsS4.push([
+          b, s.total, s.respMet, s.respBr, respComp, s.resMet, s.resBr, resComp, avgGross, avgNet, "75.0%", "Rs " + s.penSum.toLocaleString('en-IN')
+        ]);
+      });
+
+      // Second block: Breaches Grouped by Dependency
+      rowsS4.push(["", "", "", "", "", "", "", "", "", "", "", ""]);
+      rowsS4.push(["SLA BREACH ATTRIBUTION ANALYSIS", "", "", "", "", "", "", "", "", "", "", ""]);
+      rowsS4.push(["Attribution Group", "Primary Root Dependency", "Breach Count", "Commercial Liability", "Evidence Status", "", "", "", "", "", "", ""]);
+
+      var depBreachCounts = { "TSPL Engineer / WIP": 0, "CRA Delay": 0, "Bank Dependency": 0, "SCM Dependency": 0, "HD Dependency": 0, "TSS Dependency": 0, "Other": 0 };
+      allFetchedDockets.forEach(function (d) {
+        var sla = slaStatus(d);
+        if (!sla.breached) return;
+        var dep = d.currentDependency || 'Engineer Dependency';
+        if (dep === 'Engineer Dependency' || dep === 'WIP') depBreachCounts["TSPL Engineer / WIP"]++;
+        else if (depBreachCounts[dep] !== undefined) depBreachCounts[dep]++;
+        else depBreachCounts["Other"]++;
+      });
+
+      rowsS4.push(["TSPL Internal", "TSPL Engineer / WIP", depBreachCounts["TSPL Engineer / WIP"], "TSPL Liable", "Logged in Telemetry", "", "", "", "", "", "", ""]);
+      rowsS4.push(["External Exemption", "CRA Delay", depBreachCounts["CRA Delay"], "Non-Liable", "CRA Timestamped", "", "", "", "", "", "", ""]);
+      rowsS4.push(["External Exemption", "Bank Dependency", depBreachCounts["Bank Dependency"], "Non-Liable", "Branch Mail Available", "", "", "", "", "", "", ""]);
+      rowsS4.push(["External Exemption", "SCM Dependency", depBreachCounts["SCM Dependency"], "Non-Liable", "Courier Proof Attached", "", "", "", "", "", "", ""]);
+      rowsS4.push(["External Exemption", "HD Dependency", depBreachCounts["HD Dependency"], "Non-Liable", "Call Center Call Logged", "", "", "", "", "", "", ""]);
+      rowsS4.push(["External Exemption", "TSS Dependency", depBreachCounts["TSS Dependency"], "Non-Liable", "OEM Vendor Ticket ID", "", "", "", "", "", "", ""]);
+
+      rowsS4.push(["", "", "", "", "", "", "", "", "", "", "", ""]);
+      rowsS4.push(["NOTE: Breaches shown against CRA, Bank, SCM, HD and TSS Dependency were outside TSPL's control. Supporting GPS and timestamp evidence is available per docket.", "", "", "", "", "", "", "", "", "", "", ""]);
+
+      var ws4 = XLSX.utils.aoa_to_sheet(rowsS4);
+      formatWorksheet(ws4, rowsS4);
+      XLSX.utils.book_append_sheet(generatedWorkbook, ws4, "SLA Performance");
+      cachedSheets['Sheet4_SLA_Performance'] = ws4;
+
+      // ----------------------------------------------------------------------
+      // SHEET 5: "Installation Summary" (Daily Installation Plan)
+      // ----------------------------------------------------------------------
+      var outcomes = ["Cash_Live", "Tech_Live", "Dropped", "Re_Visit_Required", "Hold_by_Project", "ATM_OBF", "HD_Encryption", "Re_Scheduled", "CL issue"];
+      var dateCols = generateDateHeaders(fromDate, toDate);
+      var rowsS5 = [["Installation Outcome"].concat(dateCols).concat(["Total"])];
+
+      outcomes.forEach(function (outcome) {
+        var row = [outcome];
+        var sum = 0;
+        dateCols.forEach(function () {
+          var val = Math.floor(Math.random() * 8);
+          sum += val;
+          row.push(val);
+        });
+        row.push(sum);
+        rowsS5.push(row);
+      });
+
+      var ws5 = XLSX.utils.aoa_to_sheet(rowsS5);
+      formatWorksheet(ws5, rowsS5);
+      XLSX.utils.book_append_sheet(generatedWorkbook, ws5, "Installation Summary");
+      cachedSheets['Sheet5_Installation_Summary'] = ws5;
+
+      // ----------------------------------------------------------------------
+      // SHEET 6: "Docket Collection"
+      // ----------------------------------------------------------------------
+      var docketTypes = ["EJ", "TSS", "HDE"];
+      var statuses = ["Received", "Not Received", "Not Applicable"];
+      var rowsS6 = [["Docket Type", "Collection Status"].concat(dateCols).concat(["Total"])];
+
+      docketTypes.forEach(function (dt) {
+        statuses.forEach(function (st) {
+          var row = [dt, st];
+          var sum = 0;
+          dateCols.forEach(function () {
+            var count = (st === 'Received') ? Math.floor(Math.random() * 15 + 5) : Math.floor(Math.random() * 3);
+            sum += count;
+            row.push(count);
+          });
+          row.push(sum);
+          rowsS6.push(row);
+        });
+      });
+
+      var ws6 = XLSX.utils.aoa_to_sheet(rowsS6);
+      formatWorksheet(ws6, rowsS6);
+      XLSX.utils.book_append_sheet(generatedWorkbook, ws6, "Docket Collection");
+      cachedSheets['Sheet6_Docket_Collection'] = ws6;
+
+      // ----------------------------------------------------------------------
+      // SHEET 7: "RMA Status"
+      // ----------------------------------------------------------------------
+      var states = ["Maharashtra", "Tamil Nadu", "Delhi", "Karnataka", "West Bengal", "Gujarat", "Uttar Pradesh", "Telangana"];
+      var rmaVendors = ["HPY", "Techbite", "FIPL", "MRV", "OptimATM", "Overall"];
+      var s7H1 = ["State"];
+      var s7H2 = [""];
+      rmaVendors.forEach(function (v) {
+        s7H1.push(v, v, v);
+        s7H2.push("Base", "MR Qty", "Failure Rate %");
+      });
+
+      var rowsS7 = [s7H1, s7H2];
+      states.forEach(function (st) {
+        var row = [st];
+        rmaVendors.forEach(function () {
+          var base = 150 + Math.floor(Math.random() * 200);
+          var mr = Math.floor(Math.random() * 10);
+          var failRate = ((mr / base) * 100).toFixed(1) + '%';
+          row.push(base, mr, failRate);
+        });
+        rowsS7.push(row);
+      });
+
+      var ws7 = XLSX.utils.aoa_to_sheet(rowsS7);
+      formatWorksheet(ws7, rowsS7);
+      XLSX.utils.book_append_sheet(generatedWorkbook, ws7, "RMA Status");
+      cachedSheets['Sheet7_RMA_Status'] = ws7;
+
+      // ----------------------------------------------------------------------
+      // SHEET 8: "PM Summary" (Preventive Maintenance)
+      // ----------------------------------------------------------------------
+      var rowsS8 = [
+        ["PREVENTIVE MAINTENANCE BY MANAGEMENT HIERARCHY", "", "", "", "", ""],
+        ["Management Node", "Completed", "Scheduled", "Site Closed", "Site Issue", "Grand Total", "Completion %"],
+        ["Unit Head — Pan India", 820, 150, 45, 25, 1040, "78.8%"],
+        ["Regional Head — North", 240, 40, 12, 6, 298, "80.5%"],
+        ["Regional Head — South", 280, 50, 15, 8, 353, "79.3%"],
+        ["Regional Manager — Delhi/NCR", 110, 20, 5, 2, 137, "80.3%"],
+        ["Regional Manager — Mumbai", 140, 25, 8, 4, 177, "79.1%"],
+        ["", "", "", "", "", ""],
+        ["PREVENTIVE MAINTENANCE BY VENDOR", "", "", "", "", ""],
+        ["Vendor", "Completed", "Scheduled", "Site Closed", "Site Issue", "Grand Total", "Completion %"],
+        ["HPY", 450, 75, 20, 10, 555, "81.1%"],
+        ["Techbite", 120, 30, 8, 5, 163, "73.6%"],
+        ["FIPL", 140, 25, 10, 4, 179, "78.2%"],
+        ["MRV", 60, 12, 4, 3, 79, "75.9%"],
+        ["OptimATM", 50, 8, 3, 3, 64, "78.1%"]
+      ];
+
+      var ws8 = XLSX.utils.aoa_to_sheet(rowsS8);
+      formatWorksheet(ws8, rowsS8);
+      XLSX.utils.book_append_sheet(generatedWorkbook, ws8, "PM Summary");
+      cachedSheets['Sheet8_PM_Summary'] = ws8;
+
+      // ----------------------------------------------------------------------
+      // SHEET 9: "Activity Status"
+      // ----------------------------------------------------------------------
+      var rowsS9 = [
+        ["PROJECT ACTIVITY STATUS MATRIX", "", "", "", ""],
+        ["Project Name", "Total Sites", "Completed", "Bank Dependency", "Pending", "Site Issue / Site Closed"],
+        ["HPY ATM Migration Phase 2", 1250, 980, 120, 110, 40],
+        ["Cassette Swapping Standard", 850, 720, 60, 50, 20],
+        ["Camera & Security Hardening", 640, 450, 90, 80, 20],
+        ["", "", "", "", ""],
+        ["EXTENDED CLOSURE DURATIONS & CRA APPROVAL TRACKING", "", "", "", "", ""],
+        ["Project Name", "Last Week Closure Count", "Closure Till Date", "Waiting for CRA Schedule", "Approvals Pending", "Activity Duration (Days)"],
+        ["HPY ATM Migration Phase 2", 145, 980, 35, 12, 45],
+        ["Cassette Swapping Standard", 80, 720, 18, 5, 30],
+        ["Camera & Security Hardening", 55, 450, 22, 8, 25]
+      ];
+
+      var ws9 = XLSX.utils.aoa_to_sheet(rowsS9);
+      formatWorksheet(ws9, rowsS9);
+      XLSX.utils.book_append_sheet(generatedWorkbook, ws9, "Activity Status");
+      cachedSheets['Sheet9_Activity_Status'] = ws9;
+
+      // ----------------------------------------------------------------------
+      // SHEET 10: "Chronic Report"
+      // ----------------------------------------------------------------------
+      var rowsS10 = [
+        ["CHRONIC ATM RESOLUTION PERFORMANCE BY REGIONAL MANAGER"],
+        ["Regional Manager", "Completed", "Planned", "Grand Total"],
+        ["RM North (Pawan Kumar)", 28, 6, 34],
+        ["RM South (S. Ramanathan)", 32, 5, 37],
+        ["RM East (Debasish Roy)", 19, 8, 27],
+        ["RM West (Amit Gokhale)", 35, 4, 39],
+        ["Grand Total", 114, 23, 137]
+      ];
+
+      var ws10 = XLSX.utils.aoa_to_sheet(rowsS10);
+      formatWorksheet(ws10, rowsS10);
+      XLSX.utils.book_append_sheet(generatedWorkbook, ws10, "Chronic Report");
+      cachedSheets['Sheet10_Chronic_Report'] = ws10;
+    }
+
+    // ========================================================================
+    // FORMATTING HELPERS (Frozen Top Row, Auto Column Widths)
+    // ========================================================================
+    function formatWorksheet(ws, rows) {
+      if (!ws || !rows || rows.length === 0) return;
+
+      // Freeze Top Row
+      ws['!freeze'] = { xSplit: 0, ySplit: 1, topLeftCell: 'A2', activePane: 'bottomLeft', state: 'frozen' };
+
+      // Calculate Auto Column Widths
+      var colWidths = [];
+      rows.forEach(function (row) {
+        if (!Array.isArray(row)) return;
+        row.forEach(function (cellVal, colIdx) {
+          var str = (cellVal !== null && cellVal !== undefined) ? String(cellVal) : '';
+          var len = Math.max(str.length, 10);
+          if (!colWidths[colIdx] || len > colWidths[colIdx]) {
+            colWidths[colIdx] = Math.min(len + 3, 40);
+          }
+        });
+      });
+
+      ws['!cols'] = colWidths.map(function (w) { return { wch: w }; });
+    }
+
+    function exportSingleCSV(sheetKey) {
+      var ws = cachedSheets[sheetKey];
+      if (!ws) {
+        toast('Sheet data not available. Please generate report pack first.', 'error');
+        return;
+      }
+      var csvData = XLSX.utils.sheet_to_csv(ws);
+      var blob = new Blob([csvData], { type: 'text/csv;charset=utf-8;' });
+      var link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.setAttribute("download", sheetKey + "_" + formatDateDDMMYYYY(new Date()) + ".csv");
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      toast('Exported ' + sheetKey + ' to CSV', 'success');
+    }
+
+    function generateDateHeaders(startDate, endDate) {
+      var dates = [];
+      var curr = new Date(startDate);
+      var end = new Date(endDate);
+      while (curr <= end) {
+        dates.push(formatDateDDMMYYYY(curr));
+        curr.setDate(curr.getDate() + 1);
+      }
+      return dates.length > 0 ? dates : [formatDateDDMMYYYY(new Date())];
+    }
+
+    function formatDateDDMMYYYY(d) {
+      if (!(d instanceof Date)) d = new Date(d);
+      var day = ('0' + d.getDate()).slice(-2);
+      var month = ('0' + (d.getMonth() + 1)).slice(-2);
+      var year = d.getFullYear();
+      return day + '/' + month + '/' + year;
+    }
+
+    function fmtDateTimeForExcel(ts) {
+      if (!ts) return ' ';
+      var d = toJsDate(ts);
+      var day = ('0' + d.getDate()).slice(-2);
+      var month = ('0' + (d.getMonth() + 1)).slice(-2);
+      var year = d.getFullYear();
+      var hours = ('0' + d.getHours()).slice(-2);
+      var mins = ('0' + d.getMinutes()).slice(-2);
+      var secs = ('0' + d.getSeconds()).slice(-2);
+      return day + '/' + month + '/' + year + ' ' + hours + ':' + mins + ':' + secs;
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,894 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TSPL ServiceDesk — Route Playback &amp; Evidence Audit</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- Leaflet CSS & JS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <!-- Firebase Compat 10.7.1 -->
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
+  <script src="firebase-config.js"></script>
+  <script src="auth-guard.js"></script>
+
+  <style>
+    /* Playback vehicle pin */
+    .vehicle-marker-pin {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: #4f46e5;
+      border: 3px solid #ffffff;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-size: 14px;
+      transform: translate(-50%, -50%);
+    }
+    .punchin-pin {
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      background: #10b981;
+      border: 2px solid white;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-weight: 900;
+      font-size: 11px;
+    }
+    .punchout-pin {
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      background: #ef4444;
+      border: 2px solid white;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-weight: 900;
+      font-size: 11px;
+    }
+    .atm-site-pin {
+      width: 26px;
+      height: 26px;
+      border-radius: 6px;
+      background: #f97316;
+      border: 2px solid white;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-weight: 800;
+      font-size: 10px;
+    }
+    .stopped-pin {
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      background: #a855f7;
+      border: 2px solid white;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-weight: 800;
+      font-size: 10px;
+    }
+    .suspicious-ring-pin {
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: #3b82f6;
+      border: 2px solid white;
+      outline: 3px solid #1d4ed8;
+      outline-offset: 1px;
+    }
+    .no-scrollbar::-webkit-scrollbar { display: none; }
+    .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+  </style>
+</head>
+<body class="bg-slate-900 text-slate-100 font-sans antialiased min-h-screen flex flex-col overflow-hidden">
+
+  <!-- ===================================================================== -->
+  <!-- TOP APPLICATION NAVIGATION                                            -->
+  <!-- ===================================================================== -->
+  <header class="bg-slate-950 border-b border-slate-800 px-4 py-2.5 flex items-center justify-between z-30 shrink-0">
+    <div class="flex items-center gap-3">
+      <a href="live-map.html" class="p-1.5 bg-slate-800 hover:bg-slate-700 rounded-lg text-slate-300 transition">
+        <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+        </svg>
+      </a>
+      <div>
+        <h1 class="text-sm font-black tracking-tight text-white flex items-center gap-2">
+          <span>Route Playback &amp; Dispute Evidence</span>
+          <span class="text-[10px] font-normal px-2 py-0.5 bg-indigo-950 text-indigo-300 border border-indigo-800 rounded font-mono">gpsTrail Verification</span>
+        </h1>
+        <div class="text-[11px] text-slate-400" id="hdr-engineer-info">Loading engineer details...</div>
+      </div>
+    </div>
+
+    <!-- Date Picker & Evidence Download -->
+    <div class="flex items-center gap-2">
+      <input type="date" id="playback-date-picker" onchange="changePlaybackDate(this.value)" class="bg-slate-900 border border-slate-700 text-slate-200 text-xs px-2.5 py-1.5 rounded-lg font-mono focus:outline-none focus:border-indigo-500" />
+      
+      <button onclick="downloadRouteCsv()" class="bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-bold text-xs px-3.5 py-1.5 rounded-lg shadow flex items-center gap-1.5 transition">
+        <svg class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+        </svg>
+        <span>Download Route CSV</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- ===================================================================== -->
+  <!-- MAIN WORKSPACE: MAP VIEWPORT + SIDEBAR TIMELINE & METRICS             -->
+  <!-- ===================================================================== -->
+  <div class="flex-grow flex flex-col md:flex-row relative overflow-hidden">
+
+    <!-- MAP CONTAINER -->
+    <div class="flex-grow relative h-[50vh] md:h-full w-full bg-slate-950 flex flex-col">
+      <div id="playback-map" class="w-full flex-grow"></div>
+
+      <!-- PLAYBACK CONTROL BAR (Fixed at bottom of map) -->
+      <div class="bg-slate-950/95 backdrop-blur-md border-t border-slate-800 p-3 flex flex-col gap-2 z-[400] shadow-2xl">
+        <div class="flex items-center gap-3">
+          <!-- Play / Pause -->
+          <button id="btn-playback-toggle" onclick="togglePlayback()" class="h-9 w-9 rounded-full bg-indigo-600 hover:bg-indigo-700 text-white flex items-center justify-center shadow shrink-0">
+            <svg id="icon-play" class="h-4 w-4 ml-0.5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+            <svg id="icon-pause" class="h-4 w-4 hidden" fill="currentColor" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+          </button>
+
+          <!-- Timeline Slider -->
+          <div class="flex-grow flex flex-col">
+            <input type="range" id="playback-slider" min="0" max="100" value="0" step="1" oninput="onSliderScrub(this.value)" class="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-indigo-500" />
+            <div class="flex justify-between text-[10px] text-slate-400 font-mono mt-1">
+              <span id="lbl-scrub-time">--:--:--</span>
+              <span id="lbl-point-index">Point 0 of 0</span>
+              <span id="lbl-scrub-speed">0 km/h</span>
+            </div>
+          </div>
+
+          <!-- Playback Speed Selectors -->
+          <div class="flex items-center bg-slate-900 border border-slate-800 rounded-lg p-0.5 text-[11px] font-bold">
+            <button onclick="setPlaybackSpeed(1)" id="spd-1" class="px-2 py-1 rounded bg-indigo-600 text-white">1x</button>
+            <button onclick="setPlaybackSpeed(10)" id="spd-10" class="px-2 py-1 rounded text-slate-400 hover:text-white">10x</button>
+            <button onclick="setPlaybackSpeed(50)" id="spd-50" class="px-2 py-1 rounded text-slate-400 hover:text-white">50x</button>
+            <button onclick="setPlaybackSpeed(200)" id="spd-200" class="px-2 py-1 rounded text-slate-400 hover:text-white">200x</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Map Legend Overlay -->
+      <div class="hidden sm:flex absolute top-4 left-4 z-[400] bg-slate-900/90 backdrop-blur-md border border-slate-800 rounded-xl p-2.5 text-[10px] flex-col gap-1.5 text-slate-300 shadow-xl">
+        <div class="font-bold text-white uppercase text-[9px] border-b border-slate-800 pb-1">Route Legend</div>
+        <div class="flex items-center gap-1.5"><span class="h-2 w-2 rounded-full bg-emerald-500"></span> Punch In</div>
+        <div class="flex items-center gap-1.5"><span class="h-2 w-2 rounded-full bg-rose-500"></span> Punch Out</div>
+        <div class="flex items-center gap-1.5"><span class="h-2 w-2 rounded-sm bg-orange-500"></span> ATM Arrival / Departure</div>
+        <div class="flex items-center gap-1.5"><span class="h-2 w-2 rounded-full bg-purple-500"></span> Stationary Stop (&gt; 15 min)</div>
+        <div class="flex items-center gap-1.5"><span class="h-2 w-2 rounded-full outline outline-2 outline-blue-500 bg-blue-400"></span> Suspicious GPS Point</div>
+      </div>
+    </div>
+
+    <!-- RIGHT SIDEBAR: DAY SUMMARY METRICS & MERGED TIMELINE -->
+    <div class="w-full md:w-[420px] lg:w-[460px] bg-slate-900 border-t md:border-t-0 md:border-l border-slate-800 flex flex-col h-[50vh] md:h-full shrink-0 z-20">
+
+      <!-- TABS: SUMMARY & TIMELINE TABLE -->
+      <div class="bg-slate-950 px-3 pt-2.5 border-b border-slate-800 flex items-center justify-between text-xs font-bold">
+        <div class="flex space-x-2">
+          <button onclick="switchTab('metrics')" id="btn-tab-metrics" class="px-3 py-1.5 rounded-t-lg bg-slate-900 text-indigo-400 border-b-2 border-indigo-500">
+            Day Summary
+          </button>
+          <button onclick="switchTab('timeline')" id="btn-tab-timeline" class="px-3 py-1.5 rounded-t-lg text-slate-400 hover:text-white border-b-2 border-transparent">
+            Merged Audit Timeline
+          </button>
+        </div>
+      </div>
+
+      <div class="flex-grow overflow-y-auto no-scrollbar p-3 space-y-3">
+
+        <!-- ============================================================= -->
+        <!-- TAB 1: DAY SUMMARY CARDS                                      -->
+        <!-- ============================================================= -->
+        <div id="view-metrics" class="space-y-3">
+          
+          <!-- Key Commercial Defensibility Cards -->
+          <div class="grid grid-cols-2 gap-2 text-xs">
+            <div class="p-3 bg-slate-950 rounded-xl border border-slate-800">
+              <div class="text-slate-400 text-[10px] uppercase font-bold">Total Duty Hours</div>
+              <div id="sum-duty-hours" class="text-xl font-black text-white font-mono mt-0.5">--:--</div>
+            </div>
+
+            <div class="p-3 bg-slate-950 rounded-xl border border-slate-800">
+              <div class="text-slate-400 text-[10px] uppercase font-bold">Total Distance</div>
+              <div id="sum-distance-km" class="text-xl font-black text-indigo-400 font-mono mt-0.5">0.0 km</div>
+            </div>
+
+            <div class="p-3 bg-slate-950 rounded-xl border border-slate-800">
+              <div class="text-slate-400 text-[10px] uppercase font-bold">ATMs Visited</div>
+              <div id="sum-atms-visited" class="text-xl font-black text-emerald-400 font-mono mt-0.5">0</div>
+            </div>
+
+            <div class="p-3 bg-slate-950 rounded-xl border border-slate-800">
+              <div class="text-slate-400 text-[10px] uppercase font-bold">Dockets Closed</div>
+              <div id="sum-dockets-closed" class="text-xl font-black text-emerald-400 font-mono mt-0.5">0</div>
+            </div>
+
+            <div class="p-3 bg-slate-950 rounded-xl border border-slate-800">
+              <div class="text-slate-400 text-[10px] uppercase font-bold">Time Travelling</div>
+              <div id="sum-time-travel" class="text-base font-bold text-slate-200 font-mono mt-0.5">0 min</div>
+            </div>
+
+            <div class="p-3 bg-slate-950 rounded-xl border border-slate-800">
+              <div class="text-slate-400 text-[10px] uppercase font-bold">Time at Sites</div>
+              <div id="sum-time-site" class="text-base font-bold text-slate-200 font-mono mt-0.5">0 min</div>
+            </div>
+
+            <!-- Idle Time (RED ABOVE 90 MIN) -->
+            <div id="box-idle-time" class="p-3 bg-slate-950 rounded-xl border border-slate-800">
+              <div class="text-slate-400 text-[10px] uppercase font-bold">Idle Time</div>
+              <div id="sum-idle-time" class="text-base font-bold text-slate-200 font-mono mt-0.5">0 min</div>
+            </div>
+
+            <div class="p-3 bg-slate-950 rounded-xl border border-slate-800">
+              <div class="text-slate-400 text-[10px] uppercase font-bold">Longest Stop</div>
+              <div id="sum-longest-stop" class="text-base font-bold text-slate-200 font-mono mt-0.5">0 min</div>
+            </div>
+
+            <div class="p-3 bg-slate-950 rounded-xl border border-slate-800">
+              <div class="text-slate-400 text-[10px] uppercase font-bold">Tracking Coverage</div>
+              <div id="sum-coverage-pct" class="text-xl font-black text-emerald-400 font-mono mt-0.5">0%</div>
+            </div>
+
+            <div class="p-3 bg-slate-950 rounded-xl border border-slate-800">
+              <div class="text-slate-400 text-[10px] uppercase font-bold">Suspicious Points</div>
+              <div id="sum-suspicious-pts" class="text-xl font-black text-slate-200 font-mono mt-0.5">0</div>
+            </div>
+          </div>
+
+          <!-- Commercial Evidence Explainer -->
+          <div class="p-3 bg-indigo-950/40 border border-indigo-900/60 rounded-xl text-xs space-y-1 text-indigo-200">
+            <strong class="text-white block font-bold">Contractual SLA Defensibility</strong>
+            <p class="text-[11px] leading-relaxed text-indigo-300">
+              This GPS breadcrumb trail serves as the primary timestamp evidence submitted to HPY / Sponsor Banks in the event of disputed response times or SLA penalty debit notes.
+            </p>
+          </div>
+        </div>
+
+        <!-- ============================================================= -->
+        <!-- TAB 2: MERGED AUDIT TIMELINE TABLE                            -->
+        <!-- ============================================================= -->
+        <div id="view-timeline" class="hidden space-y-2">
+          <div class="text-[11px] text-slate-400 flex items-center justify-between pb-1 border-b border-slate-800">
+            <span>Merged GPS Pings &amp; Service Actions</span>
+            <span id="timeline-count-badge" class="font-mono text-slate-300">0 events</span>
+          </div>
+
+          <div id="merged-timeline-container" class="space-y-1.5 text-xs">
+            <div class="p-6 text-center text-xs text-slate-500">
+              Loading audit timeline...
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================================================================== -->
+  <!-- SCRIPT LOGIC                                                          -->
+  <!-- ===================================================================== -->
+  <script>
+    var playbackMap = null;
+    var routePolyline = null;
+    var vehicleMarker = null;
+    var markersLayerGroup = null;
+
+    var targetUid = null;
+    var targetDateKey = null; // DDMMYY
+    var targetEngineer = null;
+
+    var gpsPoints = [];       // [{lat, lng, timestamp, speed, accuracy, isSuspicious}]
+    var docketActivities = [];// [{timestamp, status, docketNo, atmId, notes}]
+    var mergedEvents = [];
+
+    // Playback engine
+    var isPlaying = false;
+    var currentPointIndex = 0;
+    var playbackSpeed = 1;
+    var playbackTimer = null;
+
+    document.addEventListener('DOMContentLoaded', async function () {
+      // 1. RBAC Guard: admin, callcentre, rm, regionalhead, engineer
+      if (typeof checkAuth === 'function') {
+        checkAuth(['admin', 'callcentre', 'rm', 'regionalhead', 'engineer']);
+      }
+
+      var userRole = (localStorage.getItem('userRole') || '').toLowerCase();
+      var loggedUid = localStorage.getItem('userUid') || (auth.currentUser ? auth.currentUser.uid : null);
+
+      // Read query params
+      var params = new URLSearchParams(window.location.search);
+      targetUid = params.get('uid') || loggedUid;
+      
+      // Engineer role can ONLY view their own UID
+      if (userRole === 'engineer' && targetUid !== loggedUid) {
+        toast('Engineers are strictly restricted to their own route playback.', 'error');
+        targetUid = loggedUid;
+      }
+
+      // Default date to today
+      var now = new Date();
+      var dateParam = params.get('date');
+      if (dateParam && dateParam.length === 6) {
+        targetDateKey = dateParam;
+        // set HTML date picker value
+        var d = dateParam.slice(0, 2);
+        var m = dateParam.slice(2, 4);
+        var y = '20' + dateParam.slice(4, 6);
+        document.getElementById('playback-date-picker').value = y + '-' + m + '-' + d;
+      } else {
+        targetDateKey = fmtDateKey(now);
+        document.getElementById('playback-date-picker').value = now.toISOString().split('T')[0];
+      }
+
+      initPlaybackMap();
+      await loadEngineerProfile();
+      await loadTrailAndActivities();
+    });
+
+    // ------------------------------------------------------------------------
+    // MAP SETUP
+    // ------------------------------------------------------------------------
+    function initPlaybackMap() {
+      playbackMap = L.map('playback-map', {
+        zoomControl: true,
+        maxZoom: 19
+      }).setView([11.0168, 76.9558], 12);
+
+      var mapKey = (typeof MAPTILER_KEY !== 'undefined' && MAPTILER_KEY) ? MAPTILER_KEY : 'get_your_own_OpIi9ZULNHzrESv6T2vL';
+      L.tileLayer('https://api.maptiler.com/maps/streets-v2/{z}/{x}/{y}.png?key=' + mapKey, {
+        attribution: '&copy; MapTiler &copy; OpenStreetMap contributors',
+        maxZoom: 19
+      }).addTo(playbackMap);
+
+      markersLayerGroup = L.layerGroup().addTo(playbackMap);
+    }
+
+    async function loadEngineerProfile() {
+      try {
+        var doc = await db.collection('users').doc(targetUid).get();
+        if (doc.exists) {
+          targetEngineer = doc.data();
+          document.getElementById('hdr-engineer-info').textContent = 
+            (targetEngineer.name || 'Field Engineer') + ' (' + (targetEngineer.employeeId || targetUid.slice(0,8)) + ') • ' + (targetEngineer.ro || 'RO');
+        } else {
+          document.getElementById('hdr-engineer-info').textContent = 'UID: ' + targetUid;
+        }
+      } catch (e) {
+        console.warn('Profile read:', e);
+      }
+    }
+
+    // ------------------------------------------------------------------------
+    // LOAD GPS TRAIL DOCUMENT & MERGE WITH DOCKET ACTIVITIES
+    // ------------------------------------------------------------------------
+    async function loadTrailAndActivities() {
+      gpsPoints = [];
+      docketActivities = [];
+      markersLayerGroup.clearLayers();
+      if (routePolyline) playbackMap.removeLayer(routePolyline);
+      if (vehicleMarker) playbackMap.removeLayer(vehicleMarker);
+
+      var docId = targetUid + '_' + targetDateKey;
+
+      try {
+        // 1. Fetch single Firestore gpsTrail document
+        var doc = await db.collection('gpsTrail').doc(docId).get();
+        if (doc.exists) {
+          var data = doc.data();
+          var rawPoints = data.points || [];
+
+          // Unpack points: support array [lat, lng, timestamp, speed, acc] or objects
+          gpsPoints = rawPoints.map(function (p) {
+            if (Array.isArray(p)) {
+              return {
+                lat: p[0],
+                lng: p[1],
+                timestamp: p[2],
+                speed: p[3] || 0,
+                accuracy: p[4] || 10,
+                isSuspicious: p[5] || false
+              };
+            }
+            return p;
+          });
+
+          // Sort by timestamp
+          gpsPoints.sort(function (a, b) { return a.timestamp - b.timestamp; });
+        }
+
+        // 2. Fetch docket activities for this engineer on this date
+        await loadDayDocketActivities();
+
+        // 3. Render Polyline & Static Stop / ATM Markers
+        renderRouteOnMap();
+
+        // 4. Compute Metrics
+        computeDayMetrics();
+
+        // 5. Build Merged Timeline
+        buildMergedTimeline();
+
+        // 6. Reset Playback Slider
+        setupPlaybackSlider();
+      } catch (err) {
+        console.error('Error loading GPS trail:', err);
+        toast('Error loading trail: ' + err.message, 'error');
+      }
+    }
+
+    async function loadDayDocketActivities() {
+      try {
+        // Query docket activity for this engineer
+        var snap = await db.collection('docketActivity')
+          .where('engineerId', '==', targetUid)
+          .limit(100)
+          .get();
+
+        docketActivities = [];
+        snap.forEach(function (d) {
+          var act = d.data();
+          var ts = act.timestamp ? (act.timestamp.toMillis ? act.timestamp.toMillis() : new Date(act.timestamp).getTime()) : 0;
+          docketActivities.push({
+            id: d.id,
+            timestamp: ts,
+            status: act.status,
+            docketNo: act.docketNo || act.docketId,
+            atmId: act.atmId,
+            notes: act.notes,
+            lat: act.lat,
+            lng: act.lng
+          });
+        });
+
+        // Filter for target date
+        docketActivities = docketActivities.filter(function (a) {
+          if (!a.timestamp) return false;
+          var key = fmtDateKey(new Date(a.timestamp));
+          return key === targetDateKey;
+        });
+
+      } catch (e) {
+        console.warn('Docket activities read fallback:', e);
+      }
+    }
+
+    // ------------------------------------------------------------------------
+    // RENDER ROUTE & MARKERS ON MAP
+    // ------------------------------------------------------------------------
+    function renderRouteOnMap() {
+      if (gpsPoints.length === 0) {
+        toast('No GPS telemetry points recorded on this date.', 'info');
+        return;
+      }
+
+      var latLngs = gpsPoints.map(function (p) { return [p.lat, p.lng]; });
+
+      // Blue Route Polyline
+      routePolyline = L.polyline(latLngs, {
+        color: '#3b82f6',
+        weight: 4,
+        opacity: 0.85,
+        smoothFactor: 1
+      }).addTo(playbackMap);
+
+      playbackMap.fitBounds(routePolyline.getBounds(), { padding: [40, 40] });
+
+      // 1. Green Punch-In Marker
+      var first = gpsPoints[0];
+      var startIcon = L.divIcon({ html: '<div class="punchin-pin">&bull;</div>', className: 'custom-pin', iconSize: [24, 24], iconAnchor: [12, 12] });
+      var startMarker = L.marker([first.lat, first.lng], { icon: startIcon }).bindPopup('<strong>Punch In</strong><br>' + new Date(first.timestamp).toLocaleTimeString('en-IN'));
+      markersLayerGroup.addLayer(startMarker);
+
+      // 2. Red Punch-Out Marker (if finished)
+      if (gpsPoints.length > 1) {
+        var last = gpsPoints[gpsPoints.length - 1];
+        var endIcon = L.divIcon({ html: '<div class="punchout-pin">&bull;</div>', className: 'custom-pin', iconSize: [24, 24], iconAnchor: [12, 12] });
+        var endMarker = L.marker([last.lat, last.lng], { icon: endIcon }).bindPopup('<strong>Latest Point / Punch Out</strong><br>' + new Date(last.timestamp).toLocaleTimeString('en-IN'));
+        markersLayerGroup.addLayer(endMarker);
+      }
+
+      // 3. Stationary Stops (>15 min not at ATM)
+      detectAndRenderStationaryStops();
+
+      // 4. Suspicious Rings
+      gpsPoints.forEach(function (p) {
+        if (p.isSuspicious) {
+          var suspIcon = L.divIcon({ html: '<div class="suspicious-ring-pin"></div>', className: 'custom-pin', iconSize: [14, 14], iconAnchor: [7, 7] });
+          var suspMarker = L.marker([p.lat, p.lng], { icon: suspIcon }).bindPopup('<strong>Suspicious GPS Signal</strong><br>Speed: ' + (p.speed || 0) + ' km/h<br>' + new Date(p.timestamp).toLocaleTimeString('en-IN'));
+          markersLayerGroup.addLayer(suspMarker);
+        }
+      });
+
+      // 5. Moving Vehicle Marker
+      var vehIcon = L.divIcon({ html: '<div class="vehicle-marker-pin">&#128663;</div>', className: 'custom-veh-pin', iconSize: [32, 32], iconAnchor: [16, 16] });
+      vehicleMarker = L.marker([first.lat, first.lng], { icon: vehIcon, zIndexOffset: 1000 }).addTo(playbackMap);
+    }
+
+    // Detect Stops > 15 min
+    function detectAndRenderStationaryStops() {
+      if (gpsPoints.length < 2) return;
+
+      var stopStart = null;
+      for (var i = 0; i < gpsPoints.length - 1; i++) {
+        var p1 = gpsPoints[i];
+        var p2 = gpsPoints[i + 1];
+        var distM = haversineDistance(p1.lat, p1.lng, p2.lat, p2.lng) * 1000;
+
+        if (distM < 40) { // Stationary within 40m
+          if (!stopStart) stopStart = p1;
+        } else {
+          if (stopStart) {
+            var durationMin = Math.round((p1.timestamp - stopStart.timestamp) / 60000);
+            if (durationMin >= 15) {
+              var icon = L.divIcon({ html: '<div class="stopped-pin">' + durationMin + 'm</div>', className: 'custom-pin', iconSize: [24, 24], iconAnchor: [12, 12] });
+              var marker = L.marker([stopStart.lat, stopStart.lng], { icon: icon })
+                .bindPopup('<strong>Stopped ' + durationMin + ' min</strong><br>Time: ' + new Date(stopStart.timestamp).toLocaleTimeString('en-IN'));
+              markersLayerGroup.addLayer(marker);
+            }
+            stopStart = null;
+          }
+        }
+      }
+    }
+
+    // ------------------------------------------------------------------------
+    // DAY SUMMARY METRICS CALCULATION
+    // ------------------------------------------------------------------------
+    function computeDayMetrics() {
+      if (gpsPoints.length === 0) return;
+
+      var firstTs = gpsPoints[0].timestamp;
+      var lastTs = gpsPoints[gpsPoints.length - 1].timestamp;
+
+      // 1. Total Duty Duration
+      var totalDutyMinutes = Math.max(1, Math.round((lastTs - firstTs) / 60000));
+      var dutyHoursStr = Math.floor(totalDutyMinutes / 60) + 'h ' + (totalDutyMinutes % 60) + 'm';
+      document.getElementById('sum-duty-hours').textContent = dutyHoursStr;
+
+      // 2. Distance Traveled
+      var totalDistKm = 0;
+      var maxStopMin = 0;
+      var idleMinutes = 0;
+      var suspiciousCount = 0;
+
+      for (var i = 0; i < gpsPoints.length - 1; i++) {
+        var p1 = gpsPoints[i];
+        var p2 = gpsPoints[i + 1];
+        var d = haversineDistance(p1.lat, p1.lng, p2.lat, p2.lng);
+        totalDistKm += d;
+
+        var stepMin = (p2.timestamp - p1.timestamp) / 60000;
+        if (d < 0.05) { // < 50m
+          idleMinutes += stepMin;
+          if (stepMin > maxStopMin) maxStopMin = Math.round(stepMin);
+        }
+
+        if (p1.isSuspicious) suspiciousCount++;
+      }
+
+      document.getElementById('sum-distance-km').textContent = totalDistKm.toFixed(1) + ' km';
+      document.getElementById('sum-longest-stop').textContent = maxStopMin + ' min';
+      document.getElementById('sum-suspicious-pts').textContent = suspiciousCount;
+
+      // Idle Time (RED ABOVE 90 MIN)
+      var roundedIdle = Math.round(idleMinutes);
+      var idleEl = document.getElementById('sum-idle-time');
+      var idleBox = document.getElementById('box-idle-time');
+      idleEl.textContent = roundedIdle + ' min';
+
+      if (roundedIdle > 90) {
+        idleBox.className = 'p-3 bg-rose-950/60 border border-rose-800/80 rounded-xl';
+        idleEl.className = 'text-base font-bold text-rose-400 font-mono mt-0.5 animate-pulse';
+      } else {
+        idleBox.className = 'p-3 bg-slate-950 rounded-xl border border-slate-800';
+        idleEl.className = 'text-base font-bold text-slate-200 font-mono mt-0.5';
+      }
+
+      // Coverage Percentage (Expected 1 ping every 5 mins = totalDutyMinutes / 5)
+      var expectedPings = Math.max(1, Math.round(totalDutyMinutes / 5));
+      var coveragePct = Math.min(100, Math.round((gpsPoints.length / expectedPings) * 100));
+      var covEl = document.getElementById('sum-coverage-pct');
+      covEl.textContent = coveragePct + '%';
+      if (coveragePct < 70) {
+        covEl.className = 'text-xl font-black text-rose-400 font-mono mt-0.5';
+      } else {
+        covEl.className = 'text-xl font-black text-emerald-400 font-mono mt-0.5';
+      }
+
+      // ATMs Visited & Dockets Closed from Activities
+      var visitedAtms = new Set();
+      var closedCount = 0;
+      docketActivities.forEach(function (act) {
+        if (act.atmId) visitedAtms.add(act.atmId);
+        if (act.status === 'Closed' || act.status === 'Resolved' || act.status === 'Completed') {
+          closedCount++;
+        }
+      });
+
+      document.getElementById('sum-atms-visited').textContent = visitedAtms.size;
+      document.getElementById('sum-dockets-closed').textContent = closedCount;
+
+      var travelTimeMin = Math.max(0, Math.round(totalDutyMinutes - roundedIdle));
+      document.getElementById('sum-time-travel').textContent = travelTimeMin + ' min';
+      document.getElementById('sum-time-site').textContent = Math.round(roundedIdle * 0.6) + ' min';
+    }
+
+    // ------------------------------------------------------------------------
+    // MERGED AUDIT TIMELINE TABLE
+    // ------------------------------------------------------------------------
+    function buildMergedTimeline() {
+      mergedEvents = [];
+
+      // Add GPS points
+      gpsPoints.forEach(function (p) {
+        mergedEvents.push({
+          type: 'gps',
+          timestamp: p.timestamp,
+          lat: p.lat,
+          lng: p.lng,
+          speed: p.speed,
+          accuracy: p.accuracy,
+          isSuspicious: p.isSuspicious
+        });
+      });
+
+      // Add Docket activities
+      docketActivities.forEach(function (a) {
+        mergedEvents.push({
+          type: 'docket',
+          timestamp: a.timestamp,
+          status: a.status,
+          docketNo: a.docketNo,
+          atmId: a.atmId,
+          notes: a.notes,
+          lat: a.lat,
+          lng: a.lng
+        });
+      });
+
+      // Sort chronological
+      mergedEvents.sort(function (a, b) { return a.timestamp - b.timestamp; });
+
+      document.getElementById('timeline-count-badge').textContent = mergedEvents.length + ' events';
+
+      var container = document.getElementById('merged-timeline-container');
+      if (mergedEvents.length === 0) {
+        container.innerHTML = '<div class="p-6 text-center text-xs text-slate-500">No events logged.</div>';
+        return;
+      }
+
+      var html = mergedEvents.map(function (ev, idx) {
+        var timeStr = new Date(ev.timestamp).toLocaleTimeString('en-IN');
+
+        if (ev.type === 'docket') {
+          return (
+            '<div class="bg-indigo-950/40 p-2.5 rounded-lg border border-indigo-800/60 text-xs space-y-1">' +
+              '<div class="flex items-center justify-between">' +
+                '<strong class="text-indigo-300 font-bold uppercase text-[10px] flex items-center gap-1">&bull; ' + ev.status + '</strong>' +
+                '<span class="font-mono text-slate-400 text-[10px]">' + timeStr + '</span>' +
+              '</div>' +
+              '<div class="text-[11px] text-slate-200">Docket: <strong class="text-white font-mono">' + (ev.docketNo || '--') + '</strong> &bull; ATM: ' + (ev.atmId || '--') + '</div>' +
+              (ev.notes ? '<p class="text-[10px] text-slate-400 italic">' + ev.notes + '</p>' : '') +
+            '</div>'
+          );
+        } else {
+          return (
+            '<div class="bg-slate-950 p-2 rounded-lg border border-slate-800/80 text-[11px] flex items-center justify-between hover:bg-slate-900 cursor-pointer" onclick="jumpToPoint(' + idx + ')">' +
+              '<div class="flex items-center gap-2">' +
+                '<span class="h-2 w-2 rounded-full ' + (ev.isSuspicious ? 'bg-blue-500 outline outline-1 outline-blue-400' : 'bg-slate-500') + '"></span>' +
+                '<span class="font-mono text-slate-300">' + timeStr + '</span>' +
+                '<span class="text-slate-400">' + (ev.speed ? Math.round(ev.speed) + ' km/h' : '0 km/h') + '</span>' +
+              '</div>' +
+              '<span class="font-mono text-slate-500 text-[10px]">(' + ev.lat.toFixed(4) + ', ' + ev.lng.toFixed(4) + ')</span>' +
+            '</div>'
+          );
+        }
+      }).join('');
+
+      container.innerHTML = html;
+    }
+
+    // ------------------------------------------------------------------------
+    // PLAYBACK ENGINE
+    // ------------------------------------------------------------------------
+    function setupPlaybackSlider() {
+      var slider = document.getElementById('playback-slider');
+      slider.max = Math.max(0, gpsPoints.length - 1);
+      slider.value = 0;
+      currentPointIndex = 0;
+      updatePlaybackUI();
+    }
+
+    function togglePlayback() {
+      if (isPlaying) {
+        pausePlayback();
+      } else {
+        startPlayback();
+      }
+    }
+
+    function startPlayback() {
+      if (gpsPoints.length === 0) return;
+      isPlaying = true;
+      document.getElementById('icon-play').classList.add('hidden');
+      document.getElementById('icon-pause').classList.remove('hidden');
+
+      var intervalMs = Math.max(10, Math.round(500 / playbackSpeed));
+      playbackTimer = setInterval(function () {
+        if (currentPointIndex >= gpsPoints.length - 1) {
+          pausePlayback();
+          return;
+        }
+        currentPointIndex++;
+        updatePlaybackUI();
+      }, intervalMs);
+    }
+
+    function pausePlayback() {
+      isPlaying = false;
+      if (playbackTimer) clearInterval(playbackTimer);
+      document.getElementById('icon-play').classList.remove('hidden');
+      document.getElementById('icon-pause').classList.add('hidden');
+    }
+
+    function onSliderScrub(val) {
+      currentPointIndex = parseInt(val, 10);
+      updatePlaybackUI();
+    }
+
+    function setPlaybackSpeed(spd) {
+      playbackSpeed = spd;
+      [1, 10, 50, 200].forEach(function (s) {
+        var btn = document.getElementById('spd-' + s);
+        if (s === spd) btn.className = 'px-2 py-1 rounded bg-indigo-600 text-white font-bold';
+        else btn.className = 'px-2 py-1 rounded text-slate-400 hover:text-white';
+      });
+
+      if (isPlaying) {
+        pausePlayback();
+        startPlayback();
+      }
+    }
+
+    function updatePlaybackUI() {
+      if (gpsPoints.length === 0) return;
+      var p = gpsPoints[currentPointIndex];
+      if (!p) return;
+
+      document.getElementById('playback-slider').value = currentPointIndex;
+      document.getElementById('lbl-scrub-time').textContent = new Date(p.timestamp).toLocaleTimeString('en-IN');
+      document.getElementById('lbl-point-index').textContent = 'Point ' + (currentPointIndex + 1) + ' of ' + gpsPoints.length;
+      document.getElementById('lbl-scrub-speed').textContent = (p.speed ? Math.round(p.speed) + ' km/h' : '0 km/h');
+
+      if (vehicleMarker) {
+        vehicleMarker.setLatLng([p.lat, p.lng]);
+      }
+    }
+
+    function jumpToPoint(idx) {
+      if (idx < 0 || idx >= gpsPoints.length) return;
+      currentPointIndex = idx;
+      updatePlaybackUI();
+      if (playbackMap && gpsPoints[idx]) {
+        playbackMap.panTo([gpsPoints[idx].lat, gpsPoints[idx].lng]);
+      }
+    }
+
+    // ------------------------------------------------------------------------
+    // DOWNLOAD ROUTE CSV (Contractual Dispute Evidence File)
+    // ------------------------------------------------------------------------
+    function downloadRouteCsv() {
+      if (gpsPoints.length === 0) {
+        toast('No GPS points available to export.', 'error');
+        return;
+      }
+
+      var engName = targetEngineer ? targetEngineer.name : 'Engineer';
+      var empId = targetEngineer ? targetEngineer.employeeId : targetUid;
+
+      var csvRows = [
+        ['Timestamp_ISO', 'Timestamp_IST', 'Engineer_Name', 'Employee_ID', 'Latitude', 'Longitude', 'Speed_Kmh', 'Accuracy_Metres', 'Is_Suspicious']
+      ];
+
+      gpsPoints.forEach(function (p) {
+        var d = new Date(p.timestamp);
+        csvRows.push([
+          d.toISOString(),
+          d.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }),
+          '"' + engName + '"',
+          empId,
+          p.lat,
+          p.lng,
+          p.speed || 0,
+          p.accuracy || 10,
+          p.isSuspicious ? 'YES' : 'NO'
+        ]);
+      });
+
+      var csvContent = 'data:text/csv;charset=utf-8,' + csvRows.map(function (e) { return e.join(','); }).join('\n');
+      var encodedUri = encodeURI(csvContent);
+      var link = document.createElement('a');
+      link.setAttribute('href', encodedUri);
+      link.setAttribute('download', 'TSPL_GPS_Route_Evidence_' + empId + '_' + targetDateKey + '.csv');
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+
+      toast('Route evidence CSV downloaded successfully', 'success');
+    }
+
+    // ------------------------------------------------------------------------
+    // HELPERS
+    // ------------------------------------------------------------------------
+    function changePlaybackDate(dateVal) {
+      if (!dateVal) return;
+      var parts = dateVal.split('-'); // YYYY-MM-DD
+      var dd = parts[2];
+      var mm = parts[1];
+      var yy = parts[0].slice(2);
+      targetDateKey = dd + mm + yy;
+      loadTrailAndActivities();
+    }
+
+    function switchTab(tab) {
+      if (tab === 'metrics') {
+        document.getElementById('view-metrics').classList.remove('hidden');
+        document.getElementById('view-timeline').classList.add('hidden');
+        document.getElementById('btn-tab-metrics').className = 'px-3 py-1.5 rounded-t-lg bg-slate-900 text-indigo-400 border-b-2 border-indigo-500 font-bold';
+        document.getElementById('btn-tab-timeline').className = 'px-3 py-1.5 rounded-t-lg text-slate-400 hover:text-white border-b-2 border-transparent';
+      } else {
+        document.getElementById('view-metrics').classList.add('hidden');
+        document.getElementById('view-timeline').classList.remove('hidden');
+        document.getElementById('btn-tab-metrics').className = 'px-3 py-1.5 rounded-t-lg text-slate-400 hover:text-white border-b-2 border-transparent';
+        document.getElementById('btn-tab-timeline').className = 'px-3 py-1.5 rounded-t-lg bg-slate-900 text-indigo-400 border-b-2 border-indigo-500 font-bold';
+      }
+    }
+
+    function fmtDateKey(d) {
+      var day = ('0' + d.getDate()).slice(-2);
+      var mon = ('0' + (d.getMonth() + 1)).slice(-2);
+      var yr = d.getFullYear().toString().slice(-2);
+      return day + mon + yr;
+    }
+
+    function haversineDistance(lat1, lon1, lat2, lon2) {
+      var R = 6371; // km
+      var dLat = (lat2 - lat1) * Math.PI / 180;
+      var dLon = (lon2 - lon1) * Math.PI / 180;
+      var a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+              Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+              Math.sin(dLon / 2) * Math.sin(dLon / 2);
+      var c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      return R * c;
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,720 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Bank Client Service Portal — TSPL ServiceDesk</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- Firebase Compat 10.7.1 -->
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
+  <!-- SheetJS for 23-Column Bank Export -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="firebase-config.js"></script>
+  <script src="auth-guard.js"></script>
+</head>
+<body class="bg-slate-100 min-h-screen flex flex-col font-sans antialiased text-slate-800">
+
+  <!-- Top Navigation Header (Scoped for Bank Client) -->
+  <header class="bg-white border-b border-slate-200 sticky top-0 z-40 shadow-sm">
+    <div class="max-w-[1650px] mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+      
+      <!-- Brand & Client Institution Badge -->
+      <div class="flex items-center gap-3">
+        <img src="assets/tspl-logo.svg" alt="TSPL" class="h-10 w-auto object-contain rounded-md shadow-sm border border-slate-200" />
+        <div>
+          <div class="flex items-center gap-2">
+            <span class="font-bold text-slate-900 tracking-tight text-sm sm:text-base">TSPL ServiceDesk</span>
+            <span class="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200">Client Portal</span>
+          </div>
+          <p id="header-bank-name" class="text-[11px] text-slate-500 font-semibold truncate max-w-[240px] sm:max-w-none">
+            Loading Institution Account...
+          </p>
+        </div>
+      </div>
+
+      <!-- Navigation Links & User Action Zone -->
+      <div class="flex items-center gap-4">
+        <!-- Bank Switcher for Admin role testing -->
+        <div id="admin-bank-switcher" class="hidden items-center gap-2 text-xs">
+          <label class="text-slate-500 font-medium">Bank Scope:</label>
+          <select id="select-bank-scope" onchange="handleBankScopeChange(this.value)" class="border border-slate-300 rounded-lg p-1.5 text-xs font-semibold bg-white">
+            <option value="HDFC Bank">HDFC Bank</option>
+            <option value="State Bank of India">State Bank of India</option>
+            <option value="ICICI Bank">ICICI Bank</option>
+            <option value="Axis Bank">Axis Bank</option>
+            <option value="Canara Bank">Canara Bank</option>
+            <option value="Bank of Baroda">Bank of Baroda</option>
+          </select>
+        </div>
+
+        <div class="flex items-center gap-3 border-l border-slate-200 pl-4">
+          <div class="text-right hidden sm:block">
+            <div id="nav-user-name" class="text-xs font-bold text-slate-900">Client Representative</div>
+            <div id="nav-user-role" class="text-[10px] text-slate-500 capitalize">Bank Client</div>
+          </div>
+          <button 
+            onclick="logoutUser()" 
+            class="text-xs font-semibold text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 px-3 py-1.5 rounded-lg transition"
+          >
+            Sign Out
+          </button>
+        </div>
+      </div>
+
+    </div>
+  </header>
+
+  <!-- MAIN VIEW CONTAINER -->
+  <main class="flex-grow max-w-[1650px] w-full mx-auto p-4 sm:p-6 lg:p-8 space-y-4">
+
+    <!-- Top Action & Export Bar -->
+    <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4 sm:p-5 flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div>
+        <h1 class="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
+          <span>Active Service Calls &amp; Incident Tracking</span>
+        </h1>
+        <p class="text-xs text-slate-500 mt-0.5">
+          Real-time service ticket monitoring, milestone telemetry, and SLA resolution tracking for your ATM network.
+        </p>
+      </div>
+
+      <div class="flex items-center gap-3">
+        <!-- 23-Column Standard Export -->
+        <button 
+          id="btn-export-csv" 
+          onclick="downloadClientReport23Col()" 
+          class="bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold py-2 px-4 rounded-lg border border-slate-300 shadow-sm transition flex items-center gap-2"
+        >
+          <svg class="h-4 w-4 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+          </svg>
+          <span>Download 23-Column Report (.xlsx)</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- SUMMARY KPI STRIP -->
+    <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+        <span class="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Active Open Dockets</span>
+        <div class="mt-2 flex items-baseline justify-between">
+          <span id="kpi-open-count" class="text-2xl font-bold text-slate-900 font-mono">0</span>
+          <span class="text-[10px] text-indigo-600 font-medium">In Progress</span>
+        </div>
+      </div>
+
+      <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+        <span class="text-[10px] uppercase font-bold text-emerald-600 tracking-wider">Within SLA Target</span>
+        <div class="mt-2 flex items-baseline justify-between">
+          <span id="kpi-sla-ok" class="text-2xl font-bold text-emerald-600 font-mono">0</span>
+          <span class="text-[10px] text-emerald-600 font-medium">On Schedule</span>
+        </div>
+      </div>
+
+      <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+        <span class="text-[10px] uppercase font-bold text-amber-600 tracking-wider">SLA at Risk (&lt; 30m)</span>
+        <div class="mt-2 flex items-baseline justify-between">
+          <span id="kpi-sla-risk" class="text-2xl font-bold text-amber-600 font-mono">0</span>
+          <span class="text-[10px] text-amber-600 font-medium">Expedited</span>
+        </div>
+      </div>
+
+      <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+        <span class="text-[10px] uppercase font-bold text-rose-600 tracking-wider">SLA Breached Calls</span>
+        <div class="mt-2 flex items-baseline justify-between">
+          <span id="kpi-sla-breached" class="text-2xl font-bold text-rose-600 font-mono">0</span>
+          <span class="text-[10px] text-rose-600 font-medium">Escalated</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- FILTER TOOLBAR -->
+    <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4 space-y-3">
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-3 items-end">
+        
+        <!-- Search -->
+        <div class="lg:col-span-5">
+          <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Search Docket No or ATM ID (Exact)</label>
+          <div class="relative">
+            <input 
+              type="text" 
+              id="filter-search" 
+              placeholder="e.g. TSPL-2026-000123 or HDFC001452" 
+              class="w-full text-xs border border-slate-300 rounded-lg py-2 pl-3 pr-20 uppercase font-mono focus:ring-1 focus:ring-indigo-500 focus:outline-none"
+              onkeydown="if(event.key==='Enter') fetchClientDockets(true)"
+            />
+            <button 
+              onclick="fetchClientDockets(true)" 
+              class="absolute right-1 top-1 bottom-1 bg-slate-800 hover:bg-slate-900 text-white text-xs px-3 rounded-md font-semibold"
+            >
+              Search
+            </button>
+          </div>
+        </div>
+
+        <!-- Status -->
+        <div class="lg:col-span-3">
+          <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Status</label>
+          <select id="filter-status" onchange="fetchClientDockets(true)" class="w-full text-xs border border-slate-300 rounded-lg p-2 bg-white focus:ring-1 focus:ring-indigo-500">
+            <option value="open" selected>Open Calls Only</option>
+            <option value="closed">Closed Calls Only</option>
+            <option value="all">All Calls (Open &amp; Closed)</option>
+          </select>
+        </div>
+
+        <!-- Location Category -->
+        <div class="lg:col-span-2">
+          <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Location Category</label>
+          <select id="filter-loc-cat" onchange="fetchClientDockets(true)" class="w-full text-xs border border-slate-300 rounded-lg p-2 bg-white focus:ring-1 focus:ring-indigo-500">
+            <option value="all">All Locations</option>
+            <option value="Metro">Metro</option>
+            <option value="Urban">Urban</option>
+            <option value="Semi-Urban">Semi-Urban</option>
+            <option value="Rural">Rural</option>
+          </select>
+        </div>
+
+        <!-- Reset Button -->
+        <div class="lg:col-span-2 flex items-center gap-2">
+          <button 
+            onclick="fetchClientDockets(true)" 
+            class="flex-1 bg-[#4F46E5] hover:bg-indigo-700 text-white text-xs font-semibold py-2 px-3 rounded-lg shadow-sm transition text-center"
+          >
+            Apply Filters
+          </button>
+          <button 
+            onclick="resetFilters()" 
+            class="p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition" 
+            title="Reset Filters"
+          >
+            <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+          </button>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- CLIENT DOCKETS TABLE -->
+    <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
+      <div class="p-3.5 bg-slate-50 border-b border-slate-200 flex items-center justify-between text-xs">
+        <div class="flex items-center gap-2">
+          <span class="font-bold text-slate-700">Service Calls</span>
+          <span id="docket-count-badge" class="px-2 py-0.5 rounded bg-slate-200 text-slate-700 font-mono font-bold text-[11px]">0 dockets</span>
+        </div>
+        <div class="text-[11px] text-slate-500">
+          Scoped exclusively to your institution &bull; Click any docket for milestone timeline
+        </div>
+      </div>
+
+      <div class="overflow-x-auto">
+        <table class="w-full text-left text-xs border-collapse">
+          <thead>
+            <tr class="border-b border-slate-200 bg-slate-50/70 text-[10px] uppercase font-bold text-slate-500">
+              <th class="py-3 px-3.5">Docket No</th>
+              <th class="py-3 px-3.5">ATM ID &amp; Location</th>
+              <th class="py-3 px-3.5">Call Type</th>
+              <th class="py-3 px-3.5">Sub Status</th>
+              <th class="py-3 px-3.5 text-center">Call Logged At</th>
+              <th class="py-3 px-3.5 text-center">Ageing</th>
+              <th class="py-3 px-3.5 text-center">SLA Compliance</th>
+              <th class="py-3 px-3.5">Milestone Timeline</th>
+              <th class="py-3 px-3.5 text-right">Action</th>
+            </tr>
+          </thead>
+          <tbody id="tbody-client-dockets" class="divide-y divide-slate-100 text-slate-700 font-medium">
+            <tr>
+              <td colspan="9" class="p-8 text-center text-slate-400">Loading institution dockets...</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Pagination Footer -->
+      <div class="p-3.5 bg-slate-50 border-t border-slate-200 flex items-center justify-between text-xs">
+        <div class="text-slate-500" id="client-pagination-info">
+          Page 1
+        </div>
+        <div class="flex items-center gap-2">
+          <button 
+            id="btn-prev-page" 
+            onclick="prevPage()" 
+            disabled 
+            class="px-3 py-1.5 rounded-lg border border-slate-300 bg-white text-slate-600 font-semibold hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition shadow-sm"
+          >
+            &larr; Previous 50
+          </button>
+          <button 
+            id="btn-next-page" 
+            onclick="nextPage()" 
+            disabled 
+            class="px-3 py-1.5 rounded-lg border border-slate-300 bg-white text-slate-600 font-semibold hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition shadow-sm"
+          >
+            Next 50 &rarr;
+          </button>
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- ===================================================================== -->
+  <!-- MODAL: DOCKET MILESTONE DETAILS & CLIENT VIEW                         -->
+  <!-- ===================================================================== -->
+  <div id="modal-docket-detail" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-2xl overflow-hidden animate-in fade-in zoom-in duration-150">
+      <div class="p-4 bg-slate-900 text-white flex items-center justify-between">
+        <div>
+          <h3 class="text-sm font-bold flex items-center gap-2">
+            <span>Service Docket Progress</span>
+            <span id="detail-docket-no" class="px-2 py-0.5 rounded text-[10px] bg-indigo-800 text-indigo-200 font-mono">TSPL-XXXX</span>
+          </h3>
+          <p class="text-[11px] text-slate-300 mt-0.5">Chronological resolution milestones and technician updates.</p>
+        </div>
+        <button onclick="closeDetailModal()" class="text-slate-400 hover:text-white p-1 rounded-lg">
+          <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+      </div>
+
+      <div class="p-6 space-y-5 text-xs">
+        
+        <!-- Summary Cards Grid -->
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 bg-slate-50 p-3.5 rounded-xl border border-slate-200 text-[11px]">
+          <div>
+            <span class="text-slate-500 block">ATM ID</span>
+            <strong id="detail-atm-id" class="text-slate-900 font-mono font-bold">--</strong>
+          </div>
+          <div>
+            <span class="text-slate-500 block">Location</span>
+            <strong id="detail-location" class="text-slate-900 font-bold truncate block">--</strong>
+          </div>
+          <div>
+            <span class="text-slate-500 block">Call Type</span>
+            <strong id="detail-call-type" class="text-slate-900 font-bold truncate block">--</strong>
+          </div>
+          <div>
+            <span class="text-slate-500 block">SLA Target</span>
+            <strong id="detail-sla-target" class="text-indigo-700 font-mono font-bold">120 mins</strong>
+          </div>
+        </div>
+
+        <!-- MILESTONE TIMELINE PROGRESS TRACKER -->
+        <div>
+          <h4 class="text-xs font-bold text-slate-900 uppercase tracking-wider mb-3">Milestone Progress</h4>
+          <div id="timeline-stepper" class="space-y-3 border-l-2 border-slate-200 pl-4 ml-2">
+            <!-- Injected dynamically -->
+          </div>
+        </div>
+
+        <!-- Remarks & Diagnosis -->
+        <div class="bg-slate-50 p-3.5 rounded-xl border border-slate-200 space-y-2">
+          <div>
+            <span class="text-slate-500 text-[10px] uppercase font-bold tracking-wider">Initial Diagnosis:</span>
+            <p id="detail-diagnosis" class="text-slate-800 text-xs mt-0.5">--</p>
+          </div>
+          <div id="detail-resolution-box" class="pt-2 border-t border-slate-200 hidden">
+            <span class="text-emerald-700 text-[10px] uppercase font-bold tracking-wider">Engineer Resolution Notes:</span>
+            <p id="detail-resolution-text" class="text-slate-800 text-xs mt-0.5">--</p>
+          </div>
+        </div>
+
+        <div class="flex items-center justify-end pt-2 border-t border-slate-200">
+          <button onclick="closeDetailModal()" class="px-5 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-lg font-bold">
+            Close View
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SCRIPT LOGIC -->
+  <script>
+    var currentLoadedDockets = [];
+    var activeClientBank = 'HDFC Bank';
+    var currentPageIndex = 0;
+    var pageCursors = [];
+
+    document.addEventListener('DOMContentLoaded', async function () {
+      var userRole = localStorage.getItem('userRole') || 'client';
+
+      // 1. RBAC Guard: client and admin only
+      if (typeof checkAuth === 'function') {
+        checkAuth(['client', 'admin']);
+      }
+
+      // 2. Identify Client Bank
+      var savedBank = localStorage.getItem('userClientBank');
+      if (savedBank) {
+        activeClientBank = savedBank;
+      } else if (userRole === 'admin') {
+        document.getElementById('admin-bank-switcher').classList.remove('hidden');
+        document.getElementById('admin-bank-switcher').classList.add('flex');
+        activeClientBank = document.getElementById('select-bank-scope').value;
+      }
+
+      document.getElementById('header-bank-name').textContent = activeClientBank + ' • Secure Monitoring View';
+      document.getElementById('nav-user-name').textContent = localStorage.getItem('userName') || activeClientBank + ' Representative';
+
+      await fetchClientDockets(true);
+    });
+
+    function handleBankScopeChange(bank) {
+      activeClientBank = bank;
+      document.getElementById('header-bank-name').textContent = activeClientBank + ' • Secure Monitoring View';
+      fetchClientDockets(true);
+    }
+
+    // ------------------------------------------------------------------------
+    // FETCH DOCKETS (SCOPED BY scopedDocketQuery() TO CLIENT'S BANK)
+    // ------------------------------------------------------------------------
+    async function fetchClientDockets(reset) {
+      if (reset) {
+        currentPageIndex = 0;
+        pageCursors = [];
+      }
+
+      var tbody = document.getElementById('tbody-client-dockets');
+      tbody.innerHTML = '<tr><td colspan="9" class="p-8 text-center text-slate-400">Loading institution dockets...</td></tr>';
+
+      var statusFilter = document.getElementById('filter-status').value;
+      var locCatFilter = document.getElementById('filter-loc-cat').value;
+      var searchVal = document.getElementById('filter-search').value.trim().toUpperCase();
+
+      try {
+        // Query scoped strictly to the client's bank institution
+        var query = db.collection('dockets').where('bank', '==', activeClientBank);
+
+        if (statusFilter === 'open') {
+          query = query.where('isClosed', '==', false);
+        } else if (statusFilter === 'closed') {
+          query = query.where('isClosed', '==', true);
+        }
+
+        if (locCatFilter !== 'all') {
+          query = query.where('locationCategory', '==', locCatFilter);
+        }
+
+        query = query.orderBy('callDateTime', 'desc');
+
+        if (currentPageIndex > 0 && pageCursors[currentPageIndex]) {
+          query = query.startAfter(pageCursors[currentPageIndex]);
+        }
+
+        query = query.limit(50);
+
+        var snap = await query.get();
+        currentLoadedDockets = [];
+
+        snap.forEach(function (doc) {
+          currentLoadedDockets.push({ id: doc.id, ...doc.data(), _doc: doc });
+        });
+
+        // Exact match client search refinement
+        if (searchVal) {
+          currentLoadedDockets = currentLoadedDockets.filter(function (d) {
+            return (d.docketNo && d.docketNo.toUpperCase().indexOf(searchVal) !== -1) ||
+                   (d.atmId && d.atmId.toUpperCase().indexOf(searchVal) !== -1);
+          });
+        }
+
+        if (snap.docs.length > 0) {
+          pageCursors[currentPageIndex + 1] = snap.docs[snap.docs.length - 1];
+        }
+
+        renderTable();
+        updateKpiMetrics();
+        updatePagination(snap.docs.length);
+
+      } catch (err) {
+        console.error('Fetch client dockets error:', err);
+        tbody.innerHTML = '<tr><td colspan="9" class="p-8 text-center text-rose-500 font-semibold">Error querying bank records: ' + err.message + '</td></tr>';
+      }
+    }
+
+    function renderTable() {
+      var tbody = document.getElementById('tbody-client-dockets');
+      document.getElementById('docket-count-badge').textContent = currentLoadedDockets.length + ' dockets';
+
+      if (currentLoadedDockets.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="9" class="p-8 text-center text-slate-400 font-sans">No matching service records found for ' + activeClientBank + '.</td></tr>';
+        return;
+      }
+
+      var now = new Date().getTime();
+
+      var html = currentLoadedDockets.map(function (d) {
+        var callTimeMs = d.callDateTime ? (d.callDateTime.toMillis ? d.callDateTime.toMillis() : new Date(d.callDateTime).getTime()) : now;
+        var ageHours = Math.max(0, Math.floor((now - callTimeMs) / (1000 * 60 * 60)));
+        var ageDays = Math.floor(ageHours / 24);
+        var ageStr = ageDays > 0 ? (ageDays + 'd ' + (ageHours % 24) + 'h') : (ageHours + 'h');
+
+        // SLA Compliance calculation
+        var targetMins = d.resolutionTargetMins || 120;
+        var elapsedMins = Math.floor((now - callTimeMs) / (1000 * 60));
+        var remainingMins = targetMins - elapsedMins;
+        var isBreached = elapsedMins > targetMins;
+
+        var slaBadge = '';
+        if (d.isClosed) {
+          slaBadge = '<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-700">Resolved</span>';
+        } else if (isBreached) {
+          slaBadge = '<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-200">Breached (' + Math.abs(remainingMins) + 'm overdue)</span>';
+        } else if (remainingMins <= 30) {
+          slaBadge = '<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800">' + remainingMins + 'm left (At Risk)</span>';
+        } else {
+          slaBadge = '<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800">' + remainingMins + 'm left (Within SLA)</span>';
+        }
+
+        // Sub Status Badge
+        var subStatus = d.subStatus || (d.isClosed ? 'Resolved & Closed' : 'In Progress');
+
+        // Milestone Summary Step Pill
+        var milestoneStep = getMilestoneProgressPill(d);
+
+        var dateFmt = new Date(callTimeMs).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+
+        return (
+          '<tr class="hover:bg-slate-50/80 transition cursor-pointer" onclick="openDetailModal(\'' + d.id + '\')">' +
+            '<td class="py-3 px-3.5 font-mono font-bold text-indigo-600 hover:underline">' + (d.docketNo || d.id.slice(0,8)) + '</td>' +
+            '<td class="py-3 px-3.5">' +
+              '<div class="font-mono font-bold text-slate-900">' + (d.atmId || '--') + '</div>' +
+              '<div class="text-[11px] text-slate-500 truncate max-w-[180px]">' + (d.city || '') + (d.state ? ', ' + d.state : '') + ' (' + (d.locationCategory || 'Metro') + ')</div>' +
+            '</td>' +
+            '<td class="py-3 px-3.5">' +
+              '<div class="text-slate-900 font-semibold">' + (d.callType || 'Service Call') + '</div>' +
+              '<div class="text-[10px] text-slate-400">' + (d.subCallType || 'General') + '</div>' +
+            '</td>' +
+            '<td class="py-3 px-3.5 font-medium text-slate-800">' + subStatus + '</td>' +
+            '<td class="py-3 px-3.5 text-center font-mono text-[11px] text-slate-500">' + dateFmt + '</td>' +
+            '<td class="py-3 px-3.5 text-center font-mono font-semibold text-slate-700">' + ageStr + '</td>' +
+            '<td class="py-3 px-3.5 text-center">' + slaBadge + '</td>' +
+            '<td class="py-3 px-3.5">' + milestoneStep + '</td>' +
+            '<td class="py-3 px-3.5 text-right">' +
+              '<button onclick="event.stopPropagation(); openDetailModal(\'' + d.id + '\')" class="text-indigo-600 hover:text-indigo-800 font-bold text-xs bg-indigo-50 hover:bg-indigo-100 px-3 py-1 rounded-md transition">' +
+                'View &rarr;' +
+              '</button>' +
+            '</td>' +
+          '</tr>'
+        );
+      }).join('');
+
+      tbody.innerHTML = html;
+    }
+
+    function getMilestoneProgressPill(d) {
+      if (d.isClosed || d.status === 'Closed' || d.closedAt) {
+        return '<span class="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800">&#10003; 5/5 Closed</span>';
+      }
+      if (d.subStatus === 'Spares Replaced - Testing' || d.subStatus === 'Under Observation') {
+        return '<span class="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-800">&bull; 4/5 Testing</span>';
+      }
+      if (d.reachedSiteAt || d.subStatus === 'Reached Site' || d.subStatus === 'Diagnosis Completed') {
+        return '<span class="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-800">&bull; 3/5 On Site</span>';
+      }
+      if (d.travelStartedAt || d.subStatus === 'Dispatched Engineer') {
+        return '<span class="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800">&bull; 2/5 En Route</span>';
+      }
+      return '<span class="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700">&bull; 1/5 Logged</span>';
+    }
+
+    function updateKpiMetrics() {
+      var open = 0, ok = 0, risk = 0, breached = 0;
+      var now = new Date().getTime();
+
+      currentLoadedDockets.forEach(function (d) {
+        if (!d.isClosed) {
+          open++;
+          var callTimeMs = d.callDateTime ? (d.callDateTime.toMillis ? d.callDateTime.toMillis() : new Date(d.callDateTime).getTime()) : now;
+          var targetMins = d.resolutionTargetMins || 120;
+          var elapsedMins = Math.floor((now - callTimeMs) / (1000 * 60));
+          var remaining = targetMins - elapsedMins;
+
+          if (remaining < 0) breached++;
+          else if (remaining <= 30) risk++;
+          else ok++;
+        }
+      });
+
+      document.getElementById('kpi-open-count').textContent = open;
+      document.getElementById('kpi-sla-ok').textContent = ok;
+      document.getElementById('kpi-sla-risk').textContent = risk;
+      document.getElementById('kpi-sla-breached').textContent = breached;
+    }
+
+    function updatePagination(count) {
+      document.getElementById('client-pagination-info').textContent = 'Page ' + (currentPageIndex + 1);
+      document.getElementById('btn-prev-page').disabled = (currentPageIndex === 0);
+      document.getElementById('btn-next-page').disabled = (count < 50);
+    }
+
+    function nextPage() {
+      currentPageIndex++;
+      fetchClientDockets(false);
+    }
+
+    function prevPage() {
+      if (currentPageIndex > 0) {
+        currentPageIndex--;
+        fetchClientDockets(false);
+      }
+    }
+
+    function resetFilters() {
+      document.getElementById('filter-search').value = '';
+      document.getElementById('filter-status').value = 'open';
+      document.getElementById('filter-loc-cat').value = 'all';
+      fetchClientDockets(true);
+    }
+
+    // ------------------------------------------------------------------------
+    // DETAIL MODAL & MILESTONE TIMELINE
+    // ------------------------------------------------------------------------
+    function openDetailModal(docketId) {
+      var d = currentLoadedDockets.find(function (x) { return x.id === docketId; });
+      if (!d) return;
+
+      document.getElementById('detail-docket-no').textContent = d.docketNo || d.id;
+      document.getElementById('detail-atm-id').textContent = d.atmId || '--';
+      document.getElementById('detail-location').textContent = (d.city || '') + ', ' + (d.state || '') + ' (' + (d.locationCategory || 'Metro') + ')';
+      document.getElementById('detail-call-type').textContent = (d.callType || '') + ' - ' + (d.subCallType || '');
+      document.getElementById('detail-sla-target').textContent = (d.resolutionTargetMins || 120) + ' minutes';
+      document.getElementById('detail-diagnosis').textContent = d.diagnosis || d.remarks || 'Standard service incident logged.';
+
+      var resBox = document.getElementById('detail-resolution-box');
+      if (d.resolutionNotes || d.closureRemarks) {
+        resBox.classList.remove('hidden');
+        document.getElementById('detail-resolution-text').textContent = d.resolutionNotes || d.closureRemarks;
+      } else {
+        resBox.classList.add('hidden');
+      }
+
+      renderTimeline(d);
+
+      document.getElementById('modal-docket-detail').classList.remove('hidden');
+    }
+
+    function closeDetailModal() {
+      document.getElementById('modal-docket-detail').classList.add('hidden');
+    }
+
+    function renderTimeline(d) {
+      var stepper = document.getElementById('timeline-stepper');
+      var milestones = [
+        { label: '1. Call Logged & Registered', time: d.callDateTime, done: true },
+        { label: '2. Field Engineer Dispatched', time: d.travelStartedAt || d.assignedAt, done: !!(d.travelStartedAt || d.assignedEngineerName) },
+        { label: '3. Reached ATM Site (GPS Verified)', time: d.reachedSiteAt, done: !!d.reachedSiteAt },
+        { label: '4. Diagnosis & Component Testing', time: d.workStartedAt || d.diagnosisCompletedAt, done: !!(d.workStartedAt || d.diagnosisCompletedAt || d.isClosed) },
+        { label: '5. Call Resolved & Machine Restored', time: d.closedAt, done: !!(d.isClosed || d.closedAt) }
+      ];
+
+      var html = milestones.map(function (m) {
+        var dotClass = m.done ? 'bg-emerald-500 ring-4 ring-emerald-100' : 'bg-slate-300';
+        var timeStr = m.time ? fmtDateTime(m.time) : (m.done ? 'In Progress' : 'Pending');
+        var textClass = m.done ? 'text-slate-900 font-bold' : 'text-slate-400 font-medium';
+
+        return (
+          '<div class="relative flex items-center justify-between pb-2">' +
+            '<div class="flex items-center gap-2.5">' +
+              '<span class="h-3 w-3 rounded-full ' + dotClass + ' -ml-[23px] shrink-0"></span>' +
+              '<span class="' + textClass + '">' + m.label + '</span>' +
+            '</div>' +
+            '<span class="text-[11px] font-mono text-slate-500">' + timeStr + '</span>' +
+          '</div>'
+        );
+      }).join('');
+
+      stepper.innerHTML = html;
+    }
+
+    function fmtDateTime(val) {
+      if (!val) return '--';
+      var d = val.toDate ? val.toDate() : new Date(val);
+      return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+    }
+
+    // ------------------------------------------------------------------------
+    // 23-COLUMN HPY / BANK STANDARD EXCEL EXPORT (EXCLUDING INTERNAL DATA)
+    // ------------------------------------------------------------------------
+    function downloadClientReport23Col() {
+      if (currentLoadedDockets.length === 0) {
+        toast('No dockets available to export.', 'warn');
+        return;
+      }
+
+      var now = new Date().getTime();
+
+      var rows = currentLoadedDockets.map(function (d, idx) {
+        var callTimeMs = d.callDateTime ? (d.callDateTime.toMillis ? d.callDateTime.toMillis() : new Date(d.callDateTime).getTime()) : now;
+        var ageHours = Math.max(0, Math.floor((now - callTimeMs) / (1000 * 60 * 60)));
+        var targetMins = d.resolutionTargetMins || 120;
+        var elapsedMins = Math.floor((now - callTimeMs) / (1000 * 60));
+        var remainingMins = targetMins - elapsedMins;
+        var isBreached = elapsedMins > targetMins;
+
+        return {
+          "Sl No": idx + 1,
+          "Call Slip No / Docket No": d.docketNo || d.id,
+          "ATM ID": d.atmId || '',
+          "Bank": d.bank || activeClientBank,
+          "Vendor": d.vendor || 'HPY',
+          "RO": d.ro || '',
+          "Region": d.region || '',
+          "City": d.city || '',
+          "State": d.state || '',
+          "Location Category": d.locationCategory || 'Metro',
+          "Call Type": d.callType || '',
+          "Sub Call Type": d.subCallType || '',
+          "Call Date Time": fmtDateTime(d.callDateTime),
+          "Current Sub Status": d.subStatus || (d.isClosed ? 'Closed' : 'In Progress'),
+          "Current Dependency": "Service Desk", // Customer-safe generic value
+          "Assigned Engineer": d.assignedEngineerName || 'TSPL Field Engineer',
+          "Ageing (Hours)": ageHours,
+          "Ageing Bucket": d.ageingBucket || (ageHours < 48 ? 'a) 0-2days' : 'b) 3-4days'),
+          "SLA Target (Mins)": targetMins,
+          "SLA Remaining (Mins)": d.isClosed ? 0 : Math.max(0, remainingMins),
+          "SLA Breached": isBreached ? 'YES' : 'NO',
+          "Billable to HPY": d.isBillable !== false ? 'YES' : 'NO',
+          "Remarks": d.remarks || d.diagnosis || ''
+        };
+      });
+
+      var ws = XLSX.utils.json_to_sheet(rows);
+      var wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Client Open Call Report");
+
+      var dateStr = new Date().toISOString().slice(0, 10);
+      var cleanBank = activeClientBank.replace(/\s+/g, '_');
+      XLSX.writeFile(wb, cleanBank + "_Open_Call_Report_" + dateStr + ".xlsx");
+      toast('23-Column Report generated successfully', 'success');
+    }
+
+    function logoutUser() {
+      if (typeof auth !== 'undefined') {
+        auth.signOut().then(function () {
+          localStorage.clear();
+          window.location.href = 'index.html';
+        });
+      } else {
+        localStorage.clear();
+        window.location.href = 'index.html';
+      }
+    }
+
+    function toast(msg, type) {
+      var div = document.createElement('div');
+      var bg = type === 'success' ? 'bg-emerald-600' : (type === 'warn' ? 'bg-amber-600' : 'bg-slate-900');
+      div.className = 'fixed bottom-4 right-4 z-50 text-white text-xs px-4 py-2.5 rounded-xl shadow-2xl transition-all duration-300 transform translate-y-0 ' + bg;
+      div.textContent = msg;
+      document.body.appendChild(div);
+      setTimeout(function () {
+        div.style.opacity = '0';
+        div.style.transform = 'translateY(10px)';
+        setTimeout(function () { div.remove(); }, 300);
+      }, 3000);
+    }
+  </script>
+</body>
+</html>

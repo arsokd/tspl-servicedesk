@@ -1,0 +1,1197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TSPL ServiceDesk — Live Fleet & Operations Map</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- Leaflet & MarkerCluster CSS & JS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+
+  <!-- Firebase Compat 10.7.1 -->
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
+  <script src="firebase-config.js"></script>
+  <script src="auth-guard.js"></script>
+
+  <style>
+    /* Custom Map Marker Styling */
+    .engineer-marker-pin {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-weight: 800;
+      font-size: 11px;
+      box-shadow: 0 3px 8px rgba(0,0,0,0.35);
+      border: 2px solid #ffffff;
+      position: relative;
+    }
+    .engineer-marker-pin.suspicious-ring {
+      outline: 4px solid #2563eb;
+      outline-offset: 2px;
+    }
+    .engineer-marker-pin .platform-badge {
+      position: absolute;
+      bottom: -4px;
+      right: -4px;
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: #0f172a;
+      border: 1.5px solid #ffffff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .docket-marker-pin {
+      width: 24px;
+      height: 24px;
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-weight: 800;
+      font-size: 10px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+      border: 1.5px solid #ffffff;
+    }
+    .atm-marker-pin {
+      width: 18px;
+      height: 18px;
+      border-radius: 4px;
+      background-color: #475569;
+      border: 1.5px solid #ffffff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #f8fafc;
+      font-size: 8px;
+      font-weight: 700;
+    }
+    /* Pulse for urgent dockets and active engineers */
+    .pulse-ring {
+      box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7);
+      animation: pulse-red 1.6s infinite cubic-bezier(0.66, 0, 0, 1);
+    }
+    @keyframes pulse-red {
+      to {
+        box-shadow: 0 0 0 12px rgba(239, 68, 68, 0);
+      }
+    }
+    .no-scrollbar::-webkit-scrollbar { display: none; }
+    .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+  </style>
+</head>
+<body class="bg-slate-900 text-slate-100 font-sans antialiased min-h-screen flex flex-col overflow-hidden">
+
+  <!-- ===================================================================== -->
+  <!-- RECONNECTING BAR (via rtdb.ref('.info/connected'))                   -->
+  <!-- ===================================================================== -->
+  <div id="reconnecting-bar" class="hidden bg-red-600 text-white px-4 py-1.5 text-xs font-bold flex items-center justify-between z-50 shadow-md animate-pulse">
+    <div class="flex items-center gap-2">
+      <span class="h-2 w-2 rounded-full bg-white animate-ping"></span>
+      <span>Realtime Telemetry Disconnected &mdash; Reconnecting to Firebase RTDB...</span>
+    </div>
+    <span class="text-[11px] font-mono text-red-100">Retrying connection</span>
+  </div>
+
+  <!-- ===================================================================== -->
+  <!-- TOP APPLICATION NAVIGATION                                            -->
+  <!-- ===================================================================== -->
+  <header class="bg-slate-950 border-b border-slate-800 px-4 py-2.5 flex items-center justify-between z-30 shrink-0">
+    <div class="flex items-center gap-3">
+      <a href="dashboard.html" class="flex items-center gap-2 text-white font-black tracking-tight text-base hover:text-indigo-400 transition">
+        <span class="p-1.5 bg-indigo-600 rounded-lg text-white">
+          <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
+          </svg>
+        </span>
+        <span>TSPL ServiceDesk <span class="text-xs font-medium text-slate-400 ml-1.5 px-2 py-0.5 bg-slate-800 rounded border border-slate-700">Live Fleet Map</span></span>
+      </a>
+    </div>
+
+    <!-- Quick Navigation Links -->
+    <nav class="hidden md:flex items-center gap-1 text-xs">
+      <a href="dashboard.html" class="px-3 py-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition">Control Room</a>
+      <a href="dockets.html" class="px-3 py-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition">Dockets</a>
+      <a href="sla-board.html" class="px-3 py-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition">SLA Board</a>
+      <a href="live-map.html" class="px-3 py-1.5 rounded-lg bg-indigo-600/30 text-indigo-300 font-bold border border-indigo-500/40">Fleet Map</a>
+      <a href="tracking-report.html" class="px-3 py-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition">Tracking Audit</a>
+      <a href="compliance.html" class="px-3 py-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition">Compliance</a>
+    </nav>
+
+    <!-- Header Actions & Telemetry Indicator -->
+    <div class="flex items-center gap-3">
+      <div class="flex items-center gap-1.5 bg-slate-900 border border-slate-800 px-2.5 py-1 rounded-full text-[11px]">
+        <span class="h-2 w-2 rounded-full bg-emerald-400 animate-pulse"></span>
+        <span id="live-update-label" class="font-mono text-slate-300 font-bold">Live &mdash; Connecting...</span>
+      </div>
+      <button onclick="handleLogout()" class="text-xs text-slate-400 hover:text-rose-400 px-2 py-1 transition">Sign Out</button>
+    </div>
+  </header>
+
+  <!-- ===================================================================== -->
+  <!-- MAIN WORKSPACE: MAP VIEWPORT + MULTI-TAB SIDE CONTROL PANEL           -->
+  <!-- ===================================================================== -->
+  <div class="flex-grow flex flex-col md:flex-row relative overflow-hidden">
+
+    <!-- MAP CONTAINER -->
+    <div class="flex-grow relative h-[55vh] md:h-full w-full bg-slate-950">
+      <div id="fleet-map" class="w-full h-full"></div>
+
+      <!-- Map Layer Toggles Overlay (Top Left inside map) -->
+      <div class="absolute top-4 left-4 z-[400] bg-slate-900/90 backdrop-blur-md border border-slate-700/80 rounded-xl p-2.5 shadow-xl text-xs space-y-2 max-w-[200px]">
+        <div class="font-bold text-slate-300 uppercase tracking-wider text-[10px] pb-1 border-b border-slate-800 flex items-center justify-between">
+          <span>Map Layers</span>
+          <span class="text-[9px] text-indigo-400 font-mono" id="layer-counts-label">--</span>
+        </div>
+        <label class="flex items-center gap-2 cursor-pointer text-slate-300 hover:text-white">
+          <input type="checkbox" id="chk-layer-engineers" checked onchange="toggleMapLayer('engineers')" class="rounded bg-slate-800 border-slate-700 text-indigo-600 focus:ring-0">
+          <span class="flex items-center gap-1.5">
+            <span class="h-2.5 w-2.5 rounded-full bg-emerald-500"></span>
+            Engineers (<span id="count-engineers-visible">0</span>)
+          </span>
+        </label>
+        <label class="flex items-center gap-2 cursor-pointer text-slate-300 hover:text-white">
+          <input type="checkbox" id="chk-layer-dockets" checked onchange="toggleMapLayer('dockets')" class="rounded bg-slate-800 border-slate-700 text-rose-600 focus:ring-0">
+          <span class="flex items-center gap-1.5">
+            <span class="h-2.5 w-2.5 rounded bg-rose-500"></span>
+            Open Calls (<span id="count-dockets-visible">0</span>)
+          </span>
+        </label>
+        <label class="flex items-center gap-2 cursor-pointer text-slate-300 hover:text-white">
+          <input type="checkbox" id="chk-layer-atms" checked onchange="toggleMapLayer('atms')" class="rounded bg-slate-800 border-slate-700 text-slate-500 focus:ring-0">
+          <span class="flex items-center gap-1.5">
+            <span class="h-2.5 w-2.5 rounded-sm bg-slate-500"></span>
+            ATMs (<span id="count-atms-visible">0</span>)
+          </span>
+        </label>
+      </div>
+
+      <!-- Quick Legend Overlay (Bottom Left inside map) -->
+      <div class="hidden sm:flex absolute bottom-4 left-4 z-[400] bg-slate-900/90 backdrop-blur-md border border-slate-800 rounded-xl px-3 py-2 text-[10px] items-center gap-3 text-slate-300 shadow-lg">
+        <div class="flex items-center gap-1"><span class="h-2.5 w-2.5 rounded-full bg-emerald-500"></span> &lt; 2m (Live)</div>
+        <div class="flex items-center gap-1"><span class="h-2.5 w-2.5 rounded-full bg-amber-500"></span> 2-10m (Delayed)</div>
+        <div class="flex items-center gap-1"><span class="h-2.5 w-2.5 rounded-full bg-rose-500"></span> &gt; 10m / Offline</div>
+        <div class="flex items-center gap-1"><span class="h-2.5 w-2.5 rounded-full bg-slate-500"></span> Off Duty</div>
+        <div class="flex items-center gap-1"><span class="h-2.5 w-2.5 rounded-full outline outline-2 outline-blue-500 bg-emerald-500"></span> Suspicious</div>
+      </div>
+    </div>
+
+    <!-- RIGHT SIDEBAR CONTROL PANEL -->
+    <div class="w-full md:w-[410px] lg:w-[460px] bg-slate-900 border-t md:border-t-0 md:border-l border-slate-800 flex flex-col h-[45vh] md:h-full shrink-0 z-20">
+
+      <!-- TABS HEADER -->
+      <div class="bg-slate-950 px-2 pt-2 border-b border-slate-800 flex items-center justify-between text-xs font-bold">
+        <div class="flex items-center space-x-1">
+          <button onclick="switchSidebarTab('all')" id="tab-btn-all" class="px-3 py-2 rounded-t-lg border-b-2 border-indigo-500 text-indigo-400 bg-slate-900 flex items-center gap-1.5 transition">
+            <span>All Engineers</span>
+            <span id="badge-all-count" class="bg-slate-800 text-slate-300 text-[10px] font-mono px-1.5 py-0.2 rounded-full">0</span>
+          </button>
+
+          <button onclick="switchSidebarTab('alerts')" id="tab-btn-alerts" class="px-3 py-2 rounded-t-lg border-b-2 border-transparent text-slate-400 hover:text-slate-200 flex items-center gap-1.5 transition">
+            <span>Alerts</span>
+            <span id="badge-alerts-count" class="bg-rose-900/80 text-rose-200 text-[10px] font-mono px-1.5 py-0.2 rounded-full hidden">0</span>
+          </button>
+
+          <button onclick="switchSidebarTab('nearest')" id="tab-btn-nearest" class="px-3 py-2 rounded-t-lg border-b-2 border-transparent text-slate-400 hover:text-slate-200 flex items-center gap-1.5 transition">
+            <span>Nearest Dispatch</span>
+          </button>
+
+          <button onclick="switchSidebarTab('summary')" id="tab-btn-summary" class="px-3 py-2 rounded-t-lg border-b-2 border-transparent text-slate-400 hover:text-slate-200 transition">
+            <span>Summary</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- TAB CONTENT CONTAINER -->
+      <div class="flex-grow overflow-y-auto no-scrollbar p-3 space-y-3">
+
+        <!-- ============================================================= -->
+        <!-- TAB 1: ALL ENGINEERS (Sorted Red First)                       -->
+        <!-- ============================================================= -->
+        <div id="tab-content-all" class="space-y-2">
+          <!-- Search & Filter Bar -->
+          <div class="flex items-center gap-2">
+            <div class="relative flex-grow">
+              <input type="text" id="filter-eng-search" oninput="filterEngineersList()" placeholder="Filter by name, ID, phone..." class="w-full bg-slate-950 border border-slate-800 rounded-lg pl-8 pr-3 py-1.5 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-500" />
+              <svg class="h-3.5 w-3.5 text-slate-500 absolute left-2.5 top-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+            </div>
+            <select id="filter-eng-status" onchange="filterEngineersList()" class="bg-slate-950 border border-slate-800 text-slate-300 text-xs rounded-lg px-2 py-1.5 focus:outline-none">
+              <option value="all">All States</option>
+              <option value="red">Stale / Red (&gt;10m)</option>
+              <option value="amber">Delayed (2-10m)</option>
+              <option value="green">Live (&lt;2m)</option>
+              <option value="suspicious">Suspicious</option>
+              <option value="offduty">Off Duty</option>
+            </select>
+          </div>
+
+          <!-- Engineers List Container -->
+          <div id="engineers-list-container" class="space-y-2">
+            <div class="p-6 text-center text-xs text-slate-500 animate-pulse">
+              Connecting to Realtime Telemetry Feed...
+            </div>
+          </div>
+        </div>
+
+        <!-- ============================================================= -->
+        <!-- TAB 2: TRACKING ALERTS                                       -->
+        <!-- ============================================================= -->
+        <div id="tab-content-alerts" class="hidden space-y-2">
+          <div class="flex items-center justify-between pb-1 border-b border-slate-800">
+            <h3 class="text-xs font-bold text-slate-300 uppercase tracking-wider">Active Telemetry Exceptions</h3>
+            <button onclick="loadTrackingAlerts()" class="text-[11px] text-indigo-400 hover:underline">Refresh</button>
+          </div>
+          <div id="alerts-list-container" class="space-y-2">
+            <div class="p-6 text-center text-xs text-slate-500">
+              No active tracking alerts logged.
+            </div>
+          </div>
+        </div>
+
+        <!-- ============================================================= -->
+        <!-- TAB 3: NEAREST DISPATCH (5 Closest Engineers)                -->
+        <!-- ============================================================= -->
+        <div id="tab-content-nearest" class="hidden space-y-3">
+          <div class="bg-slate-950 p-3 rounded-xl border border-slate-800 space-y-2">
+            <label class="block text-xs font-bold text-slate-300 uppercase">Search ATM for Nearest Engineers</label>
+            <div class="flex gap-2">
+              <input type="text" id="nearest-atm-search" placeholder="Enter ATM ID (e.g. CBEAH104)" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white placeholder-slate-500 font-mono uppercase" />
+              <button onclick="findNearestEngineers()" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-3 py-1.5 rounded-lg shadow shrink-0">
+                Find
+              </button>
+            </div>
+            <div id="nearest-atm-info" class="text-[11px] text-slate-400 hidden pt-1"></div>
+          </div>
+
+          <div id="nearest-results-container" class="space-y-2">
+            <div class="p-6 text-center text-xs text-slate-500">
+              Enter an ATM ID above to calculate proximity and nearest on-duty engineers.
+            </div>
+          </div>
+        </div>
+
+        <!-- ============================================================= -->
+        <!-- TAB 4: SUMMARY COUNTS                                         -->
+        <!-- ============================================================= -->
+        <div id="tab-content-summary" class="hidden space-y-3">
+          <div class="grid grid-cols-2 gap-2 text-xs">
+            <div class="p-3 bg-slate-950 rounded-xl border border-slate-800">
+              <div class="text-slate-400 text-[10px] uppercase font-bold">Total Fleet Tracked</div>
+              <div id="sum-total-fleet" class="text-2xl font-black text-white mt-1">0</div>
+            </div>
+            <div class="p-3 bg-slate-950 rounded-xl border border-slate-800">
+              <div class="text-slate-400 text-[10px] uppercase font-bold">Active On-Duty</div>
+              <div id="sum-onduty" class="text-2xl font-black text-emerald-400 mt-1">0</div>
+            </div>
+            <div class="p-3 bg-emerald-950/40 border border-emerald-800/60 rounded-xl">
+              <div class="text-emerald-400 text-[10px] uppercase font-bold">Live (&lt; 2 min)</div>
+              <div id="sum-live-green" class="text-2xl font-black text-emerald-300 mt-1">0</div>
+            </div>
+            <div class="p-3 bg-amber-950/40 border border-amber-800/60 rounded-xl">
+              <div class="text-amber-400 text-[10px] uppercase font-bold">Delayed (2-10 min)</div>
+              <div id="sum-delayed-amber" class="text-2xl font-black text-amber-300 mt-1">0</div>
+            </div>
+            <div class="p-3 bg-rose-950/40 border border-rose-800/60 rounded-xl">
+              <div class="text-rose-400 text-[10px] uppercase font-bold">Stale / Offline (&gt;10m)</div>
+              <div id="sum-stale-red" class="text-2xl font-black text-rose-300 mt-1">0</div>
+            </div>
+            <div class="p-3 bg-blue-950/40 border border-blue-800/60 rounded-xl">
+              <div class="text-blue-400 text-[10px] uppercase font-bold">Suspicious Activity</div>
+              <div id="sum-suspicious" class="text-2xl font-black text-blue-300 mt-1">0</div>
+            </div>
+          </div>
+
+          <!-- Platform Distribution -->
+          <div class="p-3 bg-slate-950 rounded-xl border border-slate-800 space-y-2 text-xs">
+            <div class="font-bold text-slate-300 uppercase tracking-wider text-[10px]">Client Platform Distribution</div>
+            <div class="flex items-center justify-between text-slate-400 text-[11px]">
+              <span>Android Native App</span>
+              <strong id="sum-plat-android" class="text-slate-200 font-mono">0</strong>
+            </div>
+            <div class="flex items-center justify-between text-slate-400 text-[11px]">
+              <span>Apple iPhone (iOS)</span>
+              <strong id="sum-plat-ios" class="text-slate-200 font-mono">0</strong>
+            </div>
+            <div class="flex items-center justify-between text-slate-400 text-[11px]">
+              <span>Web Browser Client</span>
+              <strong id="sum-plat-browser" class="text-slate-200 font-mono">0</strong>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================================================================== -->
+  <!-- MODAL: ONE-TAP DOCKET DISPATCH ASSIGNMENT                             -->
+  <!-- ===================================================================== -->
+  <div id="modal-assign-docket" class="hidden fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-slate-900 rounded-2xl shadow-2xl max-w-md w-full border border-slate-800 p-5 space-y-4 text-slate-200">
+      <div class="flex items-center justify-between border-b border-slate-800 pb-2">
+        <h3 class="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
+          <svg class="h-4 w-4 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+          </svg>
+          Assign Open Docket to Engineer
+        </h3>
+        <button onclick="closeAssignModal()" class="text-slate-400 hover:text-white font-bold text-lg">&times;</button>
+      </div>
+
+      <div class="text-xs space-y-1 bg-slate-950 p-3 rounded-xl border border-slate-800">
+        <div>Target Engineer: <strong id="modal-assign-eng-name" class="text-indigo-300">--</strong></div>
+        <div>Current Distance: <strong id="modal-assign-dist" class="text-emerald-400 font-mono">-- km</strong></div>
+      </div>
+
+      <div class="space-y-2 text-xs">
+        <label class="block font-bold text-slate-300 uppercase text-[10px]">Select Open Docket for this ATM:</label>
+        <select id="modal-assign-docket-select" class="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-xs text-white">
+          <!-- Populated dynamically -->
+        </select>
+      </div>
+
+      <div class="flex justify-end gap-2 pt-2 border-t border-slate-800">
+        <button onclick="closeAssignModal()" class="px-3 py-1.5 text-slate-400 hover:text-white text-xs">Cancel</button>
+        <button onclick="confirmDocketAssignment()" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg text-xs shadow">
+          Confirm Dispatch Assignment
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================================================================== -->
+  <!-- SCRIPT: APPLICATION LOGIC                                            -->
+  <!-- ===================================================================== -->
+  <script>
+    // Comment: never use the free tile.openstreetmap.org server, its usage policy forbids commercial volume and the traffic will eventually be blocked.
+
+    var fleetMap = null;
+    var engineerMarkersGroup = null;
+    var docketMarkersGroup = null;
+    var atmMarkersGroup = null;
+
+    // Cache objects
+    var liveEngineers = {};     // uid -> location payload
+    var openDocketsList = [];   // array of open dockets
+    var cachedAtms = {};        // atmId -> ATM object
+    var trackingAlertsList = [];
+
+    var hasCenteredOnce = false;
+    var pendingAssignTarget = null;
+
+    // ------------------------------------------------------------------------
+    // INITIALIZATION
+    // ------------------------------------------------------------------------
+    document.addEventListener('DOMContentLoaded', async function () {
+      // 1. RBAC Guard: admin, callcentre, rm, regionalhead
+      if (typeof checkAuth === 'function') {
+        checkAuth(['admin', 'callcentre', 'rm', 'regionalhead']);
+      }
+
+      // 2. Initialize Leaflet Map with MapTiler Streets-v2 tiles
+      initLeafletMap();
+
+      // 3. Monitor Realtime Database Connection state
+      initRtdbConnectionMonitor();
+
+      // 4. Subscribe to Realtime Database liveLocations feed (never poll!)
+      subscribeLiveLocations();
+
+      // 5. Load open dockets & Map viewport listeners
+      await loadOpenDockets();
+      await loadTrackingAlerts();
+      setupMapBoundsAtmLoader();
+    });
+
+    // ------------------------------------------------------------------------
+    // LEAFLET MAP INITIALIZATION (MapTiler Vector/Raster tiles)
+    // ------------------------------------------------------------------------
+    function initLeafletMap() {
+      // Centered on South India (Tamil Nadu / Coimbatore baseline)
+      fleetMap = L.map('fleet-map', {
+        zoomControl: true,
+        maxZoom: 19,
+        attributionControl: true
+      }).setView([11.0168, 76.9558], 11);
+
+      // MapTiler Tile Layer
+      var mapKey = (typeof MAPTILER_KEY !== 'undefined' && MAPTILER_KEY) ? MAPTILER_KEY : 'get_your_own_OpIi9ZULNHzrESv6T2vL';
+      L.tileLayer('https://api.maptiler.com/maps/streets-v2/{z}/{x}/{y}.png?key=' + mapKey, {
+        attribution: '&copy; <a href="https://www.maptiler.com/copyright/" target="_blank">MapTiler</a> &copy; <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap contributors</a>',
+        maxZoom: 19
+      }).addTo(fleetMap);
+
+      // Marker Clusters / Layer Groups
+      engineerMarkersGroup = L.layerGroup().addTo(fleetMap);
+      docketMarkersGroup = L.layerGroup().addTo(fleetMap);
+      atmMarkersGroup = L.markerClusterGroup({
+        maxClusterRadius: 40,
+        spiderfyOnMaxZoom: true,
+        showCoverageOnHover: false
+      }).addTo(fleetMap);
+    }
+
+    // ------------------------------------------------------------------------
+    // REALTIME DATABASE CONNECTION LISTENER
+    // ------------------------------------------------------------------------
+    function initRtdbConnectionMonitor() {
+      var connectedRef = rtdb.ref('.info/connected');
+      var reconnectingBar = document.getElementById('reconnecting-bar');
+      var liveLabel = document.getElementById('live-update-label');
+
+      connectedRef.on('value', function (snap) {
+        if (snap.val() === true) {
+          reconnectingBar.classList.add('hidden');
+          var timeStr = new Date().toLocaleTimeString('en-IN', { hour12: false });
+          liveLabel.textContent = 'Live — ' + timeStr;
+          liveLabel.className = 'font-mono text-emerald-300 font-bold';
+        } else {
+          reconnectingBar.classList.remove('hidden');
+          liveLabel.textContent = 'Reconnecting...';
+          liveLabel.className = 'font-mono text-rose-400 font-bold';
+        }
+      });
+    }
+
+    // ------------------------------------------------------------------------
+    // SUBSCRIBE TO RTDB LIVE LOCATIONS (scoped by RO if non-admin)
+    // ------------------------------------------------------------------------
+    function subscribeLiveLocations() {
+      var liveRef = scopedLiveLocationsRef();
+
+      liveRef.on('value', function (snapshot) {
+        var data = snapshot.val() || {};
+        liveEngineers = data;
+
+        // Render markers & list
+        renderEngineerMarkers();
+        filterEngineersList();
+        updateSummaryCounts();
+
+        // Update top-right live label timestamp
+        var timeStr = new Date().toLocaleTimeString('en-IN', { hour12: false });
+        var liveLabel = document.getElementById('live-update-label');
+        if (liveLabel) {
+          liveLabel.textContent = 'Live — ' + timeStr;
+        }
+
+        // Auto-center on first load only
+        if (!hasCenteredOnce && Object.keys(data).length > 0) {
+          autoCenterInitialFleet(data);
+          hasCenteredOnce = true;
+        }
+      }, function (error) {
+        console.error('RTDB LiveLocations error:', error);
+      });
+    }
+
+    function autoCenterInitialFleet(data) {
+      var bounds = [];
+      Object.keys(data).forEach(function (uid) {
+        var eng = data[uid];
+        if (eng.lat && eng.lng) {
+          bounds.push([eng.lat, eng.lng]);
+        }
+      });
+      if (bounds.length > 0 && fleetMap) {
+        fleetMap.fitBounds(bounds, { padding: [50, 50], maxZoom: 13 });
+      }
+    }
+
+    // ------------------------------------------------------------------------
+    // RENDER ENGINEER MARKERS ON MAP
+    // ------------------------------------------------------------------------
+    function renderEngineerMarkers() {
+      if (!fleetMap || !engineerMarkersGroup) return;
+      engineerMarkersGroup.clearLayers();
+
+      var now = Date.now();
+      var visibleCount = 0;
+
+      Object.keys(liveEngineers).forEach(function (uid) {
+        var eng = liveEngineers[uid];
+        if (!eng.lat || !eng.lng) return;
+
+        visibleCount++;
+        var diffMs = now - (eng.updatedAt || 0);
+
+        // Colour coding
+        var colorClass = 'bg-emerald-500';
+        var statusDesc = 'Live (<2m)';
+
+        if (eng.status === 'offduty') {
+          colorClass = 'bg-slate-500';
+          statusDesc = 'Off Duty';
+        } else if (eng.isSuspicious) {
+          colorClass = 'bg-blue-600';
+          statusDesc = 'Suspicious Signal';
+        } else if (diffMs > 600000) { // > 10 min
+          colorClass = 'bg-rose-600';
+          statusDesc = 'Stale / Offline (>10m)';
+        } else if (diffMs >= 120000) { // 2 to 10 min
+          colorClass = 'bg-amber-500';
+          statusDesc = 'Delayed (2-10m)';
+        }
+
+        var suspiciousRing = eng.isSuspicious ? 'suspicious-ring' : '';
+
+        // Platform icon badge
+        var platIcon = '&#9881;'; // Browser
+        var plat = (eng.platform || 'browser').toLowerCase();
+        if (plat.indexOf('android') !== -1) platIcon = '&#129302;';
+        else if (plat.indexOf('ios') !== -1 || plat.indexOf('iphone') !== -1) platIcon = '&#63743;';
+
+        var initials = (eng.name || 'FE').split(' ').map(function(w){return w[0];}).join('').slice(0, 2).toUpperCase();
+
+        var customHtml = 
+          '<div class="engineer-marker-pin ' + colorClass + ' ' + suspiciousRing + '">' +
+            '<span>' + initials + '</span>' +
+            '<span class="platform-badge text-[8px]">' + platIcon + '</span>' +
+          '</div>';
+
+        var icon = L.divIcon({
+          html: customHtml,
+          className: 'custom-eng-icon',
+          iconSize: [32, 32],
+          iconAnchor: [16, 16]
+        });
+
+        var marker = L.marker([eng.lat, eng.lng], { icon: icon });
+
+        // Popup Content
+        var updatedStr = eng.updatedAt ? new Date(eng.updatedAt).toLocaleTimeString('en-IN') : 'Unknown';
+        var phoneLink = eng.phone ? '<a href="tel:' + eng.phone + '" class="text-indigo-400 underline font-bold">' + eng.phone + '</a>' : 'No Phone';
+        
+        var docketHtml = '<div class="text-slate-400">No call assigned</div>';
+        if (eng.currentDocketId) {
+          docketHtml = 
+            '<div class="p-2 bg-slate-950 rounded-lg border border-slate-800 space-y-1">' +
+              '<div class="font-bold text-white flex justify-between"><span>' + (eng.currentDocketNo || eng.currentDocketId) + '</span><span class="text-yellow-400 font-mono">' + (eng.currentSlaLeft || 'In SLA') + '</span></div>' +
+              '<div class="text-[10px] text-slate-400">' + (eng.currentAtmId || 'ATM') + ' &bull; ' + (eng.currentBank || '') + '</div>' +
+            '</div>';
+        }
+
+        var todayKey = fmtDateKey(new Date());
+
+        var popupContent = 
+          '<div class="p-3 bg-slate-900 text-slate-100 rounded-xl text-xs space-y-2 min-w-[240px] border border-slate-800">' +
+            '<div class="flex items-center justify-between border-b border-slate-800 pb-1.5">' +
+              '<div>' +
+                '<strong class="text-white text-sm block">' + (eng.name || 'Field Engineer') + '</strong>' +
+                '<span class="text-[10px] text-slate-400 font-mono">' + (eng.employeeId || uid.slice(0,8)) + '</span>' +
+              '</div>' +
+              '<span class="px-2 py-0.5 rounded text-[10px] font-bold ' + colorClass + ' text-white">' + statusDesc + '</span>' +
+            '</div>' +
+
+            '<div class="space-y-1 text-[11px] text-slate-300">' +
+              '<div>Phone: ' + phoneLink + '</div>' +
+              '<div>Speed / Acc: <strong class="font-mono text-white">' + (eng.speedKmh ? Math.round(eng.speedKmh) + ' km/h' : '0 km/h') + '</strong> (&plusmn;' + (eng.accuracy || 10) + 'm)</div>' +
+              '<div>Battery / OS: <strong class="text-white">' + (eng.battery || '--') + '%</strong> &bull; ' + (eng.platform || 'Browser') + '</div>' +
+              '<div>Last Update: <span class="font-mono text-slate-400">' + updatedStr + '</span></div>' +
+            '</div>' +
+
+            docketHtml +
+
+            '<div class="grid grid-cols-3 gap-1 pt-1 border-t border-slate-800 text-[10px]">' +
+              '<a href="track-playback.html?uid=' + uid + '&date=' + todayKey + '" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-center py-1.5 rounded transition">Route</a>' +
+              (eng.currentDocketId ? '<a href="dockets.html?id=' + eng.currentDocketId + '" class="bg-slate-800 hover:bg-slate-700 text-white font-bold text-center py-1.5 rounded transition">Docket</a>' : '<span class="bg-slate-800/40 text-slate-600 text-center py-1.5 rounded">Docket</span>') +
+              (eng.phone ? '<a href="tel:' + eng.phone + '" class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-center py-1.5 rounded transition">Call</a>' : '<span class="bg-slate-800/40 text-slate-600 text-center py-1.5 rounded">Call</span>') +
+            '</div>' +
+          '</div>';
+
+        marker.bindPopup(popupContent, { maxWidth: 280, className: 'custom-leaflet-popup' });
+        engineerMarkersGroup.addLayer(marker);
+      });
+
+      document.getElementById('count-engineers-visible').textContent = visibleCount;
+    }
+
+    // ------------------------------------------------------------------------
+    // LOAD OPEN DOCKETS & PIN ON MAP (Coloured by SLA Status)
+    // ------------------------------------------------------------------------
+    async function loadOpenDockets() {
+      try {
+        var baseQuery = scopedDocketQuery().where('status', 'in', ['Assigned', 'Dispatched', 'Call Accepted', 'Engineer Reached', 'Under Observation', 'Parts Request Pending']);
+        var snap = await baseQuery.get();
+
+        openDocketsList = [];
+        docketMarkersGroup.clearLayers();
+
+        var visibleCount = 0;
+
+        snap.forEach(function (doc) {
+          var d = { id: doc.id, ...doc.data() };
+          openDocketsList.push(d);
+
+          var sla = slaStatus(d);
+          d._sla = sla;
+
+          var lat = (d.atmCoords && d.atmCoords.lat) || (d.lat);
+          var lng = (d.atmCoords && d.atmCoords.lng) || (d.lng);
+
+          if (lat && lng) {
+            visibleCount++;
+            var isBreached = sla.breached || sla.minsRemaining <= 0;
+            var isUrgent = sla.minsRemaining <= 30;
+
+            var pinBg = isBreached ? 'bg-rose-600 pulse-ring' : (isUrgent ? 'bg-rose-500' : 'bg-indigo-600');
+            var pinText = isBreached ? '!' : (isUrgent ? sla.minsRemaining + 'm' : 'ATM');
+
+            var customHtml = '<div class="docket-marker-pin ' + pinBg + '">' + pinText + '</div>';
+            var icon = L.divIcon({ html: customHtml, className: 'custom-docket-pin', iconSize: [24, 24], iconAnchor: [12, 12] });
+
+            var marker = L.marker([lat, lng], { icon: icon });
+
+            var popupContent = 
+              '<div class="p-3 bg-slate-900 text-slate-100 rounded-xl text-xs space-y-2 min-w-[220px] border border-slate-800">' +
+                '<div class="flex items-center justify-between border-b border-slate-800 pb-1">' +
+                  '<strong class="text-white">' + (d.docketNo || d.id) + '</strong>' +
+                  '<span class="font-mono font-bold text-[10px] ' + (isBreached ? 'text-rose-400' : 'text-yellow-400') + '">' + (isBreached ? 'BREACHED' : sla.minsRemaining + 'm left') + '</span>' +
+                '</div>' +
+                '<div class="text-[11px] text-slate-300">' +
+                  '<div>ATM: <strong class="text-white">' + (d.atmId || '--') + '</strong> (' + (d.bank || 'Bank') + ')</div>' +
+                  '<div>Type: ' + (d.subCallType || d.callType || 'Fault') + '</div>' +
+                  '<div>Engineer: ' + (d.assignedEngineerName || 'Unassigned') + '</div>' +
+                '</div>' +
+                '<div class="pt-1 border-t border-slate-800">' +
+                  '<a href="dockets.html?id=' + d.id + '" class="block w-full bg-indigo-600 text-center text-white font-bold py-1 rounded text-[11px]">View Docket</a>' +
+                '</div>' +
+              '</div>';
+
+            marker.bindPopup(popupContent, { maxWidth: 260 });
+            docketMarkersGroup.addLayer(marker);
+          }
+        });
+
+        document.getElementById('count-dockets-visible').textContent = visibleCount;
+      } catch (err) {
+        console.warn('Error loading open dockets for map:', err);
+      }
+    }
+
+    // ------------------------------------------------------------------------
+    // LOAD ATM SITES FOR VISIBLE MAP BOUNDS ONLY (Capped at 500)
+    // ------------------------------------------------------------------------
+    function setupMapBoundsAtmLoader() {
+      var debounceTimer = null;
+      fleetMap.on('moveend zoomend', function () {
+        if (debounceTimer) clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(loadAtmsInVisibleBounds, 600);
+      });
+      // Initial load
+      loadAtmsInVisibleBounds();
+    }
+
+    async function loadAtmsInVisibleBounds() {
+      if (!fleetMap || !document.getElementById('chk-layer-atms').checked) return;
+
+      var bounds = fleetMap.getBounds();
+      var southWest = bounds.getSouthWest();
+      var northEast = bounds.getNorthEast();
+
+      try {
+        // Query ATMs within approximate bounding box, capped at 500
+        var snap = await db.collection('atms')
+          .where('lat', '>=', southWest.lat)
+          .where('lat', '<=', northEast.lat)
+          .limit(500)
+          .get();
+
+        atmMarkersGroup.clearLayers();
+        var atmCount = 0;
+
+        snap.forEach(function (doc) {
+          var atm = doc.data();
+          if (atm.lat && atm.lng && atm.lng >= southWest.lng && atm.lng <= northEast.lng) {
+            atmCount++;
+            cachedAtms[doc.id] = atm;
+
+            var icon = L.divIcon({
+              html: '<div class="atm-marker-pin">ATM</div>',
+              className: 'custom-atm-pin',
+              iconSize: [18, 18],
+              iconAnchor: [9, 9]
+            });
+
+            var marker = L.marker([atm.lat, atm.lng], { icon: icon });
+            var popupContent = 
+              '<div class="p-2.5 bg-slate-900 text-slate-100 rounded-lg text-xs space-y-1 border border-slate-800">' +
+                '<strong class="text-white block">' + (doc.id) + ' &bull; ' + (atm.bank || '') + '</strong>' +
+                '<div class="text-[10px] text-slate-400">' + (atm.address || atm.location || 'ATM Site') + '</div>' +
+                '<div class="pt-1 text-right">' +
+                  '<button onclick="quickSelectAtmForNearest(\'' + doc.id + '\')" class="text-[10px] bg-indigo-600 px-2 py-0.5 text-white font-bold rounded">Find Nearest Engineer</button>' +
+                '</div>' +
+              '</div>';
+
+            marker.bindPopup(popupContent, { maxWidth: 220 });
+            atmMarkersGroup.addLayer(marker);
+          }
+        });
+
+        document.getElementById('count-atms-visible').textContent = atmCount;
+      } catch (err) {
+        console.warn('ATM bounds query fallback:', err);
+      }
+    }
+
+    // ------------------------------------------------------------------------
+    // TAB 1: FILTER & SORT ENGINEERS LIST (Red/Stale First)
+    // ------------------------------------------------------------------------
+    function filterEngineersList() {
+      var query = (document.getElementById('filter-eng-search').value || '').toLowerCase();
+      var statusFilter = document.getElementById('filter-eng-status').value;
+      var container = document.getElementById('engineers-list-container');
+
+      var now = Date.now();
+      var list = [];
+
+      Object.keys(liveEngineers).forEach(function (uid) {
+        var eng = liveEngineers[uid];
+        eng.uid = uid;
+        var diffMs = now - (eng.updatedAt || 0);
+
+        // Status categorize
+        var category = 'green';
+        if (eng.status === 'offduty') category = 'offduty';
+        else if (eng.isSuspicious) category = 'suspicious';
+        else if (diffMs > 600000) category = 'red';
+        else if (diffMs >= 120000) category = 'amber';
+
+        eng._category = category;
+        eng._diffMs = diffMs;
+
+        // Search match
+        var nameMatch = (eng.name || '').toLowerCase().indexOf(query) !== -1;
+        var phoneMatch = (eng.phone || '').indexOf(query) !== -1;
+        var idMatch = (eng.employeeId || uid).toLowerCase().indexOf(query) !== -1;
+
+        if (nameMatch || phoneMatch || idMatch) {
+          if (statusFilter === 'all' || statusFilter === category) {
+            list.push(eng);
+          }
+        }
+      });
+
+      // Sort: RED first, then SUSPICIOUS, AMBER, GREEN, and OFFDUTY last
+      var rank = { 'red': 1, 'suspicious': 2, 'amber': 3, 'green': 4, 'offduty': 5 };
+      list.sort(function (a, b) {
+        var rA = rank[a._category] || 9;
+        var rB = rank[b._category] || 9;
+        if (rA !== rB) return rA - rB;
+        return (b.updatedAt || 0) - (a.updatedAt || 0);
+      });
+
+      document.getElementById('badge-all-count').textContent = list.length;
+
+      if (list.length === 0) {
+        container.innerHTML = '<div class="p-6 text-center text-xs text-slate-500">No matching engineers found in live feed.</div>';
+        return;
+      }
+
+      var html = list.map(function (eng) {
+        var colorBg = 'bg-emerald-500';
+        var badgeText = 'Live';
+        if (eng._category === 'red') { colorBg = 'bg-rose-600'; badgeText = 'Stale / Offline'; }
+        else if (eng._category === 'amber') { colorBg = 'bg-amber-500'; badgeText = 'Delayed'; }
+        else if (eng._category === 'suspicious') { colorBg = 'bg-blue-600'; badgeText = 'Suspicious'; }
+        else if (eng._category === 'offduty') { colorBg = 'bg-slate-600'; badgeText = 'Off Duty'; }
+
+        var minsAgo = Math.floor(eng._diffMs / 60000);
+        var timeLabel = minsAgo === 0 ? 'Just now' : minsAgo + 'm ago';
+
+        var todayKey = fmtDateKey(new Date());
+
+        return (
+          '<div class="bg-slate-950 p-3 rounded-xl border border-slate-800 hover:border-slate-700 transition space-y-2">' +
+            '<div class="flex items-start justify-between">' +
+              '<div class="flex items-center gap-2">' +
+                '<span class="h-2.5 w-2.5 rounded-full ' + colorBg + ' ' + (eng._category === 'red' ? 'animate-pulse' : '') + '"></span>' +
+                '<div>' +
+                  '<strong class="text-xs text-white block cursor-pointer hover:text-indigo-400" onclick="panToLocation(' + eng.lat + ',' + eng.lng + ')">' + (eng.name || 'Field Engineer') + '</strong>' +
+                  '<span class="text-[10px] text-slate-400 font-mono">' + (eng.employeeId || eng.uid.slice(0,8)) + ' &bull; ' + (eng.ro || 'RO') + '</span>' +
+                '</div>' +
+              '</div>' +
+              '<span class="text-[10px] px-2 py-0.5 rounded font-bold ' + colorBg + ' text-white">' + badgeText + '</span>' +
+            '</div>' +
+
+            '<div class="grid grid-cols-2 gap-1 text-[11px] text-slate-400 bg-slate-900/60 p-2 rounded-lg">' +
+              '<div>Battery: <strong class="text-slate-200">' + (eng.battery || '--') + '%</strong></div>' +
+              '<div>Speed: <strong class="text-slate-200 font-mono">' + (eng.speedKmh ? Math.round(eng.speedKmh) : '0') + ' km/h</strong></div>' +
+              '<div>Platform: <span class="text-slate-300">' + (eng.platform || 'Browser') + '</span></div>' +
+              '<div>Ping: <span class="font-mono text-slate-300">' + timeLabel + '</span></div>' +
+            '</div>' +
+
+            '<div class="flex items-center justify-between pt-1 text-xs">' +
+              (eng.phone ? '<a href="tel:' + eng.phone + '" class="text-indigo-400 hover:underline font-bold text-[11px] flex items-center gap-1">&phone; ' + eng.phone + '</a>' : '<span class="text-slate-500 text-[11px]">No Phone</span>') +
+              '<div class="flex items-center gap-2">' +
+                '<a href="track-playback.html?uid=' + eng.uid + '&date=' + todayKey + '" class="text-[11px] text-indigo-300 hover:text-white font-bold bg-indigo-900/50 hover:bg-indigo-900 px-2 py-1 rounded">Route &rarr;</a>' +
+                (eng.lat && eng.lng ? '<button onclick="panToLocation(' + eng.lat + ',' + eng.lng + ')" class="text-[11px] text-slate-300 hover:text-white bg-slate-800 px-2 py-1 rounded">Locate</button>' : '') +
+              '</div>' +
+            '</div>' +
+          '</div>'
+        );
+      }).join('');
+
+      container.innerHTML = html;
+    }
+
+    function panToLocation(lat, lng) {
+      if (!lat || !lng || !fleetMap) return;
+      fleetMap.setView([lat, lng], 15, { animate: true });
+    }
+
+    // ------------------------------------------------------------------------
+    // TAB 2: TRACKING ALERTS
+    // ------------------------------------------------------------------------
+    async function loadTrackingAlerts() {
+      try {
+        var snap = await db.collection('trackingAlerts')
+          .orderBy('timestamp', 'desc')
+          .limit(20)
+          .get();
+
+        trackingAlertsList = [];
+        snap.forEach(function (doc) {
+          trackingAlertsList.push({ id: doc.id, ...doc.data() });
+        });
+
+        renderTrackingAlerts();
+      } catch (e) {
+        console.warn('Alerts read:', e);
+      }
+    }
+
+    function renderTrackingAlerts() {
+      var container = document.getElementById('alerts-list-container');
+      var badge = document.getElementById('badge-alerts-count');
+
+      var unacknowledged = trackingAlertsList.filter(function (a) { return !a.acknowledged; });
+      if (unacknowledged.length > 0) {
+        badge.textContent = unacknowledged.length;
+        badge.classList.remove('hidden');
+      } else {
+        badge.classList.add('hidden');
+      }
+
+      if (trackingAlertsList.length === 0) {
+        container.innerHTML = '<div class="p-6 text-center text-xs text-slate-500">No active tracking alerts logged.</div>';
+        return;
+      }
+
+      var html = trackingAlertsList.map(function (alert) {
+        var timeStr = alert.timestamp ? (alert.timestamp.toDate ? alert.timestamp.toDate().toLocaleTimeString('en-IN') : new Date(alert.timestamp).toLocaleTimeString('en-IN')) : '--';
+
+        return (
+          '<div class="bg-slate-950 p-3 rounded-xl border ' + (alert.acknowledged ? 'border-slate-800' : 'border-rose-900/60 bg-rose-950/20') + ' space-y-2 text-xs">' +
+            '<div class="flex items-start justify-between">' +
+              '<strong class="text-rose-300 font-bold uppercase text-[11px]">' + (alert.type || 'Telemetry Alert') + '</strong>' +
+              '<span class="font-mono text-[10px] text-slate-400">' + timeStr + '</span>' +
+            '</div>' +
+            '<p class="text-[11px] text-slate-300">' + (alert.message || alert.reason || 'GPS stream interrupted') + '</p>' +
+            '<div class="flex items-center justify-between pt-1 text-[10px]">' +
+              '<span class="text-slate-400">Engineer: <strong class="text-white">' + (alert.engineerName || alert.uid) + '</strong></span>' +
+              (alert.acknowledged 
+                ? '<span class="text-emerald-400 font-bold">&check; Acknowledged</span>'
+                : '<button onclick="acknowledgeAlert(\'' + alert.id + '\')" class="bg-rose-700 hover:bg-rose-600 text-white font-bold px-2 py-1 rounded">Acknowledge</button>') +
+            '</div>' +
+          '</div>'
+        );
+      }).join('');
+
+      container.innerHTML = html;
+    }
+
+    async function acknowledgeAlert(alertId) {
+      try {
+        await db.collection('trackingAlerts').doc(alertId).update({
+          acknowledged: true,
+          acknowledgedAt: firebase.firestore.FieldValue.serverTimestamp(),
+          acknowledgedBy: localStorage.getItem('userName') || 'Operations'
+        });
+        toast('Alert acknowledged', 'success');
+        await loadTrackingAlerts();
+      } catch (err) {
+        toast('Failed to acknowledge: ' + err.message, 'error');
+      }
+    }
+
+    // ------------------------------------------------------------------------
+    // TAB 3: NEAREST DISPATCH (Proximity Calculation)
+    // ------------------------------------------------------------------------
+    function quickSelectAtmForNearest(atmId) {
+      switchSidebarTab('nearest');
+      document.getElementById('nearest-atm-search').value = atmId;
+      findNearestEngineers();
+    }
+
+    async function findNearestEngineers() {
+      var atmId = document.getElementById('nearest-atm-search').value.trim().toUpperCase();
+      if (!atmId) return;
+
+      var infoEl = document.getElementById('nearest-atm-info');
+      var container = document.getElementById('nearest-results-container');
+
+      infoEl.classList.remove('hidden');
+      infoEl.textContent = 'Searching ATM repository...';
+
+      var atm = cachedAtms[atmId];
+      if (!atm) {
+        try {
+          var doc = await db.collection('atms').doc(atmId).get();
+          if (doc.exists) {
+            atm = doc.data();
+            cachedAtms[atmId] = atm;
+          }
+        } catch (e) {}
+      }
+
+      if (!atm || !atm.lat || !atm.lng) {
+        infoEl.innerHTML = '<span class="text-rose-400">ATM ' + atmId + ' not found or lacks GPS coordinates.</span>';
+        container.innerHTML = '';
+        return;
+      }
+
+      infoEl.innerHTML = '<span class="text-white font-bold">' + atmId + ' (' + (atm.bank || '') + ')</span> &bull; ' + (atm.address || atm.location || '');
+      fleetMap.setView([atm.lat, atm.lng], 13);
+
+      // Compute distances to all on-duty engineers
+      var engineersWithDist = [];
+      Object.keys(liveEngineers).forEach(function (uid) {
+        var eng = liveEngineers[uid];
+        if (eng.lat && eng.lng && eng.status !== 'offduty') {
+          var distKm = haversineDistance(atm.lat, atm.lng, eng.lat, eng.lng);
+          engineersWithDist.push({
+            uid: uid,
+            name: eng.name || 'Field Engineer',
+            phone: eng.phone,
+            distanceKm: parseFloat(distKm.toFixed(2)),
+            currentDocketId: eng.currentDocketId,
+            battery: eng.battery,
+            lat: eng.lat,
+            lng: eng.lng
+          });
+        }
+      });
+
+      // Sort by distance ascending (top 5)
+      engineersWithDist.sort(function (a, b) { return a.distanceKm - b.distanceKm; });
+      var top5 = engineersWithDist.slice(0, 5);
+
+      if (top5.length === 0) {
+        container.innerHTML = '<div class="p-6 text-center text-xs text-slate-500">No active on-duty engineers with GPS signals found.</div>';
+        return;
+      }
+
+      var html = top5.map(function (eng, idx) {
+        return (
+          '<div class="bg-slate-950 p-3 rounded-xl border border-slate-800 space-y-2 text-xs">' +
+            '<div class="flex items-center justify-between">' +
+              '<div class="flex items-center gap-2">' +
+                '<span class="h-5 w-5 rounded-full bg-indigo-600 text-white font-black text-[10px] flex items-center justify-center">' + (idx + 1) + '</span>' +
+                '<strong class="text-white text-xs">' + eng.name + '</strong>' +
+              '</div>' +
+              '<span class="font-mono font-black text-emerald-400 text-sm">' + eng.distanceKm + ' km</span>' +
+            '</div>' +
+
+            '<div class="text-[11px] text-slate-400 flex justify-between">' +
+              '<span>Current Status: <strong class="text-slate-200">' + (eng.currentDocketId ? 'Busy on Call' : 'Available') + '</strong></span>' +
+              '<span>Battery: <strong class="text-slate-200">' + (eng.battery || '--') + '%</strong></span>' +
+            '</div>' +
+
+            '<div class="flex items-center justify-between pt-1 border-t border-slate-800">' +
+              (eng.phone ? '<a href="tel:' + eng.phone + '" class="text-indigo-400 hover:underline font-bold text-[11px]">&phone; Call</a>' : '<span></span>') +
+              '<button onclick="openAssignModal(\'' + eng.uid + '\',\'' + eng.name + '\',' + eng.distanceKm + ',\'' + atmId + '\')" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-3 py-1 rounded-lg shadow">' +
+                'Assign Docket &rarr;' +
+              '</button>' +
+            '</div>' +
+          '</div>'
+        );
+      }).join('');
+
+      container.innerHTML = html;
+    }
+
+    // ------------------------------------------------------------------------
+    // ONE-TAP DOCKET DISPATCH ASSIGNMENT MODAL
+    // ------------------------------------------------------------------------
+    function openAssignModal(engUid, engName, distanceKm, atmId) {
+      pendingAssignTarget = { uid: engUid, name: engName, atmId: atmId };
+
+      document.getElementById('modal-assign-eng-name').textContent = engName;
+      document.getElementById('modal-assign-dist').textContent = distanceKm + ' km';
+
+      var select = document.getElementById('modal-assign-docket-select');
+      select.innerHTML = '';
+
+      // Filter open dockets for this ATM or all open dockets
+      var matching = openDocketsList.filter(function (d) { return d.atmId === atmId; });
+      if (matching.length === 0) matching = openDocketsList;
+
+      matching.forEach(function (d) {
+        var opt = document.createElement('option');
+        opt.value = d.id;
+        opt.textContent = (d.docketNo || d.id) + ' — ' + (d.atmId || '') + ' (' + (d.subCallType || d.callType || '') + ')';
+        select.appendChild(opt);
+      });
+
+      if (matching.length === 0) {
+        var opt = document.createElement('option');
+        opt.value = '';
+        opt.textContent = 'No open dockets available to assign';
+        select.appendChild(opt);
+      }
+
+      document.getElementById('modal-assign-docket').classList.remove('hidden');
+    }
+
+    function closeAssignModal() {
+      document.getElementById('modal-assign-docket').classList.add('hidden');
+      pendingAssignTarget = null;
+    }
+
+    async function confirmDocketAssignment() {
+      var docketId = document.getElementById('modal-assign-docket-select').value;
+      if (!docketId || !pendingAssignTarget) return;
+
+      try {
+        var batch = db.batch();
+        var docketRef = db.collection('dockets').doc(docketId);
+
+        batch.update(docketRef, {
+          assignedEngineerId: pendingAssignTarget.uid,
+          assignedEngineerName: pendingAssignTarget.name,
+          status: 'Assigned',
+          assignedAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+
+        // Write activity log
+        var actRef = db.collection('docketActivity').doc();
+        batch.set(actRef, {
+          docketId: docketId,
+          timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+          status: 'Assigned',
+          actorName: localStorage.getItem('userName') || 'Control Room',
+          notes: 'Dispatched via Live Fleet Map proximity assignment (' + pendingAssignTarget.name + ')'
+        });
+
+        await batch.commit();
+        toast('Docket successfully assigned to ' + pendingAssignTarget.name, 'success');
+        closeAssignModal();
+        await loadOpenDockets();
+      } catch (err) {
+        toast('Assignment error: ' + err.message, 'error');
+      }
+    }
+
+    // ------------------------------------------------------------------------
+    // TAB 4: SUMMARY COUNTS COMPUTATION
+    // ------------------------------------------------------------------------
+    function updateSummaryCounts() {
+      var now = Date.now();
+      var total = 0, onduty = 0, green = 0, amber = 0, red = 0, suspicious = 0;
+      var android = 0, ios = 0, browser = 0;
+
+      Object.keys(liveEngineers).forEach(function (uid) {
+        total++;
+        var eng = liveEngineers[uid];
+        var diffMs = now - (eng.updatedAt || 0);
+
+        if (eng.status !== 'offduty') onduty++;
+        if (eng.isSuspicious) suspicious++;
+
+        if (eng.status === 'offduty') {
+          // off duty
+        } else if (diffMs > 600000) red++;
+        else if (diffMs >= 120000) amber++;
+        else green++;
+
+        var plat = (eng.platform || 'browser').toLowerCase();
+        if (plat.indexOf('android') !== -1) android++;
+        else if (plat.indexOf('ios') !== -1 || plat.indexOf('iphone') !== -1) ios++;
+        else browser++;
+      });
+
+      document.getElementById('sum-total-fleet').textContent = total;
+      document.getElementById('sum-onduty').textContent = onduty;
+      document.getElementById('sum-live-green').textContent = green;
+      document.getElementById('sum-delayed-amber').textContent = amber;
+      document.getElementById('sum-stale-red').textContent = red;
+      document.getElementById('sum-suspicious').textContent = suspicious;
+
+      document.getElementById('sum-plat-android').textContent = android;
+      document.getElementById('sum-plat-ios').textContent = ios;
+      document.getElementById('sum-plat-browser').textContent = browser;
+    }
+
+    // ------------------------------------------------------------------------
+    // SIDEBAR TAB SWITCHER & LAYER TOGGLES
+    // ------------------------------------------------------------------------
+    function switchSidebarTab(tab) {
+      ['all', 'alerts', 'nearest', 'summary'].forEach(function (t) {
+        document.getElementById('tab-content-' + t).classList.add('hidden');
+        var btn = document.getElementById('tab-btn-' + t);
+        btn.className = 'px-3 py-2 rounded-t-lg border-b-2 border-transparent text-slate-400 hover:text-slate-200 transition';
+      });
+
+      document.getElementById('tab-content-' + tab).classList.remove('hidden');
+      var activeBtn = document.getElementById('tab-btn-' + tab);
+      activeBtn.className = 'px-3 py-2 rounded-t-lg border-b-2 border-indigo-500 text-indigo-400 bg-slate-900 flex items-center gap-1.5 transition font-bold';
+
+      if (tab === 'alerts') loadTrackingAlerts();
+    }
+
+    function toggleMapLayer(layer) {
+      if (layer === 'engineers') {
+        if (document.getElementById('chk-layer-engineers').checked) fleetMap.addLayer(engineerMarkersGroup);
+        else fleetMap.removeLayer(engineerMarkersGroup);
+      } else if (layer === 'dockets') {
+        if (document.getElementById('chk-layer-dockets').checked) fleetMap.addLayer(docketMarkersGroup);
+        else fleetMap.removeLayer(docketMarkersGroup);
+      } else if (layer === 'atms') {
+        if (document.getElementById('chk-layer-atms').checked) {
+          fleetMap.addLayer(atmMarkersGroup);
+          loadAtmsInVisibleBounds();
+        } else {
+          fleetMap.removeLayer(atmMarkersGroup);
+        }
+      }
+    }
+
+    // Date formatting helper
+    function fmtDateKey(d) {
+      var day = ('0' + d.getDate()).slice(-2);
+      var mon = ('0' + (d.getMonth() + 1)).slice(-2);
+      var yr = d.getFullYear().toString().slice(-2);
+      return day + mon + yr;
+    }
+
+    // Haversine Distance helper
+    function haversineDistance(lat1, lon1, lat2, lon2) {
+      var R = 6371; // km
+      var dLat = (lat2 - lat1) * Math.PI / 180;
+      var dLon = (lon2 - lon1) * Math.PI / 180;
+      var a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+              Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+              Math.sin(dLon / 2) * Math.sin(dLon / 2);
+      var c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      return R * c;
+    }
+  </script>
+</body>
+</html>

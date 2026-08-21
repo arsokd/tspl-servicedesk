@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TSPL ServiceDesk — Redirecting...</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Firebase Compat 10.7.1 -->
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
+  <script src="firebase-config.js"></script>
+</head>
+<body class="bg-slate-900 min-h-screen flex items-center justify-center font-sans antialiased text-white">
+
+  <div class="text-center space-y-4 p-6">
+    <div class="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-indigo-600 shadow-xl border border-indigo-400/30 mb-2 animate-pulse">
+      <svg class="w-8 h-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
+      </svg>
+    </div>
+    <h1 class="text-xl font-bold tracking-tight text-slate-100">TSPL ServiceDesk</h1>
+    <p class="text-xs text-slate-400">Verifying session & routing to your workspace...</p>
+    <div class="flex justify-center pt-2">
+      <svg class="animate-spin h-5 w-5 text-indigo-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+      </svg>
+    </div>
+  </div>
+
+  <script>
+    function routeByRole(role) {
+      if (!role) {
+        window.location.replace('login.html');
+        return;
+      }
+
+      switch (role.toLowerCase()) {
+        case 'engineer':
+          window.location.replace('engineer.html');
+          break;
+        case 'client':
+          window.location.replace('client-portal.html');
+          break;
+        case 'admin':
+        case 'callcentre':
+        case 'techsupport':
+        case 'rm':
+        case 'regionalhead':
+        case 'unithead':
+          window.location.replace('dashboard.html');
+          break;
+        default:
+          window.location.replace('login.html');
+      }
+    }
+
+    // Fast path: localStorage check
+    var cachedRole = localStorage.getItem('userRole');
+    var cachedUid = localStorage.getItem('userUid');
+
+    if (cachedRole && cachedUid) {
+      routeByRole(cachedRole);
+    } else {
+      // Fallback: Firebase Auth state listener
+      auth.onAuthStateChanged(function (user) {
+        if (!user) {
+          window.location.replace('login.html');
+          return;
+        }
+
+        db.collection('users').doc(user.uid).get().then(function (doc) {
+          if (doc.exists) {
+            var data = doc.data();
+            var role = data.role || 'engineer';
+            localStorage.setItem('userRole', role);
+            localStorage.setItem('userName', data.name || user.email);
+            localStorage.setItem('userRo', data.ro || '');
+            localStorage.setItem('userClientBank', data.clientBank || '');
+            localStorage.setItem('userUid', user.uid);
+            routeByRole(role);
+          } else {
+            auth.signOut().then(function () {
+              window.location.replace('login.html');
+            });
+          }
+        }).catch(function (err) {
+          console.error('Error fetching user profile:', err);
+          window.location.replace('login.html');
+        });
+      });
+    }
+  </script>
+</body>
+</html>

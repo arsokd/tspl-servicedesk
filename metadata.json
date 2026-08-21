@@ -1,0 +1,6 @@
+{
+  "name": "Hitachi PayManage - MSA & SLM Governance",
+  "description": "Enterprise contract lifecycle, SLM service level tracking, Schedule III billing calculator, and Schedule IV BGV compliance management for Hitachi Payment Services agreements.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

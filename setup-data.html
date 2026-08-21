@@ -1,0 +1,716 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>System Setup — TSPL ServiceDesk</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Firebase Compat 10.7.1 -->
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-storage-compat.js"></script>
+  <script src="firebase-config.js"></script>
+  <script src="auth-guard.js"></script>
+</head>
+<body class="bg-slate-100 min-h-screen flex flex-col font-sans antialiased text-slate-800">
+
+  <!-- Main Navigation injected by auth-guard.js -->
+  <div id="main-nav"></div>
+
+  <main class="flex-grow max-w-5xl w-full mx-auto p-4 sm:p-6 lg:p-8">
+    <div class="mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      <div>
+        <h1 class="text-2xl font-bold text-slate-900 tracking-tight">System Initialization & Master Data</h1>
+        <p class="text-sm text-slate-500">Bootstrap default masters, contractual SLAs, dependency mapping, and scorecard aggregators.</p>
+      </div>
+      <div>
+        <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-indigo-100 text-indigo-800">
+          Admin Role Required
+        </span>
+      </div>
+    </div>
+
+    <!-- Setup Card -->
+    <div class="bg-white rounded-xl shadow-md border border-slate-200 p-6 sm:p-8 space-y-6">
+
+      <!-- Amber Warning Notice -->
+      <div class="p-4 bg-amber-50 border-l-4 border-[#D97706] rounded-r-md text-amber-900 flex items-start gap-3">
+        <svg class="h-5 w-5 text-[#D97706] mt-0.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+        </svg>
+        <div class="text-xs sm:text-sm">
+          <span class="font-bold">One-Time Operation Warning:</span> Run this initial load only <strong>ONCE</strong>. Running it again will overwrite your master lists, status mappings, and default contract configuration.
+        </div>
+      </div>
+
+      <!-- Action Panel 0: Create Initial SuperAdmin & Developer -->
+      <div class="border-b border-slate-100 pb-6 space-y-4">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div>
+            <h2 class="text-lg font-semibold text-slate-800">1. Initialize Developer & Lead Account</h2>
+            <p class="text-xs text-slate-500 mt-0.5">Creates / syncs Developer account with full system access (<span class="font-mono text-indigo-600 font-semibold">ars.okd@gmail.com</span>).</p>
+          </div>
+          <button 
+            id="btn-create-dev" 
+            onclick="handleCreateDeveloperAccount()" 
+            class="bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold py-2.5 px-6 rounded-md shadow transition flex items-center justify-center shrink-0 disabled:opacity-50"
+          >
+            Provision Developer (ars.okd)
+          </button>
+        </div>
+
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-2 border-t border-slate-100/60">
+          <div>
+            <h3 class="text-sm font-semibold text-slate-700">Client Admin Account</h3>
+            <p class="text-xs text-slate-500 mt-0.5">Official TSPL Admin account in Firebase (<span class="font-mono text-slate-600">techservisphere@gmail.com</span>).</p>
+          </div>
+          <button 
+            id="btn-create-admin" 
+            onclick="handleCreateAdminAccount()" 
+            class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold py-2 px-4 rounded-md shadow-sm transition flex items-center justify-center shrink-0 disabled:opacity-50"
+          >
+            Create TSPL Admin
+          </button>
+        </div>
+      </div>
+
+      <!-- Action Panel 1: Master Setup -->
+      <div class="border-b border-slate-100 pb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h2 class="text-lg font-semibold text-slate-800">2. Load Master Data & Contract SLAs</h2>
+          <p class="text-xs text-slate-500 mt-0.5">Seeds statusMap (33 sub-statuses), masters (13 taxonomies), HPY contract parameters, and zeroed live stats counters.</p>
+        </div>
+        <button 
+          id="btn-load-masters" 
+          onclick="handleLoadMasterData()" 
+          class="bg-[#4F46E5] hover:bg-indigo-700 text-white text-sm font-semibold py-2.5 px-6 rounded-md shadow transition flex items-center justify-center shrink-0 disabled:opacity-50"
+        >
+          Load All Master Data
+        </button>
+      </div>
+
+      <!-- Action Panel 2: Rebuild Scoreboard -->
+      <div class="border-b border-slate-100 pb-6 space-y-4">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div>
+            <h2 class="text-lg font-semibold text-slate-800">Rebuild Scoreboard From Scratch</h2>
+            <p class="text-xs text-slate-500 mt-0.5">Pages through every open docket (500 per batch), recalculating live dependency counts, RAG alerts, and ageing buckets.</p>
+          </div>
+          <button 
+            id="btn-rebuild-scoreboard" 
+            onclick="handleRebuildScoreboard()" 
+            class="bg-slate-800 hover:bg-slate-900 text-white text-sm font-semibold py-2.5 px-6 rounded-md shadow transition flex items-center justify-center shrink-0 disabled:opacity-50"
+          >
+            Rebuild Scoreboard
+          </button>
+        </div>
+
+        <div class="p-3 bg-slate-50 border border-slate-200 rounded text-xs text-slate-600">
+          <strong>Note:</strong> Use this if dashboard numbers ever look desynchronized or following a large bulk import. Safe to run at any time, but it scans all open dockets.
+        </div>
+
+        <!-- Progress Bar (Hidden by default) -->
+        <div id="rebuild-progress-container" class="hidden space-y-1.5">
+          <div class="flex justify-between text-xs text-slate-600 font-medium">
+            <span id="rebuild-progress-label">Processing dockets...</span>
+            <span id="rebuild-progress-pct">0%</span>
+          </div>
+          <div class="w-full bg-slate-200 rounded-full h-2.5 overflow-hidden">
+            <div id="rebuild-progress-bar" class="bg-[#16A34A] h-2.5 rounded-full transition-all duration-300" style="width: 0%"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Execution Log Area -->
+      <div>
+        <div class="flex items-center justify-between mb-2">
+          <label class="text-xs font-semibold text-slate-700 uppercase tracking-wider">Execution Log</label>
+          <button onclick="clearLog()" class="text-xs text-slate-400 hover:text-slate-600">Clear Log</button>
+        </div>
+        <div 
+          id="setup-log" 
+          class="bg-slate-900 text-emerald-400 font-mono text-xs p-4 rounded-lg h-72 overflow-y-auto space-y-1 shadow-inner border border-slate-800 select-text"
+        >
+          <div class="text-slate-500">// System ready. Click an action above to start batch provisioning.</div>
+        </div>
+      </div>
+
+    </div>
+  </main>
+
+  <script>
+    // Role check: Admin or Initial System Setup
+    document.addEventListener('DOMContentLoaded', function () {
+      auth.onAuthStateChanged(function (user) {
+        if (!user) {
+          log('Not logged in. You can register/provision the first SuperAdmin account below or sign in.', 'warn');
+        } else {
+          log('Authenticated as ' + user.email + '. Ready to provision.', 'info');
+        }
+      });
+      if (typeof buildNav === 'function') {
+        buildNav('setup-data.html');
+      }
+    });
+
+    function log(msg, type) {
+      var logEl = document.getElementById('setup-log');
+      var line = document.createElement('div');
+      var time = new Date().toLocaleTimeString();
+      var colorClass = 'text-emerald-400';
+      if (type === 'warn') colorClass = 'text-[#D97706]';
+      if (type === 'error') colorClass = 'text-[#DC2626]';
+      if (type === 'info') colorClass = 'text-indigo-300';
+
+      line.className = colorClass;
+      line.textContent = '[' + time + '] ' + msg;
+      logEl.appendChild(line);
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+
+    function clearLog() {
+      var logEl = document.getElementById('setup-log');
+      logEl.innerHTML = '<div class="text-slate-500">// Log cleared. Ready.</div>';
+    }
+
+    // Helper: Execute array of document operations in batches of maximum 400 writes
+    async function commitInBatches(ops, label) {
+      var batchSize = 400;
+      var totalOps = ops.length;
+      var batchesCount = Math.ceil(totalOps / batchSize);
+
+      for (var i = 0; i < batchesCount; i++) {
+        var batch = db.batch();
+        var chunk = ops.slice(i * batchSize, (i + 1) * batchSize);
+
+        chunk.forEach(function (op) {
+          if (op.type === 'set') {
+            batch.set(op.ref, op.data, op.options || { merge: true });
+          } else if (op.type === 'update') {
+            batch.update(op.ref, op.data);
+          } else if (op.type === 'delete') {
+            batch.delete(op.ref);
+          }
+        });
+
+        await batch.commit();
+        log('Committed batch ' + (i + 1) + '/' + batchesCount + ' for ' + label + ' (' + chunk.length + ' items)', 'info');
+      }
+    }
+
+    // ========================================================================
+    // MASTER DATA SEED DEFINITIONS
+    // ========================================================================
+
+    var STATUS_MAP_DATA = [
+      { subStatus: "Call Accepted", dependency: "Engineer Dependency", countsAgainstTSPL: true },
+      { subStatus: "Dispatched Engineer", dependency: "Engineer Dependency", countsAgainstTSPL: true },
+      { subStatus: "Engineer Started", dependency: "Engineer Dependency", countsAgainstTSPL: true },
+      { subStatus: "Engineer Reached", dependency: "WIP", countsAgainstTSPL: true },
+      { subStatus: "Work in Progress", dependency: "Engineer Dependency", countsAgainstTSPL: true },
+      { subStatus: "Repair Started", dependency: "Engineer Dependency", countsAgainstTSPL: true },
+      { subStatus: "Under Observation", dependency: "Engineer Dependency", countsAgainstTSPL: true },
+      { subStatus: "Engineer Delay", dependency: "Engineer Dependency", countsAgainstTSPL: true },
+      { subStatus: "Pending With Engineer", dependency: "Engineer Dependency", countsAgainstTSPL: true },
+      { subStatus: "Re-Allocation", dependency: "Engineer Dependency", countsAgainstTSPL: true },
+      { subStatus: "Remote Support", dependency: "Engineer Dependency", countsAgainstTSPL: true },
+      { subStatus: "Pending for Dispatch", dependency: "HD Dependency", countsAgainstTSPL: false },
+      { subStatus: "Pending With HD", dependency: "HD Dependency", countsAgainstTSPL: false },
+      { subStatus: "TSS Rejected", dependency: "HD Dependency", countsAgainstTSPL: false },
+      { subStatus: "Custodian Delay", dependency: "CRA Delay", countsAgainstTSPL: false },
+      { subStatus: "Cra Schedule Pending", dependency: "CRA Delay", countsAgainstTSPL: false },
+      { subStatus: "Pending For Parts", dependency: "SCM Dependency", countsAgainstTSPL: false },
+      { subStatus: "Spare Request", dependency: "SCM Dependency", countsAgainstTSPL: false },
+      { subStatus: "Dead On Arrival", dependency: "SCM Dependency", countsAgainstTSPL: false },
+      { subStatus: "Bank Approval Pending", dependency: "Bank Dependency", countsAgainstTSPL: false },
+      { subStatus: "Branch Delay", dependency: "Bank Dependency", countsAgainstTSPL: false },
+      { subStatus: "Access Issue", dependency: "Bank Dependency", countsAgainstTSPL: false },
+      { subStatus: "Site Issues", dependency: "Bank Dependency", countsAgainstTSPL: false },
+      { subStatus: "Network Issue", dependency: "Bank Dependency", countsAgainstTSPL: false },
+      { subStatus: "Switch Issue", dependency: "Bank Dependency", countsAgainstTSPL: false },
+      { subStatus: "Tss Support", dependency: "TSS Dependency", countsAgainstTSPL: false },
+      { subStatus: "Tss Approval Pending", dependency: "TSS Dependency", countsAgainstTSPL: false },
+      { subStatus: "Software Delay", dependency: "TSS Dependency", countsAgainstTSPL: false },
+      { subStatus: "Third Party Dependency", dependency: "Third Party Dependency", countsAgainstTSPL: false },
+      { subStatus: "Force Majeure", dependency: "Force Majeure", countsAgainstTSPL: false },
+      { subStatus: "Access Time Exceeded", dependency: "Access Time Exceeded", countsAgainstTSPL: false },
+      { subStatus: "Completed", dependency: "Closed", countsAgainstTSPL: false },
+      { subStatus: "Cancelled", dependency: "Closed", countsAgainstTSPL: false }
+    ];
+
+    var MASTERS_DEFINITIONS = {
+      callType: [
+        "Break Down", "Assistance", "Chronic Call", "Rollouts", 
+        "Installation", "De-Installation", "Chargeable", "Complaint"
+      ],
+      subCallType: [
+        "Machine down", "Dispenser", "Card Reader", "Receipt Printer",
+        "Cassette", "Cash Jam", "EJ", "EPP", "Lock", "Journal Printer",
+        "Other Hardware", "Other Electronics", "Software", "Network Issue",
+        "Remote Support", "Major PM", "Minor PM", "EOD Request", "Site Issue",
+        "Bank Approval Pending", "Hardware Issue", "Chargeable Visit",
+        "Part Delay", "Assigned"
+      ],
+      bank: [
+        "HDFC Bank", "PNB Bank", "ICICI Bank", "UBI Bank", "Axis Bank",
+        "Canara Bank", "State Bank Of India", "Indian Overseas Bank",
+        "Bank of Baroda", "Indian Bank", "Bank of India", "Bank of Maharashtra",
+        "Yes Bank", "Federal Bank", "IDBI Bank", "Karur Vysya Bank (KVB)",
+        "Karnataka Bank (KBL)", "Kotak Mahindra Bank (KMBL)", "Saraswat Bank",
+        "AU Small Finance Bank", "City Union Bank", "Tamilnad Mercantile Bank",
+        "WLA", "Other"
+      ],
+      vendor: ["HPY", "Techbite", "FIPL", "MRV", "Optimatm", "Kores"],
+      ro: ["NORTH", "SOUTH", "EAST", "WEST"],
+      region: ["North West", "South East"],
+      locationCategory: ["Metro", "Urban", "Semi-Urban", "Rural"],
+      docketCollectionType: ["EJ", "TSS", "HDE"],
+      installationOutcome: [
+        "Cash_Live", "Tech_Live", "Dropped", "Re_Visit_Required",
+        "Hold_by_Project", "ATM_OBF", "HD_Encryption", "Re_Scheduled", "CL issue"
+      ],
+      pmStatus: ["Completed", "Scheduled", "Site Closed", "Site Issue"],
+      reDispatchReason: [
+        "Vendor - wrong diagnosis", "Vendor - part not carried",
+        "Vendor - engineer error", "Vendor - incomplete work",
+        "Customer - custodian unavailable", "Customer - site closed",
+        "Customer - part not supplied", "Third party"
+      ],
+      state: [
+        "Andaman and Nicobar", "Andhra Pradesh", "Arunachal Pradesh", "Assam",
+        "Bihar", "Chandigarh", "Chhattisgarh", "Delhi", "Goa", "Gujarat",
+        "Haryana", "Himachal Pradesh", "Jammu and Kashmir", "Jharkhand",
+        "Karnataka", "Kerala", "Ladakh", "Madhya Pradesh", "Maharashtra",
+        "Manipur", "Meghalaya", "Mizoram", "Nagaland", "Odisha", "Puducherry",
+        "Punjab", "Rajasthan", "Sikkim", "Tamil Nadu", "Telangana", "Tripura",
+        "Uttar Pradesh", "Uttarakhand", "West Bengal"
+      ],
+      partName: [
+        "Dispenser", "Card Reader", "Receipt Printer", "Journal Printer",
+        "EPP Keypad", "Cassette", "Reject Bin", "Hard Disk", "Motherboard",
+        "SMPS", "Monitor", "Lock", "Presenter", "Sensor"
+      ]
+    };
+
+    // ========================================================================
+    // ACTION 0: CREATE INITIAL DEVELOPER & SUPERADMIN ACCOUNTS
+    // ========================================================================
+
+    async function handleCreateDeveloperAccount() {
+      var btn = document.getElementById('btn-create-dev');
+      var email = 'ars.okd@gmail.com';
+      var defaultPassword = prompt('Set a password for Developer Account (' + email + '):', 'Dev@2026!');
+      if (!defaultPassword || defaultPassword.trim().length < 6) {
+        alert('Password must be at least 6 characters long.');
+        return;
+      }
+
+      showLoader(btn, 'Provisioning Developer...');
+      log('Provisioning Lead Developer account for ' + email + '...', 'info');
+
+      try {
+        var userCred;
+        try {
+          userCred = await auth.createUserWithEmailAndPassword(email, defaultPassword.trim());
+          log('Created Firebase Auth user for ' + email, 'info');
+        } catch (authErr) {
+          if (authErr.code === 'auth/email-already-in-use') {
+            log('Auth account already registered. Signing in or linking Firestore record...', 'warn');
+            try {
+              userCred = await auth.signInWithEmailAndPassword(email, defaultPassword.trim());
+            } catch (loginErr) {
+              log('Existing user found. Updating Firestore record...', 'info');
+            }
+          } else {
+            throw authErr;
+          }
+        }
+
+        var uid = (userCred && userCred.user) ? userCred.user.uid : (auth.currentUser ? auth.currentUser.uid : 'dev_ars_okd');
+        var devRecord = {
+          uid: uid,
+          email: email,
+          name: 'Developer (ars.okd)',
+          role: 'admin',
+          employeeId: 'DEV-ARS-001',
+          mobile: '+91 99999 99999',
+          ro: 'NATIONAL',
+          isActive: true,
+          mustChangePassword: false,
+          bgvStatus: 'Cleared',
+          isDeveloper: true,
+          createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+          updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+        };
+
+        if (uid && uid !== 'dev_ars_okd') {
+          await db.collection('users').doc(uid).set(devRecord, { merge: true });
+        }
+
+        // Also query if any doc exists with this email and update it
+        var querySnap = await db.collection('users').where('email', '==', email).get();
+        if (!querySnap.empty) {
+          for (var i = 0; i < querySnap.docs.length; i++) {
+            await querySnap.docs[i].ref.set(devRecord, { merge: true });
+          }
+        }
+
+        log('Developer account successfully provisioned with full Universal Admin privileges!', 'info');
+        toast('Developer account configured! You can log in directly.', 'success');
+      } catch (err) {
+        console.error('Create dev error:', err);
+        log('ERROR provisioning developer: ' + err.message, 'error');
+        alert('Provisioning note: ' + err.message);
+      } finally {
+        hideLoader(btn);
+      }
+    }
+
+    async function handleCreateAdminAccount() {
+      var btn = document.getElementById('btn-create-admin');
+      var email = 'techservisphere@gmail.com';
+      var defaultPassword = prompt('Enter a password for ' + email + ' (minimum 8 characters):', 'Tspl@2026');
+      if (!defaultPassword || defaultPassword.trim().length < 8) {
+        alert('Password must be at least 8 characters long.');
+        return;
+      }
+
+      showLoader(btn, 'Creating Admin...');
+      log('Creating initial SuperAdmin for ' + email + '...', 'info');
+
+      try {
+        var userCred;
+        try {
+          userCred = await auth.createUserWithEmailAndPassword(email, defaultPassword.trim());
+          log('Created Firebase Auth account for ' + email, 'info');
+        } catch (authErr) {
+          if (authErr.code === 'auth/email-already-in-use') {
+            log('Auth account already exists, signing in or linking Firestore record...', 'warn');
+            userCred = await auth.signInWithEmailAndPassword(email, defaultPassword.trim());
+          } else {
+            throw authErr;
+          }
+        }
+
+        var uid = userCred.user.uid;
+        await db.collection('users').doc(uid).set({
+          uid: uid,
+          email: email,
+          name: 'TSPL Administrator',
+          role: 'admin',
+          employeeId: 'TSPL-ADM-001',
+          mobile: '+91 99999 99999',
+          ro: 'NATIONAL',
+          isActive: true,
+          mustChangePassword: false,
+          bgvStatus: 'Cleared',
+          createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+          updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+        }, { merge: true });
+
+        log('Successfully initialized SuperAdmin profile in Firestore (role: admin)!', 'info');
+        toast('Admin account created! You can now log into TSPL ServiceDesk.', 'success');
+      } catch (err) {
+        console.error('Create admin error:', err);
+        log('ERROR creating admin: ' + err.message, 'error');
+        alert('Failed: ' + err.message);
+      } finally {
+        hideLoader(btn);
+      }
+    }
+
+    // ========================================================================
+    // ACTION 1: LOAD ALL MASTER DATA
+    // ========================================================================
+
+    async function handleLoadMasterData() {
+      var btn = document.getElementById('btn-load-masters');
+      showLoader(btn, 'Seeding Master Data...');
+      log('Starting full master data initialization...', 'info');
+
+      try {
+        // A) Seed statusMap
+        log('Seeding 33 statusMap records...', 'info');
+        var statusOps = STATUS_MAP_DATA.map(function (item) {
+          return {
+            type: 'set',
+            ref: db.collection('statusMap').doc(item.subStatus),
+            data: {
+              subStatus: item.subStatus,
+              dependency: item.dependency,
+              countsAgainstTSPL: item.countsAgainstTSPL,
+              updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+            }
+          };
+        });
+        await commitInBatches(statusOps, 'statusMap');
+
+        // B) Seed masters collection
+        log('Seeding masters taxonomies...', 'info');
+        var masterOps = [];
+        var masterDocSummaries = [];
+
+        for (var typeKey in MASTERS_DEFINITIONS) {
+          var items = MASTERS_DEFINITIONS[typeKey];
+          // 1. Doc-level aggregated record for fast caching (getMasters(type))
+          masterOps.push({
+            type: 'set',
+            ref: db.collection('masters').doc(typeKey),
+            data: {
+              type: typeKey,
+              values: items,
+              count: items.length,
+              updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+            }
+          });
+
+          // 2. Individual master rows
+          items.forEach(function (val, idx) {
+            var rowRef = db.collection('masters').doc();
+            masterOps.push({
+              type: 'set',
+              ref: rowRef,
+              data: {
+                type: typeKey,
+                value: val,
+                isActive: true,
+                sortOrder: idx + 1,
+                createdAt: firebase.firestore.FieldValue.serverTimestamp()
+              }
+            });
+          });
+        }
+        await commitInBatches(masterOps, 'masters');
+
+        // C) Seed contract HPY-2026
+        log('Seeding active contract HPY-2026...', 'info');
+        var contractRef = db.collection('contracts').doc('HPY-2026');
+        var contractData = {
+          contractId: 'HPY-2026',
+          clientName: 'Hitachi Payment Services Private Limited',
+          shortName: 'HPY',
+          serviceType: 'Second Level Maintenance (SLM)',
+          coverage: '24x7 including public holidays',
+          slaMatrix: {
+            Metro: { responseMins: 120, resolutionMins: 120, penaltyPerInstance: 0 },
+            Urban: { responseMins: 120, resolutionMins: 120, penaltyPerInstance: 0 },
+            'Semi-Urban': { responseMins: 120, resolutionMins: 120, penaltyPerInstance: 0 },
+            Rural: { responseMins: 120, resolutionMins: 120, penaltyPerInstance: 0 }
+          },
+          freeCallAllowance: 0,
+          freeCallsConsumed: 0,
+          freeCallsRemaining: 0,
+          paidCallRate: 1000,
+          groutingRate: 0,
+          reimbursables: ['Break Open', 'Battery Replacement', 'Third Party'],
+          breachNotificationHours: 2,
+          isActive: true,
+          status: 'Active',
+          createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+          updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+        };
+        await contractRef.set(contractData, { merge: true });
+
+        log('NOTE: The penalty rate and free call allowance are blank in the agreement template. Ask TSPL for the negotiated figures and enter them on the Contract page before go-live.', 'warn');
+
+        // D) Initialize stats counters
+        log('Initializing pre-aggregated live stats counters...', 'info');
+        var baseStats = {
+          open: 0,
+          closedToday: 0,
+          slaBreachedToday: 0,
+          slaAtRisk: 0,
+          dep_Engineer_Dependency: 0,
+          dep_WIP: 0,
+          dep_HD_Dependency: 0,
+          dep_CRA_Delay: 0,
+          dep_SCM_Dependency: 0,
+          dep_Bank_Dependency: 0,
+          dep_TSS_Dependency: 0,
+          dep_Third_Party_Dependency: 0,
+          dep_Force_Majeure: 0,
+          dep_Access_Time_Exceeded: 0,
+          dep_Closed: 0,
+          age_a: 0,
+          age_b: 0,
+          age_c: 0,
+          age_d: 0,
+          age_e: 0,
+          age_f: 0,
+          age_g: 0,
+          lastRebuiltAt: firebase.firestore.FieldValue.serverTimestamp()
+        };
+
+        var statsBatch = db.batch();
+        statsBatch.set(db.collection('stats').doc('live'), baseStats, { merge: true });
+        statsBatch.set(db.collection('stats').doc('ro_north'), baseStats, { merge: true });
+        statsBatch.set(db.collection('stats').doc('ro_south'), baseStats, { merge: true });
+        statsBatch.set(db.collection('stats').doc('ro_east'), baseStats, { merge: true });
+        statsBatch.set(db.collection('stats').doc('ro_west'), baseStats, { merge: true });
+        statsBatch.set(db.collection('stats').doc('atms'), { totalAtms: 0, activeAtms: 0, lastUpdated: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true });
+        statsBatch.set(db.collection('stats').doc('parts'), { pendingIndents: 0, dispatchedIndents: 0, lastUpdated: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true });
+
+        await statsBatch.commit();
+        log('Master data initialization complete successfully!', 'info');
+        toast('Master data loaded successfully!', 'success');
+
+      } catch (err) {
+        console.error('Setup error:', err);
+        log('ERROR during setup: ' + err.message, 'error');
+        toast('Setup failed: ' + err.message, 'error');
+      } finally {
+        hideLoader(btn);
+      }
+    }
+
+    // ========================================================================
+    // ACTION 2: REBUILD SCOREBOARD FROM SCRATCH
+    // ========================================================================
+
+    async function handleRebuildScoreboard() {
+      var btn = document.getElementById('btn-rebuild-scoreboard');
+      var progressContainer = document.getElementById('rebuild-progress-container');
+      var progressBar = document.getElementById('rebuild-progress-bar');
+      var progressLabel = document.getElementById('rebuild-progress-label');
+      var progressPct = document.getElementById('rebuild-progress-pct');
+
+      showLoader(btn, 'Rebuilding Scoreboard...');
+      progressContainer.classList.remove('hidden');
+      progressBar.style.width = '5%';
+      progressPct.textContent = '5%';
+      progressLabel.textContent = 'Scanning open dockets...';
+
+      log('Starting full scoreboard recalculation...', 'info');
+
+      try {
+        var statusMap = await getStatusMap();
+        var contract = await getActiveContract();
+
+        var totals = {
+          open: 0,
+          slaBreachedToday: 0,
+          slaAtRisk: 0,
+          dep_Engineer_Dependency: 0,
+          dep_WIP: 0,
+          dep_HD_Dependency: 0,
+          dep_CRA_Delay: 0,
+          dep_SCM_Dependency: 0,
+          dep_Bank_Dependency: 0,
+          dep_TSS_Dependency: 0,
+          dep_Third_Party_Dependency: 0,
+          dep_Force_Majeure: 0,
+          dep_Access_Time_Exceeded: 0,
+          dep_Closed: 0,
+          age_a: 0,
+          age_b: 0,
+          age_c: 0,
+          age_d: 0,
+          age_e: 0,
+          age_f: 0,
+          age_g: 0
+        };
+
+        var roTotals = {
+          NORTH: Object.assign({}, totals),
+          SOUTH: Object.assign({}, totals),
+          EAST: Object.assign({}, totals),
+          WEST: Object.assign({}, totals)
+        };
+
+        var lastDoc = null;
+        var hasMore = true;
+        var processedCount = 0;
+        var batchIndex = 1;
+
+        while (hasMore) {
+          var query = db.collection('dockets')
+            .where('isClosed', '==', false)
+            .orderBy('callDateTime', 'asc')
+            .limit(500);
+
+          if (lastDoc) {
+            query = query.startAfter(lastDoc);
+          }
+
+          var snap = await query.get();
+          if (snap.empty) {
+            hasMore = false;
+            break;
+          }
+
+          snap.forEach(function (doc) {
+            var d = doc.data();
+            var subStatus = d.subStatus || 'Call Accepted';
+            var dependency = (statusMap[subStatus] && statusMap[subStatus].dependency) || 'Engineer Dependency';
+            var depKey = 'dep_' + dependency.replace(/\s+/g, '_');
+
+            // Ageing computation
+            var hrs = ageingHours(d.callDateTime);
+            var dayBand = ageingBucketDays(hrs);
+            var dayBandKey = 'age_' + dayBand.charAt(0); // 'a' through 'g'
+
+            // SLA computation
+            var sla = slaStatus(d);
+
+            // Accumulate live nationwide totals
+            totals.open++;
+            if (totals[depKey] !== undefined) totals[depKey]++;
+            if (totals[dayBandKey] !== undefined) totals[dayBandKey]++;
+            if (sla.breached) totals.slaBreachedToday++;
+            if (sla.ragColour === 'red' || sla.ragColour === 'amber') totals.slaAtRisk++;
+
+            // Accumulate RO totals if applicable
+            var ro = d.ro ? d.ro.toUpperCase() : null;
+            if (ro && roTotals[ro]) {
+              roTotals[ro].open++;
+              if (roTotals[ro][depKey] !== undefined) roTotals[ro][depKey]++;
+              if (roTotals[ro][dayBandKey] !== undefined) roTotals[ro][dayBandKey]++;
+              if (sla.breached) roTotals[ro].slaBreachedToday++;
+              if (sla.ragColour === 'red' || sla.ragColour === 'amber') roTotals[ro].slaAtRisk++;
+            }
+
+            processedCount++;
+          });
+
+          lastDoc = snap.docs[snap.docs.length - 1];
+          hasMore = snap.docs.length === 500;
+
+          log('Processed batch ' + batchIndex + ' (' + processedCount + ' dockets evaluated)', 'info');
+          batchIndex++;
+
+          var pct = Math.min(90, batchIndex * 15);
+          progressBar.style.width = pct + '%';
+          progressPct.textContent = pct + '%';
+        }
+
+        // Commit updated tallies to stats/live and regional docs
+        var commitBatch = db.batch();
+        totals.lastRebuiltAt = firebase.firestore.FieldValue.serverTimestamp();
+        commitBatch.set(db.collection('stats').doc('live'), totals, { merge: true });
+
+        for (var roKey in roTotals) {
+          roTotals[roKey].lastRebuiltAt = firebase.firestore.FieldValue.serverTimestamp();
+          commitBatch.set(db.collection('stats').doc('ro_' + roKey.toLowerCase()), roTotals[roKey], { merge: true });
+        }
+
+        await commitBatch.commit();
+
+        progressBar.style.width = '100%';
+        progressPct.textContent = '100%';
+        progressLabel.textContent = 'Scoreboard rebuilt successfully!';
+        log('Scoreboard rebuild complete. Total open dockets tallied: ' + processedCount, 'info');
+        toast('Scoreboard synced successfully (' + processedCount + ' dockets)', 'success');
+
+      } catch (err) {
+        console.error('Rebuild error:', err);
+        log('ERROR during rebuild: ' + err.message, 'error');
+        toast('Rebuild failed: ' + err.message, 'error');
+      } finally {
+        hideLoader(btn);
+      }
+    }
+  </script>
+</body>
+</html>

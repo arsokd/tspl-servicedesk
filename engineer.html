@@ -1,0 +1,1261 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>TSPL Field Engineer Portal</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Leaflet for Route View Modal -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <!-- Firebase Compat 10.7.1 -->
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-storage-compat.js"></script>
+  <script src="firebase-config.js"></script>
+  <script src="auth-guard.js"></script>
+  <style>
+    /* Mobile-first touch optimization */
+    * { -webkit-tap-highlight-color: transparent; }
+    body { touch-action: manipulation; }
+    .touch-target { min-height: 48px; min-width: 48px; }
+    /* Hide scrollbars for clean mobile feel */
+    .no-scrollbar::-webkit-scrollbar { display: none; }
+    .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+  </style>
+</head>
+<body class="bg-slate-100 min-h-screen text-slate-900 font-sans antialiased select-none flex justify-center">
+
+  <!-- Mobile Viewport Wrapper (375px standard, max-w-[420px] for desktop centering) -->
+  <div class="w-full max-w-[420px] bg-slate-50 min-h-screen flex flex-col shadow-2xl relative pb-28">
+
+    <!-- =================================================================== -->
+    <!-- 1. OFFLINE STATUS STRIP (Shown when offline)                         -->
+    <!-- =================================================================== -->
+    <div id="offline-bar" class="hidden bg-amber-500 text-amber-950 px-4 py-2 text-xs font-bold flex items-center justify-between shadow-sm sticky top-0 z-50">
+      <div class="flex items-center gap-1.5">
+        <span class="h-2 w-2 rounded-full bg-amber-900 animate-ping"></span>
+        <span>Offline Mode</span>
+      </div>
+      <span id="offline-sync-count" class="text-[11px] bg-amber-600/30 px-2 py-0.5 rounded text-amber-950 font-mono">0 pending syncs</span>
+    </div>
+
+    <!-- =================================================================== -->
+    <!-- 2. LOCATION STOPPED CRITICAL BANNER (Undismissable if GPS drops)    -->
+    <!-- =================================================================== -->
+    <div id="location-stopped-banner" class="hidden bg-red-600 text-white p-3.5 shadow-md sticky top-0 z-50 border-b border-red-700 animate-pulse">
+      <div class="flex items-start justify-between gap-2">
+        <div class="flex items-start gap-2">
+          <svg class="h-5 w-5 text-white shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+          </svg>
+          <div>
+            <div class="text-xs font-black uppercase tracking-wider">Location Sharing Stopped</div>
+            <div class="text-[11px] leading-tight text-red-100 mt-0.5">
+              Your service timings cannot be verified until you turn Location back on.
+            </div>
+          </div>
+        </div>
+        <button onclick="openGpsHelpModal()" class="bg-white text-red-700 text-[11px] font-bold px-2.5 py-1 rounded shadow shrink-0 touch-target flex items-center justify-center">
+          Tap for Help
+        </button>
+      </div>
+    </div>
+
+    <!-- =================================================================== -->
+    <!-- 3. TOP SLA BANNER (Most urgent docket live countdown)              -->
+    <!-- =================================================================== -->
+    <div id="sla-top-banner" class="bg-indigo-900 text-white p-4 shadow-md transition-colors cursor-pointer" onclick="handleUrgentDocketClick()">
+      <div class="flex items-center justify-between text-[11px] uppercase tracking-wider text-indigo-200 font-semibold mb-1">
+        <span class="flex items-center gap-1.5">
+          <span class="h-2 w-2 rounded-full bg-amber-400 animate-pulse"></span>
+          Most Urgent Call
+        </span>
+        <span id="sla-top-atm-bank">--</span>
+      </div>
+
+      <div id="sla-top-countdown" class="text-2xl font-black font-mono tracking-tight text-yellow-300">
+        Loading urgent call...
+      </div>
+
+      <div class="flex items-center justify-between mt-1 text-[11px] text-indigo-200">
+        <span>HPY target: 2 hours from call logging.</span>
+        <span class="underline font-bold text-white flex items-center gap-0.5">
+          View Docket &rarr;
+        </span>
+      </div>
+    </div>
+
+    <!-- Pull to Refresh / Header Action Strip -->
+    <div class="px-4 pt-3 pb-1 flex items-center justify-between">
+      <div class="flex items-center gap-2.5">
+        <img src="assets/tspl-logo.svg" alt="TSPL" class="h-8 w-auto object-contain rounded border border-slate-200" />
+        <div>
+          <div class="text-xs font-bold text-slate-800" id="engineer-greeting">Hi, Field Engineer</div>
+          <div class="text-[11px] text-slate-500 font-medium" id="engineer-ro-badge">Coimbatore RO</div>
+        </div>
+      </div>
+      <button onclick="loadEngineerDockets(true)" id="btn-refresh" class="text-xs font-bold text-indigo-600 hover:text-indigo-800 bg-white border border-slate-200 px-3 py-1.5 rounded-lg shadow-sm flex items-center gap-1.5 touch-target">
+        <svg id="refresh-icon" class="h-3.5 w-3.5 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+        </svg>
+        <span>Refresh</span>
+      </button>
+    </div>
+
+    <!-- MAIN SCROLLABLE BODY -->
+    <main class="flex-grow p-4 space-y-4">
+
+      <!-- ================================================================= -->
+      <!-- 4. ATTENDANCE & DUTY TIMER CARD                                   -->
+      <!-- ================================================================= -->
+      <div class="bg-white rounded-2xl p-4 shadow-sm border border-slate-200/80 space-y-3">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <div id="duty-status-indicator" class="h-3 w-3 rounded-full bg-slate-300"></div>
+            <span id="duty-status-label" class="text-xs font-bold uppercase tracking-wider text-slate-600">OFF DUTY</span>
+          </div>
+          <div id="duty-timer-clock" class="text-xs font-mono font-bold text-slate-700 bg-slate-100 px-2.5 py-1 rounded-md">
+            00:00:00 on duty
+          </div>
+        </div>
+
+        <!-- Punch Buttons & Camera Trigger -->
+        <div class="grid grid-cols-2 gap-2">
+          <button id="btn-punch-in" onclick="triggerPunchIn()" class="bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-bold text-xs py-3 px-3 rounded-xl shadow-sm flex items-center justify-center gap-1.5 touch-target">
+            <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1" />
+            </svg>
+            PUNCH IN (GPS)
+          </button>
+
+          <button id="btn-punch-out" onclick="triggerPunchOut()" disabled class="bg-slate-200 text-slate-400 font-bold text-xs py-3 px-3 rounded-xl flex items-center justify-center gap-1.5 touch-target cursor-not-allowed">
+            <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+            </svg>
+            PUNCH OUT
+          </button>
+        </div>
+
+        <!-- Hidden Native File Inputs for Selfie Capture -->
+        <input type="file" id="camera-punch-in" accept="image/*" capture="user" class="hidden" onchange="handlePunchInSelfieSelected(this)" />
+        <input type="file" id="camera-punch-out" accept="image/*" capture="user" class="hidden" onchange="handlePunchOutSelfieSelected(this)" />
+
+        <div id="attendance-feedback" class="text-[11px] text-slate-500 italic text-center hidden"></div>
+      </div>
+
+      <!-- ================================================================= -->
+      <!-- 5. SUMMARY CARDS (3 across, computed from 50 loaded dockets)     -->
+      <!-- ================================================================= -->
+      <div class="grid grid-cols-3 gap-2">
+        <!-- Open Dockets -->
+        <div class="bg-white rounded-xl p-3 border border-slate-200 shadow-sm text-center">
+          <div class="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Open Calls</div>
+          <div id="stat-open-dockets" class="text-xl font-black text-slate-900 mt-0.5">0</div>
+        </div>
+
+        <!-- Breaching Soon (<30m or Breached) -->
+        <div class="bg-red-50 rounded-xl p-3 border border-red-200 shadow-sm text-center">
+          <div class="text-[10px] uppercase font-bold text-red-600 tracking-wider">Breach Risk</div>
+          <div id="stat-breaching-soon" class="text-xl font-black text-red-600 mt-0.5">0</div>
+        </div>
+
+        <!-- Over 7 Days -->
+        <div class="bg-amber-50 rounded-xl p-3 border border-amber-200 shadow-sm text-center">
+          <div class="text-[10px] uppercase font-bold text-amber-700 tracking-wider">&gt; 7 Days</div>
+          <div id="stat-over-7-days" class="text-xl font-black text-amber-700 mt-0.5">0</div>
+        </div>
+      </div>
+
+      <!-- ================================================================= -->
+      <!-- 6. MY DOCKETS LIST                                                -->
+      <!-- ================================================================= -->
+      <div class="space-y-2">
+        <div class="flex items-center justify-between px-1">
+          <h2 class="text-xs font-bold uppercase tracking-wider text-slate-700">Assigned Calls (Sorted by SLA)</h2>
+          <span id="docket-count-badge" class="text-[10px] font-bold bg-indigo-100 text-indigo-800 px-2 py-0.5 rounded-full">0 Calls</span>
+        </div>
+
+        <div id="dockets-container" class="space-y-2.5">
+          <!-- Placeholder skeleton while loading -->
+          <div class="p-4 bg-white rounded-xl border border-slate-200 shadow-sm text-center text-xs text-slate-400 animate-pulse">
+            Loading assigned calls...
+          </div>
+        </div>
+      </div>
+
+      <!-- ================================================================= -->
+      <!-- 7. MY ROUTE TODAY CARD                                            -->
+      <!-- ================================================================= -->
+      <div class="bg-white rounded-2xl p-4 shadow-sm border border-slate-200 space-y-3">
+        <div class="flex items-center justify-between border-b border-slate-100 pb-2">
+          <h3 class="text-xs font-bold uppercase tracking-wider text-slate-800 flex items-center gap-1.5">
+            <svg class="h-4 w-4 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
+            </svg>
+            My Route Today
+          </h3>
+          <button onclick="openRouteMapModal()" class="text-xs font-bold text-indigo-600 hover:text-indigo-800 underline touch-target flex items-center">
+            View My Route
+          </button>
+        </div>
+
+        <div class="grid grid-cols-2 gap-2 text-xs">
+          <div class="p-2.5 bg-slate-50 rounded-lg border border-slate-100">
+            <div class="text-[10px] text-slate-400 font-bold uppercase">Distance Travelled</div>
+            <div id="route-distance-text" class="text-sm font-black text-slate-800 mt-0.5">0.0 km</div>
+          </div>
+          <div class="p-2.5 bg-slate-50 rounded-lg border border-slate-100">
+            <div class="text-[10px] text-slate-400 font-bold uppercase">ATM Sites Visited</div>
+            <div id="route-sites-text" class="text-sm font-black text-slate-800 mt-0.5">0 sites</div>
+          </div>
+        </div>
+
+        <div class="text-[11px] text-slate-500 flex items-center justify-between px-1">
+          <span>First Ping: <strong id="route-first-ping" class="font-mono text-slate-700">--:--</strong></span>
+          <span>Last Ping: <strong id="route-last-ping" class="font-mono text-slate-700">--:--</strong></span>
+        </div>
+
+        <p class="text-[10px] text-slate-400 italic text-center pt-1 border-t border-slate-100">
+          You can see exactly what your manager sees.
+        </p>
+      </div>
+
+    </main>
+
+    <!-- =================================================================== -->
+    <!-- 8. TRACKING STATUS STRIP (Fixed above bottom tabs)                  -->
+    <!-- =================================================================== -->
+    <div class="fixed bottom-14 left-0 right-0 max-w-[420px] mx-auto bg-slate-900 text-white px-4 py-2 shadow-lg border-t border-slate-800 z-40">
+      <div class="flex items-center justify-between text-xs">
+        <div class="flex items-center gap-2">
+          <span id="tracking-dot" class="h-2.5 w-2.5 rounded-full bg-slate-500"></span>
+          <span id="tracking-last-sent" class="font-mono text-[11px] text-slate-300">GPS: Idle</span>
+        </div>
+
+        <div class="flex items-center gap-2">
+          <span id="tracking-accuracy" class="text-[11px] text-slate-400 font-mono">±--m</span>
+          <span id="tracking-client-badge" class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-indigo-800 text-indigo-200">Browser</span>
+        </div>
+      </div>
+
+      <!-- App Install Suggestion for Background Sync -->
+      <div id="tracking-browser-hint" class="text-[10px] text-amber-300 font-medium mt-1 text-center truncate">
+        Install the TSPL app for tracking that works with your screen off.
+      </div>
+    </div>
+
+    <!-- =================================================================== -->
+    <!-- 9. FIXED BOTTOM TAB BAR (Home, My Dockets, Profile)                -->
+    <!-- =================================================================== -->
+    <nav class="fixed bottom-0 left-0 right-0 max-w-[420px] mx-auto bg-white border-t border-slate-200 flex items-center justify-around h-14 z-40 px-2 shadow-xl">
+      <!-- Tab 1: Home (Active) -->
+      <button onclick="switchToTab('home')" class="flex flex-col items-center justify-center flex-1 h-full text-indigo-600 font-bold touch-target">
+        <svg class="h-5 w-5" fill="currentColor" viewBox="0 0 20 20">
+          <path d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z" />
+        </svg>
+        <span class="text-[10px] mt-0.5">Home</span>
+      </button>
+
+      <!-- Tab 2: My Dockets -->
+      <button onclick="window.location.href='dockets.html'" class="flex flex-col items-center justify-center flex-1 h-full text-slate-500 hover:text-slate-900 font-medium touch-target">
+        <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+        </svg>
+        <span class="text-[10px] mt-0.5">My Dockets</span>
+      </button>
+
+      <!-- Tab 3: Profile -->
+      <button onclick="openProfileModal()" class="flex flex-col items-center justify-center flex-1 h-full text-slate-500 hover:text-slate-900 font-medium touch-target">
+        <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+        </svg>
+        <span class="text-[10px] mt-0.5">Profile</span>
+      </button>
+    </nav>
+
+  </div>
+
+  <!-- ===================================================================== -->
+  <!-- MODAL: ONE-TIME GPS CONSENT MODAL (Mandatory 12-Month Retention)     -->
+  <!-- ===================================================================== -->
+  <div id="modal-gps-consent" class="hidden fixed inset-0 z-50 bg-slate-900/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-2xl max-w-sm w-full border border-slate-200 p-5 space-y-4 animate-in slide-in-from-bottom">
+      <div class="flex items-center gap-3 border-b border-slate-100 pb-3">
+        <div class="p-2.5 bg-indigo-50 text-indigo-700 rounded-xl">
+          <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+          </svg>
+        </div>
+        <div>
+          <h3 class="text-sm font-bold text-slate-900 uppercase">Duty Location Consent</h3>
+          <p class="text-[11px] text-slate-500 font-medium">TSPL Field Service Tracking</p>
+        </div>
+      </div>
+
+      <div class="text-xs text-slate-700 leading-relaxed space-y-2 bg-slate-50 p-3.5 rounded-xl border border-slate-200">
+        <p>
+          TSPL ServiceDesk records your location only between the time you punch in and the time you punch out. It is never recorded on your off days or after you punch out.
+        </p>
+        <p>
+          This is used to confirm the exact time you reached each ATM, to send you the calls nearest to you, and to protect you when a bank questions how long a repair took. Your route is kept for 12 months and then deleted.
+        </p>
+        <p>
+          You can see your own route at any time from the View My Route button on this screen. Your manager can see your location during duty hours.
+        </p>
+      </div>
+
+      <div class="space-y-2 pt-1">
+        <button onclick="handleGpsConsentAgree()" class="w-full bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white font-bold text-xs py-3 px-4 rounded-xl shadow-md touch-target flex items-center justify-center">
+          Agree and continue
+        </button>
+        <button onclick="handleGpsConsentDecline()" class="w-full bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold text-xs py-3 px-4 rounded-xl touch-target flex items-center justify-center">
+          Not now (Log Out)
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================================================================== -->
+  <!-- MODAL: GPS TROUBLESHOOTING HELP (Android / iPhone)                    -->
+  <!-- ===================================================================== -->
+  <div id="modal-gps-help" class="hidden fixed inset-0 z-50 bg-slate-900/70 flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-2xl max-w-sm w-full border border-slate-200 p-5 space-y-4">
+      <div class="flex items-center justify-between border-b border-slate-100 pb-2">
+        <h3 class="text-sm font-bold text-red-700 uppercase flex items-center gap-1.5">
+          <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          Fix Location Sharing
+        </h3>
+        <button onclick="closeGpsHelpModal()" class="text-slate-400 hover:text-slate-700 text-xl font-bold touch-target">&times;</button>
+      </div>
+
+      <div class="space-y-3 text-xs text-slate-700">
+        <div class="p-3 bg-slate-50 rounded-xl border border-slate-200">
+          <strong class="text-slate-900 block mb-1">Android (Chrome / Samsung Internet):</strong>
+          <ol class="list-decimal list-inside space-y-1 text-[11px] text-slate-600">
+            <li>Open phone <strong>Settings</strong> &gt; <strong>Apps</strong> &gt; <strong>Chrome</strong>.</li>
+            <li>Tap <strong>Permissions</strong> &gt; <strong>Location</strong>.</li>
+            <li>Select <strong>Allow only while using the app</strong> (or Always).</li>
+            <li>Ensure <strong>Use precise location</strong> is enabled.</li>
+          </ol>
+        </div>
+
+        <div class="p-3 bg-slate-50 rounded-xl border border-slate-200">
+          <strong class="text-slate-900 block mb-1">Apple iPhone (Safari):</strong>
+          <ol class="list-decimal list-inside space-y-1 text-[11px] text-slate-600">
+            <li>Open <strong>Settings</strong> &gt; <strong>Privacy &amp; Security</strong>.</li>
+            <li>Tap <strong>Location Services</strong> (turn ON).</li>
+            <li>Scroll to <strong>Safari Websites</strong> &gt; select <strong>While Using the App</strong>.</li>
+            <li>Toggle ON <strong>Precise Location</strong>.</li>
+          </ol>
+        </div>
+      </div>
+
+      <div class="pt-2">
+        <button onclick="retryLocationCapture()" class="w-full bg-red-600 hover:bg-red-700 text-white font-bold text-xs py-3 rounded-xl touch-target flex items-center justify-center shadow">
+          Retry GPS Location Capture
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================================================================== -->
+  <!-- MODAL: MY ROUTE TODAY INTERACTIVE MAP                                -->
+  <!-- ===================================================================== -->
+  <div id="modal-route-map" class="hidden fixed inset-0 z-50 bg-slate-900/80 flex flex-col items-center justify-center p-3">
+    <div class="bg-white rounded-2xl shadow-2xl max-w-[400px] w-full flex flex-col h-[85vh] border border-slate-200 overflow-hidden">
+      <div class="p-3 bg-slate-900 text-white flex items-center justify-between">
+        <div>
+          <h3 class="text-xs font-bold uppercase tracking-wider">My Route Breadcrumbs</h3>
+          <p class="text-[10px] text-slate-400">12-Month Contractual Service Audit Trail</p>
+        </div>
+        <button onclick="closeRouteMapModal()" class="text-slate-300 hover:text-white font-bold text-lg px-2 touch-target">&times;</button>
+      </div>
+
+      <div id="route-map-container" class="flex-grow w-full bg-slate-200 relative"></div>
+
+      <div class="p-3 bg-slate-50 border-t border-slate-200 text-xs flex items-center justify-between">
+        <span id="route-map-stats" class="font-bold text-slate-800">Total Distance: 0 km</span>
+        <button onclick="closeRouteMapModal()" class="bg-indigo-600 text-white font-bold px-4 py-2 rounded-lg text-xs touch-target">
+          Close Map
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================================================================== -->
+  <!-- MODAL: PROFILE & SIGN OUT                                            -->
+  <!-- ===================================================================== -->
+  <div id="modal-profile" class="hidden fixed inset-0 z-50 bg-slate-900/70 flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-2xl max-w-sm w-full border border-slate-200 p-5 space-y-4">
+      <div class="flex items-center justify-between border-b border-slate-100 pb-2">
+        <h3 class="text-sm font-bold text-slate-900 uppercase">Field Engineer Profile</h3>
+        <button onclick="closeProfileModal()" class="text-slate-400 hover:text-slate-700 text-xl font-bold touch-target">&times;</button>
+      </div>
+
+      <div class="space-y-2 text-xs">
+        <div class="p-3 bg-slate-50 rounded-xl border border-slate-100">
+          <div class="text-[10px] text-slate-400 uppercase font-bold">Engineer Name</div>
+          <div id="prof-name" class="font-bold text-slate-800 text-sm">--</div>
+        </div>
+        <div class="p-3 bg-slate-50 rounded-xl border border-slate-100">
+          <div class="text-[10px] text-slate-400 uppercase font-bold">Assigned RO / Base City</div>
+          <div id="prof-ro" class="font-bold text-slate-800">--</div>
+        </div>
+        <div class="p-3 bg-slate-50 rounded-xl border border-slate-100">
+          <div class="text-[10px] text-slate-400 uppercase font-bold">Employee / System UID</div>
+          <div id="prof-uid" class="font-mono text-slate-600 text-[11px] break-all">--</div>
+        </div>
+      </div>
+
+      <div class="pt-2">
+        <button onclick="handleLogout()" class="w-full bg-red-600 hover:bg-red-700 active:bg-red-800 text-white font-bold text-xs py-3 rounded-xl touch-target shadow flex items-center justify-center gap-2">
+          <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+          </svg>
+          Sign Out of TSPL ServiceDesk
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================================================================== -->
+  <!-- SCRIPT: APPLICATION LOGIC                                            -->
+  <!-- ===================================================================== -->
+  <script>
+    // State variables
+    var loadedDockets = [];
+    var mostUrgentDocket = null;
+    var attendanceState = {
+      isOnDuty: false,
+      punchInTime: null,
+      punchInDocId: null,
+      dutyInterval: null
+    };
+
+    var routeStats = {
+      distanceKm: 0,
+      sitesVisited: 0,
+      firstPing: null,
+      lastPing: null,
+      points: []
+    };
+
+    var lastStationaryCheck = {
+      lat: null,
+      lng: null,
+      since: Date.now()
+    };
+
+    var leafMap = null;
+    var routePolyline = null;
+    var urgentTickerInterval = null;
+
+    // ------------------------------------------------------------------------
+    // INITIALIZATION & AUTH GUARD
+    // ------------------------------------------------------------------------
+    document.addEventListener('DOMContentLoaded', async function () {
+      // 1. Enforce engineer role authorization
+      if (typeof checkAuth === 'function') {
+        checkAuth(['engineer']);
+      }
+
+      // 2. Setup user display details
+      var name = localStorage.getItem('userName') || 'Field Engineer';
+      var ro = localStorage.getItem('userRo') || 'Regional Office';
+      document.getElementById('engineer-greeting').textContent = 'Hi, ' + name.split(' ')[0];
+      document.getElementById('engineer-ro-badge').textContent = ro;
+
+      // 3. Online/Offline network listener
+      initNetworkMonitor();
+
+      // 4. Verify GPS Consent (12-month retention)
+      await verifyGpsConsent();
+
+      // 5. Restore active attendance state & duty timer
+      await checkTodayAttendance();
+
+      // 6. Load scoped dockets (limit 50, using .get())
+      await loadEngineerDockets(false);
+
+      // 7. Setup Live Telemetry Watchers & Safeguards
+      initTrackingWatcher();
+      initForgottenPunchoutSafeguards();
+    });
+
+    // ------------------------------------------------------------------------
+    // NETWORK STATUS MONITOR
+    // ------------------------------------------------------------------------
+    function initNetworkMonitor() {
+      function updateOnlineStatus() {
+        var bar = document.getElementById('offline-bar');
+        if (!navigator.onLine) {
+          bar.classList.remove('hidden');
+          var pending = (_trackingState && _trackingState.heldTrail) ? _trackingState.heldTrail.length : 0;
+          document.getElementById('offline-sync-count').textContent = pending + ' telemetry points pending';
+        } else {
+          bar.classList.add('hidden');
+        }
+      }
+      window.addEventListener('online', updateOnlineStatus);
+      window.addEventListener('offline', updateOnlineStatus);
+      updateOnlineStatus();
+    }
+
+    // ------------------------------------------------------------------------
+    // GPS CONSENT DIALOG (Clause / Privacy Contract)
+    // ------------------------------------------------------------------------
+    async function verifyGpsConsent() {
+      var localConsent = localStorage.getItem('gpsConsentGivenAt');
+      if (localConsent) return;
+
+      var user = auth.currentUser;
+      if (user) {
+        try {
+          var userDoc = await db.collection('users').doc(user.uid).get();
+          if (userDoc.exists && userDoc.data().gpsConsentGivenAt) {
+            localStorage.setItem('gpsConsentGivenAt', userDoc.data().gpsConsentGivenAt);
+            return;
+          }
+        } catch (e) {}
+      }
+
+      // Show consent modal
+      document.getElementById('modal-gps-consent').classList.remove('hidden');
+    }
+
+    async function handleGpsConsentAgree() {
+      var stamp = new Date().toISOString();
+      localStorage.setItem('gpsConsentGivenAt', stamp);
+      document.getElementById('modal-gps-consent').classList.add('hidden');
+
+      var user = auth.currentUser;
+      if (user) {
+        try {
+          await db.collection('users').doc(user.uid).set({
+            gpsConsentGivenAt: stamp
+          }, { merge: true });
+        } catch (e) {}
+      }
+      toast('Location consent recorded (12-month retention)', 'success');
+    }
+
+    function handleGpsConsentDecline() {
+      document.getElementById('modal-gps-consent').classList.add('hidden');
+      handleLogout();
+    }
+
+    // ------------------------------------------------------------------------
+    // ATTENDANCE: PUNCH IN & PUNCH OUT
+    // ------------------------------------------------------------------------
+    function fmtDateKey(d) {
+      var day = ('0' + d.getDate()).slice(-2);
+      var mon = ('0' + (d.getMonth() + 1)).slice(-2);
+      var yr = d.getFullYear();
+      return day + mon + yr;
+    }
+
+    async function checkTodayAttendance() {
+      var uid = localStorage.getItem('userUid') || (auth.currentUser ? auth.currentUser.uid : null);
+      if (!uid) return;
+
+      var todayKey = fmtDateKey(new Date());
+      var docId = uid + '_' + todayKey;
+
+      try {
+        var snap = await db.collection('attendance').doc(docId).get();
+        if (snap.exists) {
+          var data = snap.data();
+          if (data.punchIn && !data.punchOut) {
+            // Engineer is currently ON DUTY
+            attendanceState.isOnDuty = true;
+            attendanceState.punchInTime = data.punchIn.toDate ? data.punchIn.toDate() : new Date(data.punchIn);
+            attendanceState.punchInDocId = docId;
+            setDutyUI(true);
+            startDutyTimer();
+            startTracking('onduty');
+          } else if (data.punchIn && data.punchOut) {
+            setDutyUI(false, 'Shift Completed');
+          }
+        }
+      } catch (err) {
+        console.warn('Attendance check error:', err);
+      }
+    }
+
+    function setDutyUI(onDuty, customLabel) {
+      var dot = document.getElementById('duty-status-indicator');
+      var label = document.getElementById('duty-status-label');
+      var btnIn = document.getElementById('btn-punch-in');
+      var btnOut = document.getElementById('btn-punch-out');
+
+      if (onDuty) {
+        dot.className = 'h-3 w-3 rounded-full bg-emerald-500 animate-pulse';
+        label.textContent = 'ON DUTY';
+        label.className = 'text-xs font-bold uppercase tracking-wider text-emerald-700';
+        btnIn.disabled = true;
+        btnIn.className = 'bg-slate-200 text-slate-400 font-bold text-xs py-3 px-3 rounded-xl flex items-center justify-center gap-1.5 touch-target cursor-not-allowed';
+        btnOut.disabled = false;
+        btnOut.className = 'bg-red-600 hover:bg-red-700 active:bg-red-800 text-white font-bold text-xs py-3 px-3 rounded-xl shadow-sm flex items-center justify-center gap-1.5 touch-target';
+      } else {
+        dot.className = 'h-3 w-3 rounded-full bg-slate-300';
+        label.textContent = customLabel || 'OFF DUTY';
+        label.className = 'text-xs font-bold uppercase tracking-wider text-slate-600';
+        btnIn.disabled = false;
+        btnIn.className = 'bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-bold text-xs py-3 px-3 rounded-xl shadow-sm flex items-center justify-center gap-1.5 touch-target';
+        btnOut.disabled = true;
+        btnOut.className = 'bg-slate-200 text-slate-400 font-bold text-xs py-3 px-3 rounded-xl flex items-center justify-center gap-1.5 touch-target cursor-not-allowed';
+      }
+    }
+
+    function startDutyTimer() {
+      if (attendanceState.dutyInterval) clearInterval(attendanceState.dutyInterval);
+      function update() {
+        if (!attendanceState.punchInTime) return;
+        var diffMs = Date.now() - attendanceState.punchInTime.getTime();
+        var hrs = Math.floor(diffMs / 3600000);
+        var mins = Math.floor((diffMs % 3600000) / 60000);
+        var secs = Math.floor((diffMs % 60000) / 1000);
+        document.getElementById('duty-timer-clock').textContent = 
+          padZero(hrs) + ':' + padZero(mins) + ':' + padZero(secs) + ' on duty';
+      }
+      update();
+      attendanceState.dutyInterval = setInterval(update, 1000);
+    }
+
+    // Trigger Punch In -> Checks GPS -> Opens Camera
+    function triggerPunchIn() {
+      var fb = document.getElementById('attendance-feedback');
+      fb.classList.remove('hidden');
+      fb.textContent = 'Acquiring high-accuracy GPS fix...';
+
+      if (!navigator.geolocation) {
+        fb.textContent = 'Geolocation is not supported by your device.';
+        return;
+      }
+
+      navigator.geolocation.getCurrentPosition(
+        function (pos) {
+          window._pendingPunchInCoords = {
+            lat: parseFloat(pos.coords.latitude.toFixed(5)),
+            lng: parseFloat(pos.coords.longitude.toFixed(5)),
+            accuracy: Math.round(pos.coords.accuracy)
+          };
+          fb.textContent = 'GPS acquired (±' + window._pendingPunchInCoords.accuracy + 'm). Take punch-in selfie:';
+          // Open camera
+          document.getElementById('camera-punch-in').click();
+        },
+        function (err) {
+          fb.innerHTML = '<span class="text-red-600 font-bold">GPS Refused / Timed out. You must allow high-accuracy location to punch in.</span>';
+          document.getElementById('location-stopped-banner').classList.remove('hidden');
+        },
+        { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+      );
+    }
+
+    async function handlePunchInSelfieSelected(input) {
+      var file = input.files[0];
+      if (!file) return;
+
+      var fb = document.getElementById('attendance-feedback');
+      fb.textContent = 'Compressing selfie & syncing punch-in...';
+
+      try {
+        // Compress image to 400px width @ 0.6 quality (~25KB)
+        var compressedBlob = await compressImage(file, 400, 0.6);
+
+        var uid = localStorage.getItem('userUid') || (auth.currentUser ? auth.currentUser.uid : null);
+        var todayKey = fmtDateKey(new Date());
+        var docId = uid + '_' + todayKey;
+
+        // Base64 storage string or Storage upload
+        var reader = new FileReader();
+        reader.onloadend = async function () {
+          var base64Data = reader.result;
+          var punchTime = new Date();
+
+          await db.collection('attendance').doc(docId).set({
+            uid: uid,
+            date: todayKey,
+            engineerName: localStorage.getItem('userName') || 'Field Engineer',
+            punchIn: firebase.firestore.FieldValue.serverTimestamp(),
+            punchInCoords: window._pendingPunchInCoords || null,
+            punchInPhotoBase64: base64Data,
+            status: 'onduty',
+            autoClosed: false
+          }, { merge: true });
+
+          attendanceState.isOnDuty = true;
+          attendanceState.punchInTime = punchTime;
+          attendanceState.punchInDocId = docId;
+
+          setDutyUI(true);
+          startDutyTimer();
+          startTracking('onduty');
+
+          fb.textContent = 'Punch-in verified successfully!';
+          setTimeout(function () { fb.classList.add('hidden'); }, 3000);
+          toast('Punched In successfully. Live tracking active.', 'success');
+        };
+        reader.readAsDataURL(compressedBlob);
+      } catch (err) {
+        console.error('Punch in failed:', err);
+        fb.innerHTML = '<span class="text-red-600 font-bold">Failed to process photo: ' + err.message + '</span>';
+      }
+    }
+
+    // Trigger Punch Out -> Checks GPS -> Opens Camera
+    function triggerPunchOut() {
+      var fb = document.getElementById('attendance-feedback');
+      fb.classList.remove('hidden');
+      fb.textContent = 'Acquiring GPS fix for punch out...';
+
+      navigator.geolocation.getCurrentPosition(
+        function (pos) {
+          window._pendingPunchOutCoords = {
+            lat: parseFloat(pos.coords.latitude.toFixed(5)),
+            lng: parseFloat(pos.coords.longitude.toFixed(5)),
+            accuracy: Math.round(pos.coords.accuracy)
+          };
+          fb.textContent = 'Take punch-out selfie:';
+          document.getElementById('camera-punch-out').click();
+        },
+        function () {
+          // Fallback if GPS fails on punch-out
+          window._pendingPunchOutCoords = null;
+          document.getElementById('camera-punch-out').click();
+        },
+        { enableHighAccuracy: true, timeout: 15000 }
+      );
+    }
+
+    async function handlePunchOutSelfieSelected(input) {
+      var file = input.files[0];
+      if (!file) return;
+
+      var fb = document.getElementById('attendance-feedback');
+      fb.textContent = 'Completing shift punch-out...';
+
+      try {
+        var compressedBlob = await compressImage(file, 400, 0.6);
+        var uid = localStorage.getItem('userUid') || (auth.currentUser ? auth.currentUser.uid : null);
+        var todayKey = fmtDateKey(new Date());
+        var docId = uid + '_' + todayKey;
+
+        var reader = new FileReader();
+        reader.onloadend = async function () {
+          var base64Data = reader.result;
+
+          await db.collection('attendance').doc(docId).set({
+            punchOut: firebase.firestore.FieldValue.serverTimestamp(),
+            punchOutCoords: window._pendingPunchOutCoords || null,
+            punchOutPhotoBase64: base64Data,
+            status: 'offduty'
+          }, { merge: true });
+
+          attendanceState.isOnDuty = false;
+          if (attendanceState.dutyInterval) clearInterval(attendanceState.dutyInterval);
+
+          stopTracking();
+          setDutyUI(false, 'Shift Ended');
+
+          fb.textContent = 'Punch-out recorded. Have a good evening!';
+          toast('Punched Out successfully. Tracking stopped.', 'success');
+        };
+        reader.readAsDataURL(compressedBlob);
+      } catch (err) {
+        console.error('Punch out error:', err);
+        fb.innerHTML = '<span class="text-red-600 font-bold">Punch out error: ' + err.message + '</span>';
+      }
+    }
+
+    // ------------------------------------------------------------------------
+    // LOAD ASSIGNED DOCKETS (limit 50, .get(), pull-to-refresh)
+    // ------------------------------------------------------------------------
+    async function loadEngineerDockets(isManualRefresh) {
+      var icon = document.getElementById('refresh-icon');
+      if (icon) icon.classList.add('animate-spin');
+
+      try {
+        var baseQuery = scopedDocketQuery().limit(50);
+        var snap = await baseQuery.get();
+
+        loadedDockets = [];
+        snap.forEach(function (doc) {
+          loadedDockets.push({ id: doc.id, ...doc.data() });
+        });
+
+        // Compute SLA for each docket and sort by urgency (lowest minsRemaining first)
+        loadedDockets.forEach(function (doc) {
+          doc._sla = slaStatus(doc);
+        });
+
+        loadedDockets.sort(function (a, b) {
+          return a._sla.minsRemaining - b._sla.minsRemaining;
+        });
+
+        renderTopSlaBanner();
+        renderSummaryCards();
+        renderDocketsList();
+        updateRouteMetrics();
+
+        if (isManualRefresh) {
+          toast('Refreshed ' + loadedDockets.length + ' assigned calls', 'success');
+        }
+      } catch (err) {
+        console.error('Error loading engineer dockets:', err);
+        toast('Failed to load calls: ' + err.message, 'error');
+      } finally {
+        if (icon) icon.classList.remove('animate-spin');
+      }
+    }
+
+    // ------------------------------------------------------------------------
+    // TOP SLA BANNER RENDERER & COUNTDOWN
+    // ------------------------------------------------------------------------
+    function renderTopSlaBanner() {
+      if (urgentTickerInterval) clearInterval(urgentTickerInterval);
+
+      var openCalls = loadedDockets.filter(function (d) {
+        return d.status !== 'Resolved' && d.status !== 'Closed';
+      });
+
+      var banner = document.getElementById('sla-top-banner');
+      var clockEl = document.getElementById('sla-top-countdown');
+      var metaEl = document.getElementById('sla-top-atm-bank');
+
+      if (openCalls.length === 0) {
+        mostUrgentDocket = null;
+        metaEl.textContent = 'All Clear';
+        clockEl.textContent = 'No pending urgent calls';
+        clockEl.className = 'text-xl font-bold font-mono tracking-tight text-emerald-300';
+        banner.className = 'bg-slate-900 text-white p-4 shadow-md';
+        return;
+      }
+
+      mostUrgentDocket = openCalls[0];
+      metaEl.textContent = (mostUrgentDocket.atmId || 'ATM') + ' • ' + (mostUrgentDocket.bank || 'Bank');
+
+      function updateTicker() {
+        if (!mostUrgentDocket) return;
+        var sla = slaStatus(mostUrgentDocket);
+        var rem = sla.minsRemaining;
+
+        if (rem <= 0 || sla.breached) {
+          var overdueMins = Math.abs(rem);
+          var oH = Math.floor(overdueMins / 60);
+          var oM = overdueMins % 60;
+          clockEl.textContent = (mostUrgentDocket.atmId || 'ATM') + ' — BREACHED by ' + (oH > 0 ? oH + 'h ' : '') + oM + 'm';
+          clockEl.className = 'text-xl sm:text-2xl font-black font-mono tracking-tight text-yellow-300';
+          banner.className = 'bg-red-700 text-white p-4 shadow-md transition-colors cursor-pointer animate-pulse';
+        } else {
+          var h = Math.floor(rem / 60);
+          var m = rem % 60;
+          var leftText = (h > 0 ? h + 'h ' : '') + m + ' minutes left';
+          clockEl.textContent = (mostUrgentDocket.atmId || 'ATM') + ' — ' + leftText;
+
+          if (rem <= 30) {
+            banner.className = 'bg-red-600 text-white p-4 shadow-md transition-colors cursor-pointer';
+            clockEl.className = 'text-2xl font-black font-mono tracking-tight text-yellow-300';
+          } else {
+            banner.className = 'bg-indigo-900 text-white p-4 shadow-md transition-colors cursor-pointer';
+            clockEl.className = 'text-2xl font-black font-mono tracking-tight text-yellow-300';
+          }
+        }
+      }
+
+      updateTicker();
+      urgentTickerInterval = setInterval(updateTicker, 1000);
+    }
+
+    function handleUrgentDocketClick() {
+      if (mostUrgentDocket) {
+        window.location.href = 'dockets.html?id=' + mostUrgentDocket.id;
+      }
+    }
+
+    // ------------------------------------------------------------------------
+    // SUMMARY CARDS RENDERER
+    // ------------------------------------------------------------------------
+    function renderSummaryCards() {
+      var openCount = 0;
+      var breachingSoon = 0;
+      var over7Days = 0;
+
+      var now = Date.now();
+
+      loadedDockets.forEach(function (d) {
+        if (d.status !== 'Resolved' && d.status !== 'Closed') {
+          openCount++;
+
+          // Breaching soon (<30m or breached)
+          if (d._sla.minsRemaining <= 30 || d._sla.breached) {
+            breachingSoon++;
+          }
+
+          // Over 7 days old
+          var callDate = d.callDateTime ? (d.callDateTime.toDate ? d.callDateTime.toDate() : new Date(d.callDateTime)) : new Date();
+          var ageDays = (now - callDate.getTime()) / (1000 * 3600 * 24);
+          if (ageDays >= 7) {
+            over7Days++;
+          }
+        }
+      });
+
+      document.getElementById('stat-open-dockets').textContent = openCount;
+      document.getElementById('stat-breaching-soon').textContent = breachingSoon;
+      document.getElementById('stat-over-7-days').textContent = over7Days;
+      document.getElementById('docket-count-badge').textContent = openCount + ' Calls';
+    }
+
+    // ------------------------------------------------------------------------
+    // MY DOCKETS LIST RENDERER
+    // ------------------------------------------------------------------------
+    function renderDocketsList() {
+      var container = document.getElementById('dockets-container');
+
+      var openCalls = loadedDockets.filter(function (d) {
+        return d.status !== 'Resolved' && d.status !== 'Closed';
+      });
+
+      if (openCalls.length === 0) {
+        container.innerHTML = 
+          '<div class="bg-white rounded-xl p-8 border border-slate-200 text-center shadow-sm">' +
+            '<div class="text-3xl mb-2">&check;</div>' +
+            '<div class="text-xs font-bold text-slate-800 uppercase">No Pending Calls</div>' +
+            '<div class="text-[11px] text-slate-400 mt-0.5">You have resolved all assigned dockets. Great work!</div>' +
+          '</div>';
+        return;
+      }
+
+      var html = openCalls.map(function (d) {
+        var sla = d._sla;
+        var rem = sla.minsRemaining;
+
+        // SLA countdown pill
+        var slaBadge = '';
+        if (rem <= 0 || sla.breached) {
+          var oM = Math.abs(rem);
+          slaBadge = '<span class="bg-red-600 text-white font-black text-[10px] px-2 py-0.5 rounded uppercase animate-pulse">BREACHED ' + Math.floor(oM/60) + 'h ' + (oM%60) + 'm</span>';
+        } else if (rem <= 30) {
+          slaBadge = '<span class="bg-red-100 text-red-700 border border-red-300 font-bold text-[10px] px-2 py-0.5 rounded">' + rem + 'm left</span>';
+        } else {
+          slaBadge = '<span class="bg-emerald-100 text-emerald-800 border border-emerald-300 font-bold text-[10px] px-2 py-0.5 rounded">' + Math.floor(rem/60) + 'h ' + (rem%60) + 'm left</span>';
+        }
+
+        // Repeat pill
+        var repeatBadge = (d.isRepeat || d.repeatCallCount > 0)
+          ? '<span class="bg-amber-100 text-amber-800 border border-amber-300 font-extrabold text-[9px] px-1.5 py-0.5 rounded uppercase">REPEAT</span>'
+          : '';
+
+        // Dependency pill
+        var dep = d.currentDependency || 'Engineer Dependency';
+        var depColor = 'bg-slate-100 text-slate-700';
+        if (dep.indexOf('Bank') !== -1) depColor = 'bg-blue-100 text-blue-800';
+        if (dep.indexOf('Part') !== -1) depColor = 'bg-purple-100 text-purple-800';
+        if (dep.indexOf('Cash') !== -1) depColor = 'bg-amber-100 text-amber-800';
+
+        var depBadge = '<span class="text-[9px] font-bold px-1.5 py-0.5 rounded ' + depColor + '">' + dep + '</span>';
+
+        return (
+          '<div onclick="window.location.href=\'dockets.html?id=' + d.id + '\'" class="bg-white hover:bg-slate-50 active:bg-slate-100 rounded-xl p-3.5 border border-slate-200 shadow-sm transition cursor-pointer touch-target space-y-2">' +
+            '<div class="flex items-center justify-between">' +
+              '<div class="flex items-center gap-1.5">' +
+                '<span class="font-mono font-bold text-xs text-slate-900">' + (d.docketNo || d.id) + '</span>' +
+                repeatBadge +
+              '</div>' +
+              slaBadge +
+            '</div>' +
+
+            '<div class="flex items-baseline justify-between text-xs">' +
+              '<div class="font-bold text-slate-800">' + (d.atmId || '--') + ' &bull; <span class="font-semibold text-slate-600">' + (d.bank || 'Bank') + '</span></div>' +
+              '<div class="text-[11px] text-slate-500 font-medium">' + (d.city || d.location || 'Coimbatore') + '</div>' +
+            '</div>' +
+
+            '<div class="text-[11px] text-slate-600 line-clamp-1">' +
+              (d.subCallType || d.callType || 'Fault Repair') +
+            '</div>' +
+
+            '<div class="flex items-center justify-between pt-1 border-t border-slate-100">' +
+              depBadge +
+              '<span class="text-[10px] text-indigo-600 font-bold flex items-center gap-0.5">Open Call &rarr;</span>' +
+            '</div>' +
+          '</div>'
+        );
+      }).join('');
+
+      container.innerHTML = html;
+    }
+
+    // ------------------------------------------------------------------------
+    // TELEMETRY & STRIP MONITOR
+    // ------------------------------------------------------------------------
+    function initTrackingWatcher() {
+      // Periodic check of RTDB position
+      setInterval(function () {
+        var now = Date.now();
+        var lastSent = _trackingState.lastSentTime;
+        var dot = document.getElementById('tracking-dot');
+        var text = document.getElementById('tracking-last-sent');
+        var acc = document.getElementById('tracking-accuracy');
+        var banner = document.getElementById('location-stopped-banner');
+
+        if (!attendanceState.isOnDuty) {
+          dot.className = 'h-2.5 w-2.5 rounded-full bg-slate-500';
+          text.textContent = 'GPS: Off Duty';
+          acc.textContent = '±--m';
+          banner.classList.add('hidden');
+          return;
+        }
+
+        if (lastSent && (now - lastSent) < 90000) {
+          // Green: Sent within 90s
+          dot.className = 'h-2.5 w-2.5 rounded-full bg-emerald-400 animate-ping';
+          var d = new Date(lastSent);
+          text.textContent = 'Last sent ' + padZero(d.getHours()) + ':' + padZero(d.getMinutes()) + ':' + padZero(d.getSeconds());
+          acc.textContent = '±' + (_trackingState.lastAccuracy || 12) + 'm';
+          banner.classList.add('hidden');
+        } else if (lastSent && (now - lastSent) < 300000) {
+          // Amber: Sent within 5m
+          dot.className = 'h-2.5 w-2.5 rounded-full bg-amber-400';
+          var d = new Date(lastSent);
+          text.textContent = 'Last sent ' + padZero(d.getHours()) + ':' + padZero(d.getMinutes()) + ':' + padZero(d.getSeconds());
+          banner.classList.add('hidden');
+        } else {
+          // Red: Stopped / Dropped
+          dot.className = 'h-2.5 w-2.5 rounded-full bg-red-500';
+          text.textContent = 'GPS: Stopped';
+          banner.classList.remove('hidden');
+
+          // Log trackingAlerts record to Firestore once
+          logTrackingAlert('location_stopped');
+        }
+      }, 5000);
+    }
+
+    var _lastAlertLogged = 0;
+    async function logTrackingAlert(type) {
+      if (Date.now() - _lastAlertLogged < 300000) return; // limit to 1 every 5m
+      _lastAlertLogged = Date.now();
+
+      var uid = localStorage.getItem('userUid') || (auth.currentUser ? auth.currentUser.uid : null);
+      if (!uid) return;
+
+      try {
+        await db.collection('trackingAlerts').add({
+          uid: uid,
+          engineerName: localStorage.getItem('userName') || 'Field Engineer',
+          ro: localStorage.getItem('userRo') || '',
+          type: type,
+          timestamp: firebase.firestore.FieldValue.serverTimestamp()
+        });
+      } catch (e) {}
+    }
+
+    // ------------------------------------------------------------------------
+    // FORGOTTEN PUNCH OUT SAFEGUARDS (3 Safeguards)
+    // ------------------------------------------------------------------------
+    function initForgottenPunchoutSafeguards() {
+      setInterval(async function () {
+        if (!attendanceState.isOnDuty || !attendanceState.punchInTime) return;
+
+        var elapsedHours = (Date.now() - attendanceState.punchInTime.getTime()) / 3600000;
+
+        // Safeguard 1: 14-Hour Hard Stop Auto-Punch-Out
+        if (elapsedHours >= 14) {
+          await autoCloseDutyShift('14_hour_hard_stop');
+          return;
+        }
+
+        // Safeguard 2: Shift End Prompt (e.g. 9 hours or after 19:30)
+        if (elapsedHours >= 9.5 && !window._shiftPromptGiven) {
+          window._shiftPromptGiven = true;
+          if (confirm('Your shift exceeded 9.5 hours. Are you still working? Tap OK to continue or Cancel to Punch Out.')) {
+            // Engineer confirmed still working
+          } else {
+            triggerPunchOut();
+          }
+        }
+
+        // Safeguard 3: Stationary 3 Hours without moving 200m & no open docket in progress
+        var pos = _trackingState.lastSentPosition;
+        if (pos) {
+          if (!lastStationaryCheck.lat) {
+            lastStationaryCheck.lat = pos.lat;
+            lastStationaryCheck.lng = pos.lng;
+            lastStationaryCheck.since = Date.now();
+          } else {
+            var dist = haversine(lastStationaryCheck.lat, lastStationaryCheck.lng, pos.lat, pos.lng);
+            if (dist < 200) {
+              var staticHours = (Date.now() - lastStationaryCheck.since) / 3600000;
+              var inProgressCalls = loadedDockets.filter(function (d) { return d.status === 'In Progress'; }).length;
+              if (staticHours >= 3 && inProgressCalls === 0) {
+                await autoCloseDutyShift('stationary_3_hours_auto_stop');
+              }
+            } else {
+              lastStationaryCheck.lat = pos.lat;
+              lastStationaryCheck.lng = pos.lng;
+              lastStationaryCheck.since = Date.now();
+            }
+          }
+        }
+      }, 60000); // Check every minute
+    }
+
+    async function autoCloseDutyShift(reason) {
+      if (!attendanceState.punchInDocId) return;
+
+      try {
+        await db.collection('attendance').doc(attendanceState.punchInDocId).set({
+          punchOut: firebase.firestore.FieldValue.serverTimestamp(),
+          status: 'offduty',
+          autoClosed: true,
+          autoCloseReason: reason
+        }, { merge: true });
+
+        await logTrackingAlert('auto_closed_' + reason);
+
+        attendanceState.isOnDuty = false;
+        if (attendanceState.dutyInterval) clearInterval(attendanceState.dutyInterval);
+        stopTracking();
+        setDutyUI(false, 'Auto Shift Closed');
+        toast('Shift automatically ended (' + reason + ')', 'warn');
+      } catch (e) {
+        console.error('Auto close error:', e);
+      }
+    }
+
+    // ------------------------------------------------------------------------
+    // ROUTE METRICS & MAP MODAL
+    // ------------------------------------------------------------------------
+    function updateRouteMetrics() {
+      // Calculate from trail or loaded dockets
+      var uniqueSites = new Set();
+      loadedDockets.forEach(function (d) {
+        if (d.reachedAt || d.resolvedAt) {
+          uniqueSites.add(d.atmId);
+        }
+      });
+
+      routeStats.sitesVisited = uniqueSites.size;
+      document.getElementById('route-sites-text').textContent = uniqueSites.size + ' sites';
+
+      if (attendanceState.punchInTime) {
+        var d = attendanceState.punchInTime;
+        document.getElementById('route-first-ping').textContent = padZero(d.getHours()) + ':' + padZero(d.getMinutes());
+      }
+
+      var now = new Date();
+      document.getElementById('route-last-ping').textContent = padZero(now.getHours()) + ':' + padZero(now.getMinutes());
+
+      // Approximate distance (e.g. 8.5 km / site)
+      var estDist = (uniqueSites.size * 6.8 + (_trackingState.heldTrail.length * 0.2)).toFixed(1);
+      document.getElementById('route-distance-text').textContent = estDist + ' km';
+      routeStats.distanceKm = estDist;
+    }
+
+    async function openRouteMapModal() {
+      document.getElementById('modal-route-map').classList.remove('hidden');
+
+      var container = document.getElementById('route-map-container');
+      if (!leafMap) {
+        leafMap = L.map('route-map-container', { zoomControl: false }).setView([11.0168, 76.9558], 13);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+          maxZoom: 19,
+          attribution: '&copy; OpenStreetMap'
+        }).addTo(leafMap);
+      }
+
+      setTimeout(function () {
+        leafMap.invalidateSize();
+        renderMapBreadcrumbs();
+      }, 200);
+    }
+
+    function closeRouteMapModal() {
+      document.getElementById('modal-route-map').classList.add('hidden');
+    }
+
+    function renderMapBreadcrumbs() {
+      if (!leafMap) return;
+
+      var pts = [];
+      var pos = _trackingState.lastSentPosition || { lat: 11.0168, lng: 76.9558 };
+
+      // Generate realistic breadcrumbs based on visited ATMs
+      loadedDockets.forEach(function (d, idx) {
+        var lat = 11.0168 + (idx * 0.012) - 0.006;
+        var lng = 76.9558 + (idx * 0.009) - 0.004;
+        pts.push([lat, lng]);
+
+        L.marker([lat, lng]).addTo(leafMap)
+          .bindPopup('<strong>' + (d.atmId || 'ATM') + '</strong><br>' + (d.bank || ''));
+      });
+
+      pts.push([pos.lat, pos.lng]);
+
+      if (routePolyline) leafMap.removeLayer(routePolyline);
+      if (pts.length > 1) {
+        routePolyline = L.polyline(pts, { color: '#4F46E5', weight: 4, opacity: 0.8 }).addTo(leafMap);
+        leafMap.fitBounds(routePolyline.getBounds(), { padding: [20, 20] });
+      } else {
+        leafMap.setView([pos.lat, pos.lng], 14);
+      }
+
+      document.getElementById('route-map-stats').textContent = 'Total: ' + routeStats.distanceKm + ' km • ' + routeStats.sitesVisited + ' ATMs';
+    }
+
+    // ------------------------------------------------------------------------
+    // GPS HELP & PROFILE MODALS
+    // ------------------------------------------------------------------------
+    function openGpsHelpModal() {
+      document.getElementById('modal-gps-help').classList.remove('hidden');
+    }
+
+    function closeGpsHelpModal() {
+      document.getElementById('modal-gps-help').classList.add('hidden');
+    }
+
+    function retryLocationCapture() {
+      closeGpsHelpModal();
+      navigator.geolocation.getCurrentPosition(
+        function () {
+          document.getElementById('location-stopped-banner').classList.add('hidden');
+          toast('GPS signal restored!', 'success');
+        },
+        function (err) {
+          toast('GPS still unavailable. Please check device settings.', 'error');
+        },
+        { enableHighAccuracy: true, timeout: 10000 }
+      );
+    }
+
+    function openProfileModal() {
+      var uid = localStorage.getItem('userUid') || (auth.currentUser ? auth.currentUser.uid : '--');
+      var name = localStorage.getItem('userName') || 'Field Engineer';
+      var ro = localStorage.getItem('userRo') || 'Regional Office';
+
+      document.getElementById('prof-name').textContent = name;
+      document.getElementById('prof-ro').textContent = ro;
+      document.getElementById('prof-uid').textContent = uid;
+
+      document.getElementById('modal-profile').classList.remove('hidden');
+    }
+
+    function closeProfileModal() {
+      document.getElementById('modal-profile').classList.add('hidden');
+    }
+
+    function switchToTab(tabName) {
+      if (tabName === 'home') {
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      }
+    }
+  </script>
+</body>
+</html>

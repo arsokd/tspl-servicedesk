@@ -1,0 +1,1140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Spares &amp; Parts Logistics — TSPL ServiceDesk</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- Firebase Compat 10.7.1 -->
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
+  <script src="firebase-config.js"></script>
+  <script src="auth-guard.js"></script>
+</head>
+<body class="bg-slate-100 min-h-screen flex flex-col font-sans antialiased text-slate-800">
+
+  <!-- Main Navigation injected by auth-guard.js -->
+  <div id="main-nav"></div>
+
+  <main class="flex-grow max-w-[1650px] w-full mx-auto p-4 sm:p-6 lg:p-8 space-y-5">
+
+    <!-- Top Bar: Header, Summary & New Indent Button -->
+    <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4 sm:p-5 flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div>
+        <h1 class="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
+          <span>Spares &amp; Parts Indent Pipeline</span>
+          <span class="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-indigo-100 text-indigo-800 font-mono">SCM Queue</span>
+        </h1>
+        <p class="text-xs text-slate-500 mt-0.5">
+          Track parts lifecycle, vendor transit, and synchronize spares waiting hours directly into linked docket SLA clocks.
+        </p>
+      </div>
+
+      <div class="flex items-center gap-3">
+        <button 
+          onclick="openNewIndentModal()" 
+          class="bg-[#4F46E5] hover:bg-indigo-700 active:bg-indigo-800 text-white text-xs font-semibold py-2 px-4 rounded-lg shadow transition flex items-center gap-1.5"
+        >
+          <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+          </svg>
+          <span>+ New Part Indent</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- SUMMARY STRIP (From stats/parts) -->
+    <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+      <!-- Total Open -->
+      <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between">
+        <span class="text-[11px] uppercase font-bold text-slate-500 tracking-wider">Total Open Indents</span>
+        <div class="mt-2 flex items-baseline justify-between">
+          <span id="stat-total-open" class="text-2xl font-bold text-slate-900 font-mono">0</span>
+          <span class="text-[10px] text-slate-400 font-medium">Pipeline</span>
+        </div>
+      </div>
+
+      <!-- Pending Approval -->
+      <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between">
+        <span class="text-[11px] uppercase font-bold text-amber-600 tracking-wider">Pending Tech Review</span>
+        <div class="mt-2 flex items-baseline justify-between">
+          <span id="stat-pending" class="text-2xl font-bold text-amber-600 font-mono">0</span>
+          <span class="text-[10px] text-amber-500 font-medium">Level 1</span>
+        </div>
+      </div>
+
+      <!-- In Transit -->
+      <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between">
+        <span class="text-[11px] uppercase font-bold text-indigo-600 tracking-wider">In Transit (Courier)</span>
+        <div class="mt-2 flex items-baseline justify-between">
+          <span id="stat-intransit" class="text-2xl font-bold text-indigo-600 font-mono">0</span>
+          <span class="text-[10px] text-indigo-500 font-medium">Dispatched</span>
+        </div>
+      </div>
+
+      <!-- Delivered At Site -->
+      <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between">
+        <span class="text-[11px] uppercase font-bold text-emerald-600 tracking-wider">Delivered / At Site</span>
+        <div class="mt-2 flex items-baseline justify-between">
+          <span id="stat-delivered" class="text-2xl font-bold text-emerald-600 font-mono">0</span>
+          <span class="text-[10px] text-emerald-500 font-medium">Pending Fit</span>
+        </div>
+      </div>
+
+      <!-- Critical Ageing > 7 Days (Red Warning) -->
+      <div class="bg-rose-50 p-4 rounded-xl border border-rose-200 shadow-sm flex flex-col justify-between">
+        <span class="text-[11px] uppercase font-bold text-rose-700 tracking-wider">Ageing &gt; 7 Days</span>
+        <div class="mt-2 flex items-baseline justify-between">
+          <span id="stat-ageing-7" class="text-2xl font-bold text-rose-700 font-mono">0</span>
+          <span class="text-[10px] text-rose-600 font-bold uppercase">SLA Penalty Risk</span>
+        </div>
+      </div>
+
+      <!-- Installed / Closed -->
+      <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between">
+        <span class="text-[11px] uppercase font-bold text-slate-600 tracking-wider">Installed / Closed</span>
+        <div class="mt-2 flex items-baseline justify-between">
+          <span id="stat-closed" class="text-2xl font-bold text-slate-800 font-mono">0</span>
+          <span class="text-[10px] text-slate-400 font-medium">Resolved</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- FILTER TOOLBAR -->
+    <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4 space-y-3">
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-3 items-end">
+        
+        <!-- Search -->
+        <div class="lg:col-span-4">
+          <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Search Indent / Docket / ATM / Part</label>
+          <div class="relative">
+            <input 
+              type="text" 
+              id="filter-search" 
+              placeholder="Search Indent No, Docket No, ATM ID, Part Name..." 
+              class="w-full text-xs border border-slate-300 rounded-lg py-2 pl-3 pr-8 focus:ring-1 focus:ring-indigo-500 focus:outline-none"
+              onkeydown="if(event.key==='Enter') fetchIndents(true)"
+            />
+            <button onclick="fetchIndents(true)" class="absolute right-2 top-2 text-slate-400 hover:text-slate-600">
+              <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+            </button>
+          </div>
+        </div>
+
+        <!-- Status Filter -->
+        <div class="lg:col-span-2">
+          <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Indent Status</label>
+          <select id="filter-status" onchange="fetchIndents(true)" class="w-full text-xs border border-slate-300 rounded-lg p-2 bg-white focus:ring-1 focus:ring-indigo-500">
+            <option value="open">All Open Indents</option>
+            <option value="Requested">Requested (Pending Review)</option>
+            <option value="Approved">Approved (SCM Processing)</option>
+            <option value="In Transit">In Transit (Dispatched)</option>
+            <option value="Delivered">Delivered (At Site)</option>
+            <option value="Installed">Installed (Closed)</option>
+            <option value="Cancelled">Cancelled / Rejected</option>
+            <option value="all">All Records</option>
+          </select>
+        </div>
+
+        <!-- Priority Filter -->
+        <div class="lg:col-span-2">
+          <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Priority</label>
+          <select id="filter-priority" onchange="fetchIndents(true)" class="w-full text-xs border border-slate-300 rounded-lg p-2 bg-white focus:ring-1 focus:ring-indigo-500">
+            <option value="all">All Priorities</option>
+            <option value="Critical">Critical (SLA at risk)</option>
+            <option value="High">High</option>
+            <option value="Normal">Normal</option>
+          </select>
+        </div>
+
+        <!-- RO Filter -->
+        <div class="lg:col-span-2">
+          <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Regional Office (RO)</label>
+          <select id="filter-ro" onchange="fetchIndents(true)" class="w-full text-xs border border-slate-300 rounded-lg p-2 bg-white focus:ring-1 focus:ring-indigo-500">
+            <option value="all">All Regions</option>
+            <option value="Tamil Nadu">Tamil Nadu</option>
+            <option value="Karnataka">Karnataka</option>
+            <option value="Kerala">Kerala</option>
+            <option value="Andhra Pradesh">Andhra Pradesh</option>
+            <option value="North">North</option>
+            <option value="West">West</option>
+            <option value="East">East</option>
+          </select>
+        </div>
+
+        <!-- Action Buttons -->
+        <div class="lg:col-span-2 flex items-center gap-2">
+          <button 
+            onclick="fetchIndents(true)" 
+            class="flex-1 bg-slate-800 hover:bg-slate-900 text-white text-xs font-semibold py-2 px-3 rounded-lg shadow-sm transition text-center"
+          >
+            Apply Filters
+          </button>
+          <button 
+            onclick="resetFilters()" 
+            class="p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition" 
+            title="Reset Filters"
+          >
+            <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+          </button>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- PARTS QUEUE TABLE (Paged 50 per page with Cursor Pagination) -->
+    <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
+      <div class="p-3 bg-slate-50 border-b border-slate-200 flex items-center justify-between text-xs">
+        <div class="flex items-center gap-2">
+          <span class="font-bold text-slate-700">Parts Indent Queue</span>
+          <span id="queue-count-badge" class="px-2 py-0.5 rounded bg-slate-200 text-slate-700 font-mono font-bold text-[11px]">Loading...</span>
+        </div>
+        <div class="text-[11px] text-slate-500">
+          Showing 50 records per page &bull; <span class="text-rose-600 font-bold">Ageing &gt; 7 days highlighted red</span>
+        </div>
+      </div>
+
+      <div class="overflow-x-auto">
+        <table class="w-full text-left text-xs border-collapse">
+          <thead>
+            <tr class="border-b border-slate-200 bg-slate-50/70 text-[10px] uppercase font-bold text-slate-500">
+              <th class="py-3 px-3.5">Indent No &amp; Priority</th>
+              <th class="py-3 px-3.5">Docket No &amp; ATM ID</th>
+              <th class="py-3 px-3.5">Bank / RO</th>
+              <th class="py-3 px-3.5">Part Name &amp; Code</th>
+              <th class="py-3 px-3.5 text-center">Qty</th>
+              <th class="py-3 px-3.5">Engineer / Requester</th>
+              <th class="py-3 px-3.5 text-center">Indent Date</th>
+              <th class="py-3 px-3.5 text-center">Ageing</th>
+              <th class="py-3 px-3.5 text-center">Status</th>
+              <th class="py-3 px-3.5">Courier &amp; AWB</th>
+              <th class="py-3 px-3.5 text-right">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="tbody-parts-queue" class="divide-y divide-slate-100 text-slate-700 font-medium">
+            <tr>
+              <td colspan="11" class="p-8 text-center text-slate-400">Loading parts indents...</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Pagination Footer -->
+      <div class="p-3.5 bg-slate-50 border-t border-slate-200 flex items-center justify-between text-xs">
+        <div class="text-slate-500" id="pagination-info">
+          Page 1
+        </div>
+        <div class="flex items-center gap-2">
+          <button 
+            id="btn-prev-page" 
+            onclick="prevPage()" 
+            disabled 
+            class="px-3 py-1.5 rounded-lg border border-slate-300 bg-white text-slate-600 font-semibold hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition shadow-sm"
+          >
+            &larr; Previous 50
+          </button>
+          <button 
+            id="btn-next-page" 
+            onclick="nextPage()" 
+            disabled 
+            class="px-3 py-1.5 rounded-lg border border-slate-300 bg-white text-slate-600 font-semibold hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition shadow-sm"
+          >
+            Next 50 &rarr;
+          </button>
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- ===================================================================== -->
+  <!-- MODAL: UPDATE PART INDENT & ATOMIC DOCKET / SLA CLOCK SYNC            -->
+  <!-- ===================================================================== -->
+  <div id="modal-update-indent" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-xl overflow-hidden animate-in fade-in zoom-in duration-150">
+      <div class="p-4 bg-slate-900 text-white flex items-center justify-between">
+        <div>
+          <h3 class="text-sm font-bold flex items-center gap-2">
+            <span>Update Indent &amp; Synchronize SLA Clock</span>
+            <span id="modal-indent-badge" class="px-2 py-0.5 rounded text-[10px] bg-indigo-800 text-indigo-200 font-mono">IND-XXXX</span>
+          </h3>
+          <p class="text-[11px] text-slate-300 mt-0.5">Saves indent status, updates linked docket dependency, and increments SLA tracking.</p>
+        </div>
+        <button onclick="closeUpdateModal()" class="text-slate-400 hover:text-white p-1 rounded-lg">
+          <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+      </div>
+
+      <form id="form-update-indent" onsubmit="handleSaveIndentUpdate(event)" class="p-5 space-y-4 text-xs">
+        <input type="hidden" id="edit-indent-id" />
+        <input type="hidden" id="edit-docket-id" />
+        <input type="hidden" id="edit-part-name" />
+        <input type="hidden" id="edit-part-code" />
+
+        <!-- Info Strip -->
+        <div class="p-3 bg-slate-50 border border-slate-200 rounded-xl grid grid-cols-2 gap-2 text-[11px]">
+          <div>
+            <span class="text-slate-500">Linked Docket:</span> 
+            <strong id="edit-lbl-docket" class="text-slate-900 font-mono block">TSPL-XXXX</strong>
+          </div>
+          <div>
+            <span class="text-slate-500">ATM ID &amp; Bank:</span> 
+            <strong id="edit-lbl-atm" class="text-slate-900 font-mono block">HDFC001 &bull; HDFC</strong>
+          </div>
+          <div>
+            <span class="text-slate-500">Part Description:</span> 
+            <strong id="edit-lbl-part" class="text-slate-900 block">Card Reader Module</strong>
+          </div>
+          <div>
+            <span class="text-slate-500">Requested Qty:</span> 
+            <strong id="edit-lbl-qty" class="text-slate-900 block">1 Unit</strong>
+          </div>
+        </div>
+
+        <!-- Status Transitions -->
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block font-bold text-slate-700 uppercase text-[10px] mb-1">New Indent Status *</label>
+            <select id="edit-status" onchange="handleStatusChange(this.value)" class="w-full border border-slate-300 rounded-lg p-2 font-semibold text-slate-800 focus:ring-1 focus:ring-indigo-500">
+              <option value="Requested">Requested (Pending Review)</option>
+              <option value="Approved">Approved (SCM Processing)</option>
+              <option value="In Transit">In Transit (Dispatched via Courier)</option>
+              <option value="Delivered">Delivered at ATM Site</option>
+              <option value="Installed">Installed &amp; Replaced (Resolved)</option>
+              <option value="Cancelled">Cancelled / Rejected</option>
+            </select>
+          </div>
+
+          <div>
+            <label class="block font-bold text-slate-700 uppercase text-[10px] mb-1">Linked Docket Dependency</label>
+            <input type="text" id="edit-docket-dependency" readonly class="w-full bg-slate-100 border border-slate-300 rounded-lg p-2 font-mono text-indigo-700 font-bold" value="SCM Dependency" />
+          </div>
+        </div>
+
+        <!-- Courier & Tracking Section -->
+        <div id="section-courier" class="grid grid-cols-2 gap-3 p-3 bg-indigo-50/50 border border-indigo-100 rounded-xl">
+          <div>
+            <label class="block font-bold text-slate-700 uppercase text-[10px] mb-1">Courier Partner</label>
+            <input type="text" id="edit-courier-name" placeholder="e.g. Blue Dart / DTDC / Hand Delivery" class="w-full border border-slate-300 rounded-lg p-2 bg-white" />
+          </div>
+          <div>
+            <label class="block font-bold text-slate-700 uppercase text-[10px] mb-1">AWB / Consignment No</label>
+            <input type="text" id="edit-awb" placeholder="e.g. BLU78912345" class="w-full border border-slate-300 rounded-lg p-2 font-mono uppercase bg-white" />
+          </div>
+        </div>
+
+        <!-- Serial Numbers for Installed Status -->
+        <div id="section-serials" class="grid grid-cols-2 gap-3 p-3 bg-emerald-50/50 border border-emerald-100 rounded-xl hidden">
+          <div>
+            <label class="block font-bold text-slate-700 uppercase text-[10px] mb-1">New Part Serial No</label>
+            <input type="text" id="edit-new-serial" placeholder="Serial on replacement part" class="w-full border border-slate-300 rounded-lg p-2 font-mono uppercase bg-white" />
+          </div>
+          <div>
+            <label class="block font-bold text-slate-700 uppercase text-[10px] mb-1">Defective Part Serial No (Old)</label>
+            <input type="text" id="edit-old-serial" placeholder="Serial on pulled part" class="w-full border border-slate-300 rounded-lg p-2 font-mono uppercase bg-white" />
+          </div>
+        </div>
+
+        <!-- Remarks / Update Note -->
+        <div>
+          <label class="block font-bold text-slate-700 uppercase text-[10px] mb-1">Update Notes / Dispatch Remarks *</label>
+          <textarea id="edit-remarks" required rows="2" placeholder="Provide tracking notes, receipt acknowledgement, or fitment observations..." class="w-full border border-slate-300 rounded-lg p-2"></textarea>
+        </div>
+
+        <!-- Single Batch Action Explanation -->
+        <div class="p-2.5 bg-slate-50 rounded-lg border border-slate-200 text-[10px] text-slate-500">
+          <strong class="text-slate-700">Atomic Sync:</strong> This update applies via a single Firestore <code class="text-indigo-600 font-mono">WriteBatch</code> across the indent document, docket status, SLA activity audit trail, and operational aggregates.
+        </div>
+
+        <div class="pt-2 flex items-center justify-end gap-3 border-t border-slate-200">
+          <button type="button" onclick="closeUpdateModal()" class="px-4 py-2 border border-slate-300 text-slate-600 rounded-lg hover:bg-slate-50 font-semibold">
+            Cancel
+          </button>
+          <button id="btn-save-update" type="submit" class="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white rounded-lg font-bold shadow transition">
+            Save &amp; Commit Update
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ===================================================================== -->
+  <!-- MODAL: CREATE NEW PART INDENT                                         -->
+  <!-- ===================================================================== -->
+  <div id="modal-new-indent" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-xl overflow-hidden animate-in fade-in zoom-in duration-150">
+      <div class="p-4 bg-[#4F46E5] text-white flex items-center justify-between">
+        <div>
+          <h3 class="text-sm font-bold">Create Spares Indent</h3>
+          <p class="text-[11px] text-indigo-100 mt-0.5">Link an urgent replacement part to an active open docket.</p>
+        </div>
+        <button onclick="closeNewIndentModal()" class="text-indigo-200 hover:text-white p-1 rounded-lg">
+          <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+      </div>
+
+      <form id="form-new-indent" onsubmit="handleCreateNewIndent(event)" class="p-5 space-y-4 text-xs">
+        
+        <!-- Search Docket -->
+        <div>
+          <label class="block font-bold text-slate-700 uppercase text-[10px] mb-1">Search &amp; Link Open Docket *</label>
+          <div class="relative">
+            <input 
+              type="text" 
+              id="new-docket-search" 
+              required
+              placeholder="Type exact Docket No (e.g. TSPL-2026-000123) or ATM ID..." 
+              class="w-full border border-slate-300 rounded-lg py-2 pl-3 pr-20 uppercase font-mono"
+            />
+            <button 
+              type="button" 
+              onclick="lookupDocketForIndent()" 
+              class="absolute right-1 top-1 bottom-1 bg-slate-800 hover:bg-slate-900 text-white text-xs px-3 rounded-md font-semibold"
+            >
+              Verify
+            </button>
+          </div>
+          <div id="new-docket-verified-box" class="hidden mt-2 p-2.5 bg-emerald-50 border border-emerald-200 rounded-lg text-emerald-800 text-[11px]">
+            <!-- Injected via JS -->
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block font-bold text-slate-700 uppercase text-[10px] mb-1">Part Category / Name *</label>
+            <select id="new-part-name" required class="w-full border border-slate-300 rounded-lg p-2 bg-white">
+              <option value="">-- Select Module --</option>
+              <option value="Motorized Card Reader (EMV)">Motorized Card Reader (EMV)</option>
+              <option value="DIP Card Reader">DIP Card Reader</option>
+              <option value="Cash Dispenser Unit (CDU)">Cash Dispenser Unit (CDU)</option>
+              <option value="Presenter Module">Presenter Module</option>
+              <option value="EPP Keypad (PCI Certified)">EPP Keypad (PCI Certified)</option>
+              <option value="Thermal Receipt Printer">Thermal Receipt Printer</option>
+              <option value="Journal Printer">Journal Printer</option>
+              <option value="Main Motherboard / Controller">Main Motherboard / Controller</option>
+              <option value="Power Supply Unit (PSU)">Power Supply Unit (PSU)</option>
+              <option value="LCD Display & Touch Screen">LCD Display & Touch Screen</option>
+              <option value="Cassette Assembly (Pick Module)">Cassette Assembly (Pick Module)</option>
+              <option value="Sensors & Harness Cables">Sensors & Harness Cables</option>
+              <option value="Other Component">Other Component</option>
+            </select>
+          </div>
+
+          <div>
+            <label class="block font-bold text-slate-700 uppercase text-[10px] mb-1">Part Code / OEM Reference</label>
+            <input type="text" id="new-part-code" placeholder="e.g. NCR-445-072819" class="w-full border border-slate-300 rounded-lg p-2 uppercase font-mono" />
+          </div>
+        </div>
+
+        <div class="grid grid-cols-3 gap-3">
+          <div>
+            <label class="block font-bold text-slate-700 uppercase text-[10px] mb-1">Quantity *</label>
+            <input type="number" id="new-quantity" min="1" max="10" value="1" required class="w-full border border-slate-300 rounded-lg p-2 font-mono" />
+          </div>
+
+          <div>
+            <label class="block font-bold text-slate-700 uppercase text-[10px] mb-1">Priority *</label>
+            <select id="new-priority" required class="w-full border border-slate-300 rounded-lg p-2 bg-white">
+              <option value="Critical">Critical (SLA at risk)</option>
+              <option value="High">High</option>
+              <option value="Normal" selected>Normal</option>
+            </select>
+          </div>
+
+          <div>
+            <label class="block font-bold text-slate-700 uppercase text-[10px] mb-1">Delivery Destination</label>
+            <select id="new-destination" required class="w-full border border-slate-300 rounded-lg p-2 bg-white">
+              <option value="ATM Site Direct">Direct to ATM Site</option>
+              <option value="Regional Hub">Regional Office (RO) Hub</option>
+              <option value="Engineer Handover">Engineer Handover</option>
+            </select>
+          </div>
+        </div>
+
+        <div>
+          <label class="block font-bold text-slate-700 uppercase text-[10px] mb-1">Diagnosis &amp; Failure Reason *</label>
+          <textarea id="new-reason" required rows="2" placeholder="e.g. Card reader shutter jammed; gear tooth stripped after 145k cycles..." class="w-full border border-slate-300 rounded-lg p-2"></textarea>
+        </div>
+
+        <div class="pt-2 flex items-center justify-end gap-3 border-t border-slate-200">
+          <button type="button" onclick="closeNewIndentModal()" class="px-4 py-2 border border-slate-300 text-slate-600 rounded-lg hover:bg-slate-50 font-semibold">
+            Cancel
+          </button>
+          <button id="btn-save-new-indent" type="submit" class="px-5 py-2 bg-[#4F46E5] hover:bg-indigo-700 active:bg-indigo-800 text-white rounded-lg font-bold shadow transition">
+            Create Indent &amp; Set SCM Dependency
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ===================================================================== -->
+  <!-- SCRIPT LOGIC                                                          -->
+  <!-- ===================================================================== -->
+  <script>
+    var currentIndents = [];
+    var firstVisibleDoc = null;
+    var lastVisibleDoc = null;
+    var pageCursors = [];
+    var currentPageIndex = 0;
+    var verifiedDocketData = null;
+
+    document.addEventListener('DOMContentLoaded', async function () {
+      // 1. RBAC Guard: admin and techsupport only
+      if (typeof checkAuth === 'function') {
+        checkAuth(['admin', 'techsupport']);
+      }
+      if (typeof buildNav === 'function') {
+        buildNav('parts.html');
+      }
+
+      await loadStatsStrip();
+      await fetchIndents(true);
+    });
+
+    // ------------------------------------------------------------------------
+    // LOAD SUMMARY STRIP FROM stats/parts OR DYNAMIC FALLBACK
+    // ------------------------------------------------------------------------
+    async function loadStatsStrip() {
+      try {
+        var statDoc = await db.collection('stats').doc('parts').get();
+        if (statDoc.exists) {
+          var s = statDoc.data();
+          document.getElementById('stat-total-open').textContent = (s.totalOpen || 0);
+          document.getElementById('stat-pending').textContent = (s.pendingReview || 0);
+          document.getElementById('stat-intransit').textContent = (s.inTransit || 0);
+          document.getElementById('stat-delivered').textContent = (s.delivered || 0);
+          document.getElementById('stat-ageing-7').textContent = (s.ageingAbove7 || 0);
+          document.getElementById('stat-closed').textContent = (s.installedClosed || 0);
+        } else {
+          // Dynamic calculation fallback
+          calculateDynamicStats();
+        }
+      } catch (e) {
+        console.warn('Stats doc fetch:', e);
+        calculateDynamicStats();
+      }
+    }
+
+    async function calculateDynamicStats() {
+      try {
+        var snap = await db.collection('partsIndent').limit(200).get();
+        var openCount = 0;
+        var pending = 0;
+        var inTransit = 0;
+        var delivered = 0;
+        var ageing7 = 0;
+        var closed = 0;
+        var now = new Date().getTime();
+
+        snap.forEach(function (doc) {
+          var data = doc.data();
+          var isClosed = (data.status === 'Installed' || data.status === 'Cancelled');
+          var createdMs = data.createdAt ? (data.createdAt.toMillis ? data.createdAt.toMillis() : new Date(data.createdAt).getTime()) : now;
+          var days = Math.floor((now - createdMs) / (1000 * 60 * 60 * 24));
+
+          if (!isClosed) {
+            openCount++;
+            if (data.status === 'Requested') pending++;
+            if (data.status === 'In Transit') inTransit++;
+            if (data.status === 'Delivered') delivered++;
+            if (days > 7) ageing7++;
+          } else {
+            closed++;
+          }
+        });
+
+        document.getElementById('stat-total-open').textContent = openCount;
+        document.getElementById('stat-pending').textContent = pending;
+        document.getElementById('stat-intransit').textContent = inTransit;
+        document.getElementById('stat-delivered').textContent = delivered;
+        document.getElementById('stat-ageing-7').textContent = ageing7;
+        document.getElementById('stat-closed').textContent = closed;
+      } catch (err) {
+        console.warn('Fallback stats calculation:', err);
+      }
+    }
+
+    // ------------------------------------------------------------------------
+    // FETCH INDENTS (CURSOR PAGINATION OF 50)
+    // ------------------------------------------------------------------------
+    async function fetchIndents(reset) {
+      if (reset) {
+        currentPageIndex = 0;
+        pageCursors = [];
+        firstVisibleDoc = null;
+        lastVisibleDoc = null;
+      }
+
+      var statusFilter = document.getElementById('filter-status').value;
+      var priorityFilter = document.getElementById('filter-priority').value;
+      var roFilter = document.getElementById('filter-ro').value;
+      var searchVal = document.getElementById('filter-search').value.trim().toUpperCase();
+
+      var tbody = document.getElementById('tbody-parts-queue');
+      tbody.innerHTML = '<tr><td colspan="11" class="p-8 text-center text-slate-400">Loading parts indents...</td></tr>';
+
+      try {
+        var query = db.collection('partsIndent');
+
+        if (statusFilter === 'open') {
+          query = query.where('status', 'in', ['Requested', 'Approved', 'In Transit', 'Delivered']);
+        } else if (statusFilter !== 'all') {
+          query = query.where('status', '==', statusFilter);
+        }
+
+        if (priorityFilter !== 'all') {
+          query = query.where('priority', '==', priorityFilter);
+        }
+
+        if (roFilter !== 'all') {
+          query = query.where('ro', '==', roFilter);
+        }
+
+        // Default Ordering
+        query = query.orderBy('createdAt', 'desc');
+
+        if (currentPageIndex > 0 && pageCursors[currentPageIndex]) {
+          query = query.startAfter(pageCursors[currentPageIndex]);
+        }
+
+        query = query.limit(50);
+
+        var snapshot = await query.get();
+        currentIndents = [];
+
+        snapshot.forEach(function (doc) {
+          currentIndents.push({ id: doc.id, ...doc.data(), _doc: doc });
+        });
+
+        // Client-side text search refinement if text entered
+        if (searchVal) {
+          currentIndents = currentIndents.filter(function (ind) {
+            var full = ((ind.indentNo || '') + ' ' + (ind.docketNo || '') + ' ' + (ind.atmId || '') + ' ' + (ind.partName || '') + ' ' + (ind.partCode || '') + ' ' + (ind.awbNumber || '')).toUpperCase();
+            return full.indexOf(searchVal) !== -1;
+          });
+        }
+
+        if (snapshot.docs.length > 0) {
+          firstVisibleDoc = snapshot.docs[0];
+          lastVisibleDoc = snapshot.docs[snapshot.docs.length - 1];
+          pageCursors[currentPageIndex + 1] = lastVisibleDoc;
+        }
+
+        renderIndentsTable();
+        updatePaginationControls(snapshot.docs.length);
+
+      } catch (err) {
+        console.error('Fetch indents error:', err);
+        tbody.innerHTML = '<tr><td colspan="11" class="p-8 text-center text-rose-500 font-semibold">Error querying parts queue: ' + err.message + '</td></tr>';
+      }
+    }
+
+    function renderIndentsTable() {
+      var tbody = document.getElementById('tbody-parts-queue');
+      document.getElementById('queue-count-badge').textContent = currentIndents.length + ' indents';
+
+      if (currentIndents.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="11" class="p-8 text-center text-slate-400 font-sans">No matching parts indents found.</td></tr>';
+        return;
+      }
+
+      var now = new Date().getTime();
+
+      var html = currentIndents.map(function (ind) {
+        var createdMs = ind.createdAt ? (ind.createdAt.toMillis ? ind.createdAt.toMillis() : new Date(ind.createdAt).getTime()) : now;
+        var dateStr = new Date(createdMs).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+        var ageingDays = Math.max(0, Math.floor((now - createdMs) / (1000 * 60 * 60 * 24)));
+
+        // Ageing Red Above 7 Days
+        var ageingBadge = '';
+        if (ind.status === 'Installed' || ind.status === 'Cancelled') {
+          ageingBadge = '<span class="px-2 py-0.5 rounded text-[11px] font-mono text-slate-500 bg-slate-100">' + ageingDays + 'd (Done)</span>';
+        } else if (ageingDays > 7) {
+          ageingBadge = '<span class="px-2 py-0.5 rounded text-[11px] font-mono font-bold text-rose-700 bg-rose-100 border border-rose-300 animate-pulse">' + ageingDays + ' days!</span>';
+        } else if (ageingDays >= 4) {
+          ageingBadge = '<span class="px-2 py-0.5 rounded text-[11px] font-mono font-bold text-amber-700 bg-amber-100">' + ageingDays + ' days</span>';
+        } else {
+          ageingBadge = '<span class="px-2 py-0.5 rounded text-[11px] font-mono text-slate-700 bg-slate-100">' + ageingDays + ' days</span>';
+        }
+
+        // Priority Badge
+        var prioColor = 'bg-slate-100 text-slate-700';
+        if (ind.priority === 'Critical') prioColor = 'bg-rose-100 text-rose-800 font-bold border border-rose-200';
+        if (ind.priority === 'High') prioColor = 'bg-amber-100 text-amber-800 font-bold';
+
+        // Status Badge
+        var statusBadge = '';
+        switch (ind.status) {
+          case 'Requested':
+            statusBadge = '<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800">Requested</span>';
+            break;
+          case 'Approved':
+            statusBadge = '<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-800">Approved</span>';
+            break;
+          case 'In Transit':
+            statusBadge = '<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-100 text-indigo-800 flex items-center justify-center gap-1"><span class="h-1.5 w-1.5 rounded-full bg-indigo-600 animate-ping"></span> In Transit</span>';
+            break;
+          case 'Delivered':
+            statusBadge = '<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">Delivered</span>';
+            break;
+          case 'Installed':
+            statusBadge = '<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700">Installed</span>';
+            break;
+          case 'Cancelled':
+            statusBadge = '<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-700">Cancelled</span>';
+            break;
+          default:
+            statusBadge = '<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700">' + (ind.status || 'Open') + '</span>';
+        }
+
+        // Courier / AWB
+        var awbHtml = '<span class="text-slate-400">Not Dispatched</span>';
+        if (ind.awbNumber) {
+          awbHtml = '<div class="font-mono text-[11px] text-indigo-700 font-bold">' + (ind.courierName || 'Courier') + ': ' + ind.awbNumber + '</div>';
+        }
+
+        return (
+          '<tr class="hover:bg-slate-50/80 transition">' +
+            '<td class="py-3 px-3.5">' +
+              '<div class="font-bold text-slate-900 font-mono">' + (ind.indentNo || ind.id.slice(0,8)) + '</div>' +
+              '<span class="text-[9px] px-1.5 py-0.2 rounded ' + prioColor + '">' + (ind.priority || 'Normal') + '</span>' +
+            '</td>' +
+            '<td class="py-3 px-3.5">' +
+              '<div class="font-mono font-bold text-indigo-600 hover:underline cursor-pointer" onclick="viewLinkedDocket(\'' + (ind.docketId || '') + '\')">' + (ind.docketNo || '--') + '</div>' +
+              '<div class="text-[11px] text-slate-500 font-mono">' + (ind.atmId || '--') + '</div>' +
+            '</td>' +
+            '<td class="py-3 px-3.5">' +
+              '<div class="text-slate-900 font-medium">' + (ind.bank || '--') + '</div>' +
+              '<div class="text-[11px] text-slate-500">' + (ind.ro || '--') + '</div>' +
+            '</td>' +
+            '<td class="py-3 px-3.5">' +
+              '<div class="text-slate-900 font-bold">' + (ind.partName || '--') + '</div>' +
+              '<div class="text-[10px] text-slate-500 font-mono">' + (ind.partCode || 'OEM REF') + '</div>' +
+            '</td>' +
+            '<td class="py-3 px-3.5 text-center font-mono font-bold text-slate-800">' + (ind.quantity || 1) + '</td>' +
+            '<td class="py-3 px-3.5">' +
+              '<div class="text-slate-900">' + (ind.engineerName || ind.requestedBy || 'Field Tech') + '</div>' +
+            '</td>' +
+            '<td class="py-3 px-3.5 text-center text-slate-500 text-[11px] font-mono">' + dateStr + '</td>' +
+            '<td class="py-3 px-3.5 text-center">' + ageingBadge + '</td>' +
+            '<td class="py-3 px-3.5 text-center">' + statusBadge + '</td>' +
+            '<td class="py-3 px-3.5">' + awbHtml + '</td>' +
+            '<td class="py-3 px-3.5 text-right">' +
+              '<button onclick="openUpdateModal(\'' + ind.id + '\')" class="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 px-3 py-1.5 rounded-lg text-xs font-bold transition">' +
+                'Update &rarr;' +
+              '</button>' +
+            '</td>' +
+          '</tr>'
+        );
+      }).join('');
+
+      tbody.innerHTML = html;
+    }
+
+    function updatePaginationControls(recordCount) {
+      document.getElementById('pagination-info').textContent = 'Page ' + (currentPageIndex + 1);
+      document.getElementById('btn-prev-page').disabled = (currentPageIndex === 0);
+      document.getElementById('btn-next-page').disabled = (recordCount < 50);
+    }
+
+    function nextPage() {
+      currentPageIndex++;
+      fetchIndents(false);
+    }
+
+    function prevPage() {
+      if (currentPageIndex > 0) {
+        currentPageIndex--;
+        fetchIndents(false);
+      }
+    }
+
+    function resetFilters() {
+      document.getElementById('filter-search').value = '';
+      document.getElementById('filter-status').value = 'open';
+      document.getElementById('filter-priority').value = 'all';
+      document.getElementById('filter-ro').value = 'all';
+      fetchIndents(true);
+    }
+
+    // ------------------------------------------------------------------------
+    // OPEN & HANDLE UPDATE MODAL (ONE WRITEBATCH TRANSACTION)
+    // ------------------------------------------------------------------------
+    function openUpdateModal(indentId) {
+      var ind = currentIndents.find(function (x) { return x.id === indentId; });
+      if (!ind) return;
+
+      document.getElementById('edit-indent-id').value = ind.id;
+      document.getElementById('edit-docket-id').value = ind.docketId || '';
+      document.getElementById('edit-part-name').value = ind.partName || '';
+      document.getElementById('edit-part-code').value = ind.partCode || '';
+
+      document.getElementById('modal-indent-badge').textContent = (ind.indentNo || ind.id.slice(0,8));
+      document.getElementById('edit-lbl-docket').textContent = (ind.docketNo || '--');
+      document.getElementById('edit-lbl-atm').textContent = (ind.atmId || '--') + ' • ' + (ind.bank || '--');
+      document.getElementById('edit-lbl-part').textContent = (ind.partName || '--') + ' (' + (ind.partCode || 'N/A') + ')';
+      document.getElementById('edit-lbl-qty').textContent = (ind.quantity || 1) + ' Unit(s)';
+
+      document.getElementById('edit-status').value = ind.status || 'Requested';
+      document.getElementById('edit-courier-name').value = ind.courierName || '';
+      document.getElementById('edit-awb').value = ind.awbNumber || '';
+      document.getElementById('edit-new-serial').value = ind.newSerialNo || '';
+      document.getElementById('edit-old-serial').value = ind.oldSerialNo || '';
+      document.getElementById('edit-remarks').value = '';
+
+      handleStatusChange(ind.status || 'Requested');
+
+      document.getElementById('modal-update-indent').classList.remove('hidden');
+    }
+
+    function closeUpdateModal() {
+      document.getElementById('modal-update-indent').classList.add('hidden');
+    }
+
+    function handleStatusChange(status) {
+      var depEl = document.getElementById('edit-docket-dependency');
+      var courierSec = document.getElementById('section-courier');
+      var serialSec = document.getElementById('section-serials');
+
+      if (status === 'Requested' || status === 'Approved' || status === 'In Transit') {
+        depEl.value = 'SCM Dependency';
+        courierSec.classList.remove('hidden');
+        serialSec.classList.add('hidden');
+      } else if (status === 'Delivered') {
+        depEl.value = 'Engineer Dependency';
+        courierSec.classList.remove('hidden');
+        serialSec.classList.remove('hidden');
+      } else if (status === 'Installed') {
+        depEl.value = 'WIP';
+        courierSec.classList.remove('hidden');
+        serialSec.classList.remove('hidden');
+      } else {
+        depEl.value = 'HD Dependency';
+        courierSec.classList.add('hidden');
+        serialSec.classList.add('hidden');
+      }
+    }
+
+    async function handleSaveIndentUpdate(e) {
+      e.preventDefault();
+      var btn = document.getElementById('btn-save-update');
+      var originalBtnText = btn.innerHTML;
+      btn.disabled = true;
+      btn.innerHTML = 'Committing Batch...';
+
+      var indentId = document.getElementById('edit-indent-id').value;
+      var docketId = document.getElementById('edit-docket-id').value;
+      var partName = document.getElementById('edit-part-name').value;
+      var partCode = document.getElementById('edit-part-code').value;
+      var newStatus = document.getElementById('edit-status').value;
+      var courierName = document.getElementById('edit-courier-name').value.trim();
+      var awb = document.getElementById('edit-awb').value.trim();
+      var newSerial = document.getElementById('edit-new-serial').value.trim();
+      var oldSerial = document.getElementById('edit-old-serial').value.trim();
+      var remarks = document.getElementById('edit-remarks').value.trim();
+
+      var userName = localStorage.getItem('userName') || 'Tech Support Specialist';
+
+      try {
+        var batch = db.batch();
+
+        // 1. Prepare Indent Doc Update
+        var indentRef = db.collection('partsIndent').doc(indentId);
+        var indentPayload = {
+          status: newStatus,
+          courierName: courierName || null,
+          awbNumber: awb || null,
+          newSerialNo: newSerial || null,
+          oldSerialNo: oldSerial || null,
+          lastRemarks: remarks,
+          updatedBy: userName,
+          updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+        };
+
+        if (newStatus === 'In Transit' && !indentPayload.dispatchedAt) {
+          indentPayload.dispatchedAt = firebase.firestore.FieldValue.serverTimestamp();
+        }
+        if (newStatus === 'Delivered' && !indentPayload.deliveredAt) {
+          indentPayload.deliveredAt = firebase.firestore.FieldValue.serverTimestamp();
+        }
+        if (newStatus === 'Installed' && !indentPayload.installedAt) {
+          indentPayload.installedAt = firebase.firestore.FieldValue.serverTimestamp();
+        }
+
+        batch.update(indentRef, indentPayload);
+
+        // 2. Compute Linked Docket SubStatus & Dependency
+        var docketSubStatus = 'Pending Spares';
+        var newDep = 'SCM Dependency';
+
+        if (newStatus === 'Requested') {
+          docketSubStatus = 'Spares Indented';
+          newDep = 'SCM Dependency';
+        } else if (newStatus === 'Approved') {
+          docketSubStatus = 'Spares Approved - SCM Processing';
+          newDep = 'SCM Dependency';
+        } else if (newStatus === 'In Transit') {
+          docketSubStatus = 'Spares In Transit';
+          newDep = 'SCM Dependency';
+        } else if (newStatus === 'Delivered') {
+          docketSubStatus = 'Spares Delivered at Site';
+          newDep = 'Engineer Dependency';
+        } else if (newStatus === 'Installed') {
+          docketSubStatus = 'Spares Replaced - Testing';
+          newDep = 'WIP';
+        } else if (newStatus === 'Cancelled') {
+          docketSubStatus = 'Pending for Dispatch';
+          newDep = 'HD Dependency';
+        }
+
+        // 3. Update Linked Docket (if docketId exists)
+        if (docketId) {
+          var docketRef = db.collection('dockets').doc(docketId);
+          var docketUpdatePayload = {
+            subStatus: docketSubStatus,
+            currentDependency: newDep,
+            updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+          };
+
+          if (newStatus === 'Installed') {
+            docketUpdatePayload.partsReplaced = firebase.firestore.FieldValue.arrayUnion({
+              partName: partName,
+              partCode: partCode,
+              newSerial: newSerial,
+              oldSerial: oldSerial,
+              installedAt: new Date().toISOString()
+            });
+          }
+
+          batch.update(docketRef, docketUpdatePayload);
+
+          // 4. Create Immutable Activity Entry in docket subcollection
+          var actRef = docketRef.collection('activity').doc();
+          batch.set(actRef, {
+            action: 'Spares Status: ' + newStatus,
+            by: userName,
+            subStatus: docketSubStatus,
+            dependency: newDep,
+            remarks: 'Part ' + partName + ' status updated to ' + newStatus + '. ' + (awb ? 'AWB: ' + awb + '. ' : '') + remarks,
+            timestamp: firebase.firestore.FieldValue.serverTimestamp()
+          });
+
+          // 5. Global Activity Log
+          var globalActRef = db.collection('docketActivity').doc();
+          batch.set(globalActRef, {
+            docketId: docketId,
+            action: 'Spares Status: ' + newStatus,
+            by: userName,
+            status: docketSubStatus,
+            dependency: newDep,
+            notes: 'Part ' + partName + ' (' + newStatus + ') ' + remarks,
+            timestamp: firebase.firestore.FieldValue.serverTimestamp()
+          });
+        }
+
+        // 6. Atomic Stats Bump (stats/parts)
+        var partsStatRef = db.collection('stats').doc('parts');
+        var statsIncrement = {
+          lastUpdated: firebase.firestore.FieldValue.serverTimestamp()
+        };
+
+        if (newStatus === 'Installed' || newStatus === 'Cancelled') {
+          statsIncrement.totalOpen = firebase.firestore.FieldValue.increment(-1);
+          statsIncrement.installedClosed = firebase.firestore.FieldValue.increment(1);
+        } else if (newStatus === 'In Transit') {
+          statsIncrement.inTransit = firebase.firestore.FieldValue.increment(1);
+        } else if (newStatus === 'Delivered') {
+          statsIncrement.delivered = firebase.firestore.FieldValue.increment(1);
+        }
+
+        batch.set(partsStatRef, statsIncrement, { merge: true });
+
+        // Commit ONE Atomic WriteBatch
+        await batch.commit();
+
+        toast('Indent & docket SLA clock synchronized successfully!', 'success');
+        closeUpdateModal();
+        await loadStatsStrip();
+        fetchIndents(false);
+
+      } catch (err) {
+        console.error('Batch update error:', err);
+        toast('Error updating indent: ' + err.message, 'error');
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = originalBtnText;
+      }
+    }
+
+    // ------------------------------------------------------------------------
+    // CREATE NEW INDENT
+    // ------------------------------------------------------------------------
+    function openNewIndentModal() {
+      verifiedDocketData = null;
+      document.getElementById('form-new-indent').reset();
+      document.getElementById('new-docket-verified-box').classList.add('hidden');
+      document.getElementById('modal-new-indent').classList.remove('hidden');
+    }
+
+    function closeNewIndentModal() {
+      document.getElementById('modal-new-indent').classList.add('hidden');
+    }
+
+    async function lookupDocketForIndent() {
+      var searchVal = document.getElementById('new-docket-search').value.trim().toUpperCase();
+      if (!searchVal) {
+        toast('Please enter a Docket Number or ATM ID to verify.', 'warn');
+        return;
+      }
+
+      var box = document.getElementById('new-docket-verified-box');
+      box.innerHTML = 'Verifying docket against live database...';
+      box.classList.remove('hidden');
+
+      try {
+        // First try by exact docketNo
+        var snap = await db.collection('dockets').where('docketNo', '==', searchVal).limit(1).get();
+        if (snap.empty) {
+          // Try by ATM ID open docket
+          snap = await db.collection('dockets').where('atmId', '==', searchVal).where('isClosed', '==', false).limit(1).get();
+        }
+
+        if (snap.empty) {
+          box.className = 'mt-2 p-2.5 bg-rose-50 border border-rose-200 rounded-lg text-rose-800 text-[11px]';
+          box.innerHTML = '<strong>No open docket found</strong> matching "' + searchVal + '". Verify ticket number and try again.';
+          verifiedDocketData = null;
+          return;
+        }
+
+        var doc = snap.docs[0];
+        verifiedDocketData = { id: doc.id, ...doc.data() };
+
+        box.className = 'mt-2 p-2.5 bg-emerald-50 border border-emerald-200 rounded-lg text-emerald-800 text-[11px]';
+        box.innerHTML = 
+          '<strong>&#10003; Docket Verified:</strong> <span class="font-mono font-bold">' + verifiedDocketData.docketNo + '</span><br>' +
+          '<span>ATM: ' + verifiedDocketData.atmId + ' &bull; Bank: ' + verifiedDocketData.bank + ' &bull; RO: ' + (verifiedDocketData.ro || 'RO') + '</span><br>' +
+          '<span class="text-slate-600">Assigned Engineer: ' + (verifiedDocketData.assignedEngineerName || 'Unassigned') + '</span>';
+
+      } catch (e) {
+        console.error('Docket lookup error:', e);
+        box.className = 'mt-2 p-2.5 bg-rose-50 border border-rose-200 rounded-lg text-rose-800 text-[11px]';
+        box.textContent = 'Lookup error: ' + e.message;
+      }
+    }
+
+    async function handleCreateNewIndent(e) {
+      e.preventDefault();
+      if (!verifiedDocketData) {
+        toast('Please verify a valid open docket before saving indent.', 'warn');
+        return;
+      }
+
+      var btn = document.getElementById('btn-save-new-indent');
+      btn.disabled = true;
+      btn.innerHTML = 'Creating Indent...';
+
+      var partName = document.getElementById('new-part-name').value;
+      var partCode = document.getElementById('new-part-code').value.trim() || 'OEM-GENERIC';
+      var qty = parseInt(document.getElementById('new-quantity').value, 10) || 1;
+      var priority = document.getElementById('new-priority').value;
+      var destination = document.getElementById('new-destination').value;
+      var reason = document.getElementById('new-reason').value.trim();
+
+      var userName = localStorage.getItem('userName') || 'Tech Support';
+
+      try {
+        var indentDocRef = db.collection('partsIndent').doc();
+        var indentNo = 'IND-' + new Date().getFullYear() + '-' + Math.floor(100000 + Math.random() * 900000);
+
+        var batch = db.batch();
+
+        // 1. Create partsIndent
+        batch.set(indentDocRef, {
+          indentNo: indentNo,
+          docketId: verifiedDocketData.id,
+          docketNo: verifiedDocketData.docketNo,
+          atmId: verifiedDocketData.atmId,
+          bank: verifiedDocketData.bank,
+          ro: verifiedDocketData.ro || 'RO',
+          partName: partName,
+          partCode: partCode,
+          quantity: qty,
+          priority: priority,
+          destination: destination,
+          reason: reason,
+          status: 'Requested',
+          requestedBy: userName,
+          engineerName: verifiedDocketData.assignedEngineerName || 'Field Tech',
+          createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+          updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+
+        // 2. Set Linked Docket into SCM Dependency
+        var docketRef = db.collection('dockets').doc(verifiedDocketData.id);
+        batch.update(docketRef, {
+          subStatus: 'Spares Indented',
+          currentDependency: 'SCM Dependency',
+          hasSpareIndent: true,
+          updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+
+        // 3. Docket Activity Audit Trail
+        var actRef = docketRef.collection('activity').doc();
+        batch.set(actRef, {
+          action: 'Spares Indented: ' + indentNo,
+          by: userName,
+          subStatus: 'Spares Indented',
+          dependency: 'SCM Dependency',
+          remarks: 'Indented ' + qty + 'x ' + partName + ' (' + partCode + '). Reason: ' + reason,
+          timestamp: firebase.firestore.FieldValue.serverTimestamp()
+        });
+
+        // 4. Bump Stats
+        var partsStatRef = db.collection('stats').doc('parts');
+        batch.set(partsStatRef, {
+          totalOpen: firebase.firestore.FieldValue.increment(1),
+          pendingReview: firebase.firestore.FieldValue.increment(1),
+          lastUpdated: firebase.firestore.FieldValue.serverTimestamp()
+        }, { merge: true });
+
+        await batch.commit();
+
+        toast('Indent #' + indentNo + ' created successfully & linked to docket.', 'success');
+        closeNewIndentModal();
+        await loadStatsStrip();
+        fetchIndents(true);
+
+      } catch (err) {
+        console.error('Error creating indent:', err);
+        toast('Error creating indent: ' + err.message, 'error');
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = 'Create Indent &amp; Set SCM Dependency';
+      }
+    }
+
+    function viewLinkedDocket(docketId) {
+      if (docketId) {
+        window.location.href = 'dockets.html?search=' + docketId;
+      }
+    }
+
+    function toast(msg, type) {
+      var div = document.createElement('div');
+      var bg = type === 'success' ? 'bg-emerald-600' : (type === 'warn' ? 'bg-amber-600' : 'bg-slate-900');
+      div.className = 'fixed bottom-4 right-4 z-50 text-white text-xs px-4 py-2.5 rounded-xl shadow-2xl transition-all duration-300 transform translate-y-0 ' + bg;
+      div.textContent = msg;
+      document.body.appendChild(div);
+      setTimeout(function () {
+        div.style.opacity = '0';
+        div.style.transform = 'translateY(10px)';
+        setTimeout(function () { div.remove(); }, 300);
+      }, 3000);
+    }
+  </script>
+</body>
+</html>

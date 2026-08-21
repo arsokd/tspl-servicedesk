@@ -1,0 +1,12 @@
+{
+  "projectId": "tspl-servicedesk",
+  "appId": "1:576837116834:web:9f720c651eae1019fb08fb",
+  "apiKey": "AIzaSyBaXWUf_F0LbuwmxNEGCtWKR5XJC2HTaUQ",
+  "authDomain": "tspl-servicedesk.firebaseapp.com",
+  "firestoreDatabaseId": "(default)",
+  "storageBucket": "tspl-servicedesk.firebasestorage.app",
+  "messagingSenderId": "576837116834",
+  "measurementId": "",
+  "oAuthClientId": "",
+  "recaptchaSiteKey": ""
+}

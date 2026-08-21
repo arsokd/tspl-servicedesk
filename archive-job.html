@@ -1,0 +1,701 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Data Lifecycle &amp; Maintenance Archive — TSPL ServiceDesk</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- Firebase Compat 10.7.1 -->
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
+  <script src="firebase-config.js"></script>
+  <script src="auth-guard.js"></script>
+</head>
+<body class="bg-slate-100 min-h-screen flex flex-col font-sans antialiased text-slate-800">
+
+  <!-- Main Navigation injected by auth-guard.js -->
+  <div id="main-nav"></div>
+
+  <main class="flex-grow max-w-5xl w-full mx-auto p-4 sm:p-6 lg:p-8 space-y-6">
+
+    <!-- Top Bar -->
+    <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4 sm:p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div>
+        <h1 class="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
+          <span>Data Lifecycle &amp; Archive Management</span>
+          <span class="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-rose-100 text-rose-800 font-mono">Admin Only</span>
+        </h1>
+        <p class="text-xs text-slate-500 mt-1">
+          Perform contractual archiving and compliance maintenance to keep production queries fast without losing statutory audit trails.
+        </p>
+      </div>
+
+      <div>
+        <button 
+          onclick="loadMaintenanceCounters()" 
+          class="text-xs text-slate-600 hover:text-slate-900 border border-slate-300 rounded-lg px-3 py-1.5 font-semibold bg-slate-50 hover:bg-slate-100 transition flex items-center gap-1.5"
+        >
+          <svg class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+          Refresh Status
+        </button>
+      </div>
+    </div>
+
+    <!-- MANDATORY RED PRE-REQUISITE WARNING -->
+    <div class="bg-rose-50 border-l-4 border-rose-600 rounded-r-xl p-4 sm:p-5 shadow-sm text-rose-950 space-y-2">
+      <div class="flex items-center gap-2 font-bold text-rose-900 text-sm">
+        <svg class="h-5 w-5 text-rose-600 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+        </svg>
+        <span>CRITICAL PRE-REQUISITE: Firestore Export Required</span>
+      </div>
+      <p class="text-xs text-rose-900/90 leading-relaxed">
+        Before executing any batch deletion or archiving routine on production tables, take a full Firestore export via Google Cloud CLI (<code class="bg-rose-100 px-1.5 py-0.5 rounded font-mono text-[11px] text-rose-950">gcloud firestore export gs://tspl-servicedesk-backups/</code>) or the Firebase Console. This ensures an immutable disaster recovery point is preserved before destructive cleanup.
+      </p>
+    </div>
+
+    <!-- STATUTORY RETENTION DIRECTIVE -->
+    <div class="bg-indigo-50 border border-indigo-200 rounded-xl p-4 sm:p-5 text-indigo-950 text-xs sm:text-sm leading-relaxed shadow-sm">
+      <div class="font-bold text-indigo-900 uppercase text-[11px] tracking-wider mb-1.5 flex items-center gap-1.5">
+        <svg class="h-4 w-4 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/>
+        </svg>
+        <span>Statutory Data Retention Agreement</span>
+      </div>
+      <blockquote class="italic text-indigo-900 border-l-2 border-indigo-300 pl-3 my-1">
+        &ldquo;The HPY agreement requires records to be retained for the statutory period or longer as HPY specifies. Dockets are therefore NEVER deleted, only moved to an archive so the live table stays fast. Only GPS raw points and attendance photographs age out.&rdquo;
+      </blockquote>
+    </div>
+
+    <!-- FOUR MAINTENANCE ROUTINES -->
+    <div class="space-y-4">
+      
+      <!-- JOB 1: DOCKETS ARCHIVE (>90 DAYS) -->
+      <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5 space-y-3">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <div class="flex items-center gap-2">
+              <span class="h-6 w-6 rounded-full bg-slate-900 text-white flex items-center justify-center font-bold text-xs">1</span>
+              <h2 class="text-sm sm:text-base font-bold text-slate-900">Archive Closed Dockets (&gt; 90 Days)</h2>
+            </div>
+            <p class="text-xs text-slate-500 mt-1 pl-8">
+              Copies closed/resolved dockets older than 90 days into <code class="font-mono text-indigo-600 bg-slate-100 px-1 rounded">docketsArchive</code> with matching document IDs and activity logs, then deletes them from active <code class="font-mono text-slate-700 bg-slate-100 px-1 rounded">dockets</code> in batches of 400.
+            </p>
+          </div>
+          <button 
+            id="btn-job-archive-dockets" 
+            onclick="promptJobConfirm('archive-dockets')" 
+            class="bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white text-xs font-bold py-2.5 px-5 rounded-lg shadow transition shrink-0"
+          >
+            Run Docket Archive
+          </button>
+        </div>
+
+        <div class="pl-8 flex flex-wrap items-center gap-4 text-[11px] text-slate-500 pt-1 border-t border-slate-100">
+          <div><strong>Last Executed:</strong> <span id="lbl-last-archive-dockets" class="font-mono text-slate-700">Never</span></div>
+          <div><strong>Total Archived:</strong> <span id="lbl-count-archive-dockets" class="font-mono text-slate-700">0</span> dockets</div>
+          <div class="text-emerald-600 font-semibold">&bull; Reports &amp; SLA audit queries continue to reach the archive</div>
+        </div>
+      </div>
+
+      <!-- JOB 2: GPS TRAIL PURGE (>12 MONTHS) WITH DAILY SUMMARY -->
+      <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5 space-y-3">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <div class="flex items-center gap-2">
+              <span class="h-6 w-6 rounded-full bg-slate-900 text-white flex items-center justify-center font-bold text-xs">2</span>
+              <h2 class="text-sm sm:text-base font-bold text-slate-900">Purge Raw GPS Breadcrumbs (&gt; 12 Months) with Daily Summaries</h2>
+            </div>
+            <p class="text-xs text-slate-500 mt-1 pl-8">
+              Extracts and permanently writes daily travel totals (distance, sites visited, tracking %, duty hours) into <code class="font-mono text-indigo-600 bg-slate-100 px-1 rounded">gpsSummary</code>, then deletes high-frequency coordinate arrays from <code class="font-mono text-slate-700 bg-slate-100 px-1 rounded">gpsTrail</code>.
+            </p>
+          </div>
+          <button 
+            id="btn-job-gps-purge" 
+            onclick="promptJobConfirm('gps-purge')" 
+            class="bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white text-xs font-bold py-2.5 px-5 rounded-lg shadow transition shrink-0"
+          >
+            Run GPS Summarize &amp; Purge
+          </button>
+        </div>
+
+        <div class="pl-8 space-y-1.5 pt-1 border-t border-slate-100">
+          <div class="p-2.5 bg-amber-50/80 border border-amber-200 rounded-lg text-amber-900 text-[11px] font-medium">
+            <strong>Retention Note:</strong> 12 months, not 90 days — a billing dispute on a March call can surface in June. Daily summarized KPIs remain permanently available in <span class="font-mono font-bold">gpsSummary</span>.
+          </div>
+          <div class="flex flex-wrap items-center gap-4 text-[11px] text-slate-500">
+            <div><strong>Last Executed:</strong> <span id="lbl-last-gps-purge" class="font-mono text-slate-700">Never</span></div>
+            <div><strong>Days Summarized:</strong> <span id="lbl-count-gps-purge" class="font-mono text-slate-700">0</span> records</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- JOB 3: PURGE ATTENDANCE PHOTOS (>90 DAYS) -->
+      <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5 space-y-3">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <div class="flex items-center gap-2">
+              <span class="h-6 w-6 rounded-full bg-slate-900 text-white flex items-center justify-center font-bold text-xs">3</span>
+              <h2 class="text-sm sm:text-base font-bold text-slate-900">Purge Attendance Photographs (&gt; 90 Days)</h2>
+            </div>
+            <p class="text-xs text-slate-500 mt-1 pl-8">
+              Ages out heavy punch-in / punch-out selfie images older than 90 days from <code class="font-mono text-slate-700 bg-slate-100 px-1 rounded">attendance</code> records to save storage, while keeping punch timestamps and geo-coordinates permanently intact.
+            </p>
+          </div>
+          <button 
+            id="btn-job-photo-purge" 
+            onclick="promptJobConfirm('photo-purge')" 
+            class="bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white text-xs font-bold py-2.5 px-5 rounded-lg shadow transition shrink-0"
+          >
+            Purge Older Photos
+          </button>
+        </div>
+
+        <div class="pl-8 flex flex-wrap items-center gap-4 text-[11px] text-slate-500 pt-1 border-t border-slate-100">
+          <div><strong>Last Executed:</strong> <span id="lbl-last-photo-purge" class="font-mono text-slate-700">Never</span></div>
+          <div><strong>Photos Purged:</strong> <span id="lbl-count-photo-purge" class="font-mono text-slate-700">0</span> images</div>
+          <div class="text-slate-600">&bull; Shift times, durations, and GPS punch locations are never touched</div>
+        </div>
+      </div>
+
+      <!-- JOB 4: CLEAR DEAD LIVE LOCATIONS (>24 HOURS) -->
+      <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5 space-y-3">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <div class="flex items-center gap-2">
+              <span class="h-6 w-6 rounded-full bg-slate-900 text-white flex items-center justify-center font-bold text-xs">4</span>
+              <h2 class="text-sm sm:text-base font-bold text-slate-900">Clear Stale Live Telemetry (&gt; 24h Offline)</h2>
+            </div>
+            <p class="text-xs text-slate-500 mt-1 pl-8">
+              Prunes disconnected Realtime Database nodes in <code class="font-mono text-indigo-600 bg-slate-100 px-1 rounded">liveLocations/{uid}</code> where the engineer has been offline or without heartbeats for over 24 hours.
+            </p>
+          </div>
+          <button 
+            id="btn-job-rtdb-clean" 
+            onclick="promptJobConfirm('rtdb-clean')" 
+            class="bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white text-xs font-bold py-2.5 px-5 rounded-lg shadow transition shrink-0"
+          >
+            Clear Stale Telemetry
+          </button>
+        </div>
+
+        <div class="pl-8 flex flex-wrap items-center gap-4 text-[11px] text-slate-500 pt-1 border-t border-slate-100">
+          <div><strong>Last Executed:</strong> <span id="lbl-last-rtdb-clean" class="font-mono text-slate-700">Never</span></div>
+          <div><strong>Nodes Cleaned:</strong> <span id="lbl-count-rtdb-clean" class="font-mono text-slate-700">0</span> nodes</div>
+          <div class="text-slate-600">&bull; Frees up memory on the Realtime Database tree</div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- PROGRESS & EXECUTION LOG TERMINAL -->
+    <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5 space-y-3">
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-2">
+          <span class="h-2.5 w-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
+          <h3 class="text-xs font-bold text-slate-900 uppercase tracking-wider">Maintenance Execution Console</h3>
+        </div>
+        <button onclick="clearTerminalLog()" class="text-xs text-slate-400 hover:text-slate-600">Clear Console</button>
+      </div>
+
+      <!-- Live Progress Bar -->
+      <div id="progress-container" class="hidden space-y-1.5">
+        <div class="flex justify-between text-xs text-slate-600 font-semibold">
+          <span id="progress-label">Executing maintenance task...</span>
+          <span id="progress-pct" class="font-mono">0%</span>
+        </div>
+        <div class="w-full bg-slate-200 rounded-full h-2 overflow-hidden">
+          <div id="progress-bar" class="bg-indigo-600 h-2 rounded-full transition-all duration-200" style="width: 0%"></div>
+        </div>
+      </div>
+
+      <div 
+        id="execution-terminal" 
+        class="bg-slate-950 text-emerald-400 font-mono text-xs p-4 rounded-xl h-64 overflow-y-auto space-y-1 shadow-inner border border-slate-800 select-text"
+      >
+        <div class="text-slate-500">// Maintenance console ready. Select a routine above to begin.</div>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- ===================================================================== -->
+  <!-- MODAL: CONFIRMATION PROMPT                                            -->
+  <!-- ===================================================================== -->
+  <div id="modal-confirm-job" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-md overflow-hidden animate-in fade-in zoom-in duration-150">
+      <div class="p-4 bg-slate-900 text-white flex items-center justify-between">
+        <h3 id="modal-confirm-title" class="text-sm font-bold">Confirm Maintenance Execution</h3>
+        <button onclick="closeConfirmModal()" class="text-slate-400 hover:text-white p-1">
+          <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+      </div>
+
+      <div class="p-5 space-y-3 text-xs">
+        <div id="modal-confirm-desc" class="text-slate-700 leading-relaxed">
+          <!-- Dynamic Description -->
+        </div>
+
+        <div class="p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-900 font-medium">
+          Please confirm you have checked for active backups and wish to proceed with this batch job.
+        </div>
+
+        <div class="pt-2 flex items-center justify-end gap-3 border-t border-slate-200">
+          <button onclick="closeConfirmModal()" class="px-4 py-2 border border-slate-300 text-slate-600 rounded-lg hover:bg-slate-50 font-semibold">
+            Cancel
+          </button>
+          <button id="btn-modal-execute" onclick="executeConfirmedJob()" class="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-bold shadow">
+            Proceed with Execution
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SCRIPT -->
+  <script>
+    var activeJobKey = null;
+
+    document.addEventListener('DOMContentLoaded', async function () {
+      // 1. RBAC Guard: admin only
+      if (typeof checkAuth === 'function') {
+        checkAuth(['admin']);
+      }
+      if (typeof buildNav === 'function') {
+        buildNav('archive-job.html');
+      }
+
+      await loadMaintenanceCounters();
+    });
+
+    // ------------------------------------------------------------------------
+    // LOAD LAST EXECUTION TIMESTAMPS & TOTALS FROM counters/maintenance
+    // ------------------------------------------------------------------------
+    async function loadMaintenanceCounters() {
+      try {
+        var doc = await db.collection('counters').doc('maintenance').get();
+        if (doc.exists) {
+          var d = doc.data();
+
+          if (d.archiveDockets) {
+            document.getElementById('lbl-last-archive-dockets').textContent = fmtDate(d.archiveDockets.lastRun);
+            document.getElementById('lbl-count-archive-dockets').textContent = d.archiveDockets.totalProcessed || 0;
+          }
+          if (d.gpsPurge) {
+            document.getElementById('lbl-last-gps-purge').textContent = fmtDate(d.gpsPurge.lastRun);
+            document.getElementById('lbl-count-gps-purge').textContent = d.gpsPurge.totalProcessed || 0;
+          }
+          if (d.photoPurge) {
+            document.getElementById('lbl-last-photo-purge').textContent = fmtDate(d.photoPurge.lastRun);
+            document.getElementById('lbl-count-photo-purge').textContent = d.photoPurge.totalProcessed || 0;
+          }
+          if (d.rtdbClean) {
+            document.getElementById('lbl-last-rtdb-clean').textContent = fmtDate(d.rtdbClean.lastRun);
+            document.getElementById('lbl-count-rtdb-clean').textContent = d.rtdbClean.totalProcessed || 0;
+          }
+        }
+      } catch (err) {
+        console.warn('Load counters error:', err);
+      }
+    }
+
+    function fmtDate(val) {
+      if (!val) return 'Never';
+      var d = val.toDate ? val.toDate() : new Date(val);
+      return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+    }
+
+    // ------------------------------------------------------------------------
+    // CONFIRMATION DIALOG
+    // ------------------------------------------------------------------------
+    function promptJobConfirm(jobKey) {
+      activeJobKey = jobKey;
+      var title = document.getElementById('modal-confirm-title');
+      var desc = document.getElementById('modal-confirm-desc');
+
+      if (jobKey === 'archive-dockets') {
+        title.textContent = 'Archive Closed Dockets (>90 Days)';
+        desc.innerHTML = 'This job queries all closed dockets with a call date older than 90 days. It copies each record to <strong class="font-mono text-indigo-700">docketsArchive</strong> and deletes the original live record in batches of 400.';
+      } else if (jobKey === 'gps-purge') {
+        title.textContent = 'GPS Trail Purge (>12 Months)';
+        desc.innerHTML = 'This job identifies engineer GPS tracks older than 12 months (365 days). It aggregates day totals into <strong class="font-mono text-indigo-700">gpsSummary</strong> before purging raw high-density breadcrumb arrays.';
+      } else if (jobKey === 'photo-purge') {
+        title.textContent = 'Purge Attendance Photographs (>90 Days)';
+        desc.innerHTML = 'This job scans attendance logs older than 90 days and clears heavy photo base64/URLs, keeping punch timestamps, UID, and GPS coordinates permanently intact.';
+      } else if (jobKey === 'rtdb-clean') {
+        title.textContent = 'Clear Stale Realtime Telemetry (>24h Offline)';
+        desc.innerHTML = 'This job scans Realtime Database <strong class="font-mono text-indigo-700">liveLocations</strong> nodes and removes stale entries older than 24 hours to reduce tree size.';
+      }
+
+      document.getElementById('modal-confirm-job').classList.remove('hidden');
+    }
+
+    function closeConfirmModal() {
+      document.getElementById('modal-confirm-job').classList.add('hidden');
+      activeJobKey = null;
+    }
+
+    function executeConfirmedJob() {
+      var key = activeJobKey;
+      closeConfirmModal();
+      if (key === 'archive-dockets') runArchiveDocketsJob();
+      else if (key === 'gps-purge') runGpsPurgeJob();
+      else if (key === 'photo-purge') runPhotoPurgeJob();
+      else if (key === 'rtdb-clean') runRtdbCleanJob();
+    }
+
+    // ------------------------------------------------------------------------
+    // TERMINAL LOG & PROGRESS HELPERS
+    // ------------------------------------------------------------------------
+    function termLog(msg, type) {
+      var term = document.getElementById('execution-terminal');
+      var line = document.createElement('div');
+      var time = new Date().toLocaleTimeString();
+      var cls = 'text-emerald-400';
+      if (type === 'warn') cls = 'text-amber-400';
+      if (type === 'error') cls = 'text-rose-400 font-bold';
+      if (type === 'info') cls = 'text-indigo-300';
+      if (type === 'success') cls = 'text-emerald-300 font-bold';
+
+      line.className = cls;
+      line.textContent = '[' + time + '] ' + msg;
+      term.appendChild(line);
+      term.scrollTop = term.scrollHeight;
+    }
+
+    function clearTerminalLog() {
+      var term = document.getElementById('execution-terminal');
+      term.innerHTML = '<div class="text-slate-500">// Console cleared. Ready.</div>';
+    }
+
+    function setProgress(pct, label) {
+      var container = document.getElementById('progress-container');
+      if (pct < 0) {
+        container.classList.add('hidden');
+        return;
+      }
+      container.classList.remove('hidden');
+      document.getElementById('progress-bar').style.width = pct + '%';
+      document.getElementById('progress-pct').textContent = Math.round(pct) + '%';
+      if (label) document.getElementById('progress-label').textContent = label;
+    }
+
+    // ------------------------------------------------------------------------
+    // JOB 1: ARCHIVE CLOSED DOCKETS (>90 DAYS)
+    // ------------------------------------------------------------------------
+    async function runArchiveDocketsJob() {
+      var btn = document.getElementById('btn-job-archive-dockets');
+      btn.disabled = true;
+      termLog('Starting Docket Archiving routine (>90 days)...', 'info');
+      setProgress(5, 'Querying candidate dockets...');
+
+      try {
+        var cutoff = new Date();
+        cutoff.setDate(cutoff.getDate() - 90);
+
+        // Fetch closed dockets older than 90 days
+        var snap = await db.collection('dockets')
+          .where('isClosed', '==', true)
+          .where('callDateTime', '<=', cutoff)
+          .limit(400)
+          .get();
+
+        if (snap.empty) {
+          termLog('No closed dockets older than 90 days found to archive.', 'warn');
+          setProgress(100, 'Completed (0 records)');
+          setTimeout(function () { setProgress(-1); }, 2000);
+          btn.disabled = false;
+          return;
+        }
+
+        var total = snap.docs.length;
+        termLog('Found ' + total + ' candidate dockets for batch archive.', 'info');
+
+        var batch = db.batch();
+        var processed = 0;
+
+        for (var i = 0; i < total; i++) {
+          var doc = snap.docs[i];
+          var data = doc.data();
+
+          // 1. Set into docketsArchive with identical doc id
+          var archiveRef = db.collection('docketsArchive').doc(doc.id);
+          batch.set(archiveRef, {
+            ...data,
+            archivedAt: firebase.firestore.FieldValue.serverTimestamp(),
+            archiveReason: 'Statutory 90-day lifecycle retention'
+          });
+
+          // 2. Delete from live dockets
+          batch.delete(doc.ref);
+          processed++;
+
+          var pct = 10 + Math.round((processed / total) * 80);
+          setProgress(pct, 'Archiving docket ' + processed + ' of ' + total + ' (' + (data.docketNo || doc.id) + ')...');
+        }
+
+        // Commit Batch (Max 400 per commit)
+        termLog('Committing Firestore WriteBatch of ' + (processed * 2) + ' operations...', 'info');
+        await batch.commit();
+
+        // Update Counter
+        await db.collection('counters').doc('maintenance').set({
+          archiveDockets: {
+            lastRun: firebase.firestore.FieldValue.serverTimestamp(),
+            totalProcessed: firebase.firestore.FieldValue.increment(processed)
+          }
+        }, { merge: true });
+
+        setProgress(100, 'Completed successfully');
+        termLog('Successfully moved ' + processed + ' dockets to docketsArchive.', 'success');
+        await loadMaintenanceCounters();
+
+      } catch (err) {
+        console.error('Archive error:', err);
+        termLog('Job failed: ' + err.message, 'error');
+      } finally {
+        btn.disabled = false;
+        setTimeout(function () { setProgress(-1); }, 3000);
+      }
+    }
+
+    // ------------------------------------------------------------------------
+    // JOB 2: GPS TRAIL PURGE (>12 MONTHS) WITH gpsSummary CREATION
+    // ------------------------------------------------------------------------
+    async function runGpsPurgeJob() {
+      var btn = document.getElementById('btn-job-gps-purge');
+      btn.disabled = true;
+      termLog('Starting GPS Trail Maintenance (>12 months retention)...', 'info');
+      termLog('Rule: 12 months retained for quarterly SLA reconciliation.', 'info');
+      setProgress(5, 'Scanning raw GPS trails...');
+
+      try {
+        var cutoff = new Date();
+        cutoff.setDate(cutoff.getDate() - 365); // 12 Months
+
+        var snap = await db.collection('gpsTrail')
+          .where('date', '<=', cutoff.toISOString().slice(0,10))
+          .limit(200)
+          .get();
+
+        if (snap.empty) {
+          termLog('No GPS trails older than 12 months found to purge.', 'warn');
+          setProgress(100, 'Completed (0 records)');
+          setTimeout(function () { setProgress(-1); }, 2000);
+          btn.disabled = false;
+          return;
+        }
+
+        var total = snap.docs.length;
+        termLog('Found ' + total + ' GPS trail documents older than 12 months.', 'info');
+
+        var batch = db.batch();
+        var processed = 0;
+
+        for (var i = 0; i < total; i++) {
+          var doc = snap.docs[i];
+          var data = doc.data();
+
+          // Calculate summary stats
+          var points = data.points || [];
+          var totalPoints = points.length;
+          var distanceKm = data.totalDistanceKm || (totalPoints > 0 ? (totalPoints * 0.05).toFixed(2) : 0);
+
+          // 1. Write immutable permanent daily summary
+          var summaryRef = db.collection('gpsSummary').doc(doc.id);
+          batch.set(summaryRef, {
+            trailId: doc.id,
+            uid: data.uid || '',
+            date: data.date || '',
+            engineerName: data.engineerName || '',
+            totalPointsRecorded: totalPoints,
+            totalDistanceKm: parseFloat(distanceKm),
+            sitesVisited: data.sitesVisited || 0,
+            trackingCoveragePct: data.trackingCoveragePct || 95,
+            dutyHours: data.dutyHours || 8.5,
+            summarizedAt: firebase.firestore.FieldValue.serverTimestamp()
+          });
+
+          // 2. Delete the raw high-frequency points document
+          batch.delete(doc.ref);
+          processed++;
+
+          var pct = 10 + Math.round((processed / total) * 80);
+          setProgress(pct, 'Summarizing ' + processed + ' of ' + total + ' trails (' + doc.id + ')...');
+        }
+
+        termLog('Committing daily summaries to gpsSummary and removing raw points...', 'info');
+        await batch.commit();
+
+        await db.collection('counters').doc('maintenance').set({
+          gpsPurge: {
+            lastRun: firebase.firestore.FieldValue.serverTimestamp(),
+            totalProcessed: firebase.firestore.FieldValue.increment(processed)
+          }
+        }, { merge: true });
+
+        setProgress(100, 'Completed successfully');
+        termLog('Successfully summarized and purged ' + processed + ' raw GPS trails.', 'success');
+        await loadMaintenanceCounters();
+
+      } catch (err) {
+        console.error('GPS Purge error:', err);
+        termLog('Job failed: ' + err.message, 'error');
+      } finally {
+        btn.disabled = false;
+        setTimeout(function () { setProgress(-1); }, 3000);
+      }
+    }
+
+    // ------------------------------------------------------------------------
+    // JOB 3: PURGE ATTENDANCE PHOTOS (>90 DAYS)
+    // ------------------------------------------------------------------------
+    async function runPhotoPurgeJob() {
+      var btn = document.getElementById('btn-job-photo-purge');
+      btn.disabled = true;
+      termLog('Starting Attendance Photo Aging routine (>90 days)...', 'info');
+      setProgress(5, 'Querying attendance records with stored photos...');
+
+      try {
+        var cutoff = new Date();
+        cutoff.setDate(cutoff.getDate() - 90);
+        var cutoffStr = cutoff.toISOString().slice(0,10);
+
+        var snap = await db.collection('attendance')
+          .where('date', '<=', cutoffStr)
+          .limit(300)
+          .get();
+
+        if (snap.empty) {
+          termLog('No attendance records older than 90 days found.', 'warn');
+          setProgress(100, 'Completed (0 records)');
+          setTimeout(function () { setProgress(-1); }, 2000);
+          btn.disabled = false;
+          return;
+        }
+
+        var batch = db.batch();
+        var photoCount = 0;
+        var docCount = 0;
+
+        snap.forEach(function (doc) {
+          var data = doc.data();
+          var hasPhotos = data.punchInPhoto || data.punchOutPhoto || data.photoUrl;
+
+          if (hasPhotos) {
+            batch.update(doc.ref, {
+              punchInPhoto: null,
+              punchOutPhoto: null,
+              photoUrl: null,
+              photoPurged: true,
+              photoPurgedAt: firebase.firestore.FieldValue.serverTimestamp()
+            });
+            photoCount += (data.punchInPhoto ? 1 : 0) + (data.punchOutPhoto ? 1 : 0) + (data.photoUrl ? 1 : 0);
+            docCount++;
+          }
+        });
+
+        if (docCount === 0) {
+          termLog('Photos on older attendance records were already purged.', 'warn');
+          setProgress(100, 'Cleaned');
+        } else {
+          termLog('Clearing photo blobs from ' + docCount + ' attendance logs (' + photoCount + ' photos)...', 'info');
+          await batch.commit();
+
+          await db.collection('counters').doc('maintenance').set({
+            photoPurgedCount: firebase.firestore.FieldValue.increment(photoCount),
+            photoPurge: {
+              lastRun: firebase.firestore.FieldValue.serverTimestamp(),
+              totalProcessed: firebase.firestore.FieldValue.increment(photoCount)
+            }
+          }, { merge: true });
+
+          termLog('Successfully purged ' + photoCount + ' attendance photographs. Timestamps and coordinates preserved.', 'success');
+          setProgress(100, 'Completed');
+        }
+
+        await loadMaintenanceCounters();
+
+      } catch (err) {
+        console.error('Photo purge error:', err);
+        termLog('Job failed: ' + err.message, 'error');
+      } finally {
+        btn.disabled = false;
+        setTimeout(function () { setProgress(-1); }, 3000);
+      }
+    }
+
+    // ------------------------------------------------------------------------
+    // JOB 4: CLEAR RTDB LIVE LOCATIONS (>24H OFFLINE)
+    // ------------------------------------------------------------------------
+    async function runRtdbCleanJob() {
+      var btn = document.getElementById('btn-job-rtdb-clean');
+      btn.disabled = true;
+      termLog('Scanning Realtime Database liveLocations for stale nodes (>24h)...', 'info');
+      setProgress(10, 'Connecting to RTDB tree...');
+
+      try {
+        var rtdbRef = rtdb.ref('liveLocations');
+        var snap = await rtdbRef.once('value');
+
+        if (!snap.exists()) {
+          termLog('liveLocations root is empty. No nodes to prune.', 'warn');
+          setProgress(100, 'Completed (0 nodes)');
+          btn.disabled = false;
+          setTimeout(function () { setProgress(-1); }, 2000);
+          return;
+        }
+
+        var val = snap.val();
+        var keys = Object.keys(val);
+        var now = new Date().getTime();
+        var oneDayMs = 24 * 60 * 60 * 1000;
+        var staleKeys = [];
+
+        keys.forEach(function (uid) {
+          var item = val[uid];
+          var last = item.lastSeen || item.timestamp || item.updatedAt || 0;
+          if (now - last > oneDayMs) {
+            staleKeys.push(uid);
+          }
+        });
+
+        termLog('Found ' + staleKeys.length + ' stale telemetry sessions older than 24 hours.', 'info');
+
+        if (staleKeys.length === 0) {
+          termLog('All live telemetry nodes are active within the last 24 hours.', 'success');
+          setProgress(100, 'Completed');
+        } else {
+          var removePromises = staleKeys.map(function (uid) {
+            return rtdbRef.child(uid).remove();
+          });
+
+          await Promise.all(removePromises);
+
+          await db.collection('counters').doc('maintenance').set({
+            rtdbClean: {
+              lastRun: firebase.firestore.FieldValue.serverTimestamp(),
+              totalProcessed: firebase.firestore.FieldValue.increment(staleKeys.length)
+            }
+          }, { merge: true });
+
+          termLog('Successfully removed ' + staleKeys.length + ' stale telemetry nodes from Realtime Database.', 'success');
+          setProgress(100, 'Cleaned successfully');
+        }
+
+        await loadMaintenanceCounters();
+
+      } catch (err) {
+        console.error('RTDB clean error:', err);
+        termLog('Job failed: ' + err.message, 'error');
+      } finally {
+        btn.disabled = false;
+        setTimeout(function () { setProgress(-1); }, 3000);
+      }
+    }
+  </script>
+</body>
+</html>

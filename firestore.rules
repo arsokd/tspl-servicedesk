@@ -1,0 +1,245 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // --------------------------------------------------------------------------
+    // HELPER FUNCTIONS
+    // --------------------------------------------------------------------------
+
+    // Checks if the user is authenticated with Firebase Auth
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Checks if the authenticated user is an administrator
+    // [USES get() LOOKUP]: Reads the user's role from the 'users' collection
+    function isAdmin() {
+      return isAuthenticated() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    // Fetches the user profile document for role and organization scoping
+    // [USES get() LOOKUP]: Reads user doc to check role, RO, and client bank assignment
+    function getUserProfile() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    // --------------------------------------------------------------------------
+    // 1. MASTER CONFIGURATION & STATUS WORKFLOW MAP
+    // Read: All authenticated staff and clients need to populate dropdowns and UI labels.
+    // Write: Restricted exclusively to administrators.
+    // --------------------------------------------------------------------------
+    match /masters/{document=**} {
+      // Plain English: Any signed-in user can read lookup masters; only Admins can create or update them.
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    match /statusMap/{statusId} {
+      // Plain English: Any signed-in user can read the SLA workflow state transitions; only Admins can alter the matrix.
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    match /counters/{counterId} {
+      // Plain English: Authenticated staff can increment docket counters during atomic creation transactions.
+      allow read, write: if isAuthenticated();
+    }
+
+    match /stats/{statId} {
+      // Plain English: Dashboard aggregates can be read by all authenticated staff and updated via FieldValue.increment().
+      allow read, write: if isAuthenticated();
+    }
+
+    // --------------------------------------------------------------------------
+    // 2. ATM ASSET REPOSITORY, CONTRACTS & USER ACCOUNTS
+    // Read: Authenticated team members and bank clients.
+    // Write: Strictly restricted to TSPL administrators.
+    // --------------------------------------------------------------------------
+    match /atms/{atmId} {
+      // Plain English: All authenticated users can query ATM records; only Admins can add or modify ATM assets.
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    match /contracts/{contractId} {
+      // Plain English: Active contractual terms and rate cards are readable by authenticated users; writable ONLY by Admins.
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    match /users/{userId} {
+      // Plain English: Users can read their own profile; Admins can read all profiles; ONLY Admins can create or update user permissions.
+      // [USES get() LOOKUP in isAdmin()]
+      allow read: if isAuthenticated() && (request.auth.uid == userId || isAdmin() || getUserProfile().role in ['callcentre', 'rm', 'regionalhead', 'techsupport', 'unithead']);
+      allow write: if isAdmin();
+    }
+
+    // --------------------------------------------------------------------------
+    // 3. DOCKETS (SERVICE TICKETS) & ARCHIVES
+    // Engineers: Read and update ONLY dockets assigned to their own UID.
+    // Bank Clients: Read ONLY dockets belonging to their designated bank institution.
+    // Operations & Admins: Full access to triage, dispatch, and close calls.
+    // --------------------------------------------------------------------------
+    match /dockets/{docketId} {
+      // Plain English:
+      // - Admins and Service Desk staff have full view.
+      // - Field Engineers can ONLY read tickets assigned to their UID.
+      // - Bank Clients can ONLY read tickets matching their own bank entity.
+      // [USES get() LOOKUP]: Evaluates getUserProfile() for role & bank matching.
+      allow read: if isAuthenticated() && (
+        isAdmin() ||
+        getUserProfile().role in ['callcentre', 'techsupport', 'rm', 'regionalhead', 'unithead'] ||
+        (getUserProfile().role == 'engineer' && (resource.data.assignedEngineerId == request.auth.uid || resource.data.engineerId == request.auth.uid)) ||
+        (getUserProfile().role == 'client' && (resource.data.bank == getUserProfile().clientBank || resource.data.bankName == getUserProfile().clientBank))
+      );
+
+      // Plain English:
+      // - Admins and Call Centre staff can create and edit dockets.
+      // - Engineers can update ONLY their own assigned tickets (status, photos, timestamps).
+      // [USES get() LOOKUP]: Evaluates getUserProfile() for engineer role validation.
+      allow create: if isAuthenticated() && (
+        isAdmin() ||
+        getUserProfile().role in ['callcentre', 'techsupport', 'rm', 'regionalhead', 'unithead']
+      );
+
+      allow update: if isAuthenticated() && (
+        isAdmin() ||
+        getUserProfile().role in ['callcentre', 'techsupport', 'rm', 'regionalhead', 'unithead'] ||
+        (getUserProfile().role == 'engineer' && (resource.data.assignedEngineerId == request.auth.uid || resource.data.engineerId == request.auth.uid))
+      );
+
+      // Plain English: Dockets cannot be deleted by standard users; Admins only for data maintenance.
+      allow delete: if isAdmin();
+
+      match /activity/{actId} {
+        allow read: if isAuthenticated();
+        allow create, write: if isAuthenticated();
+      }
+    }
+
+    match /docketsArchive/{docketId} {
+      // Plain English: Archived closed dockets retained for statutory audit. Readable by staff & clients; writable by Admin.
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+      match /activity/{actId} {
+        allow read: if isAuthenticated();
+        allow write: if isAdmin();
+      }
+    }
+
+    // --------------------------------------------------------------------------
+    // 3B. SPARES & PARTS INDENT WORKFLOW
+    // Tech Support & Admins manage parts; Engineers can view/request.
+    // --------------------------------------------------------------------------
+    match /partsIndent/{indentId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && (
+        isAdmin() ||
+        getUserProfile().role in ['techsupport', 'callcentre', 'rm', 'regionalhead', 'engineer']
+      );
+      allow update: if isAuthenticated() && (
+        isAdmin() ||
+        getUserProfile().role in ['techsupport', 'callcentre', 'rm', 'regionalhead', 'engineer']
+      );
+      allow delete: if isAdmin();
+    }
+
+    match /gpsSummary/{summaryId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    // --------------------------------------------------------------------------
+    // 4. IMMUTABLE AUDIT TRAILS: DOCKET ACTIVITY & SLA BREACHES
+    // CRITICAL: HPY, Client Banks, and RBI Regulators have legal audit rights.
+    // Records can be CREATED, but CAN NEVER BE MODIFIED OR DELETED by anyone.
+    // --------------------------------------------------------------------------
+    match /docketActivity/{activityId} {
+      // Plain English: Immutable audit log. Anyone authenticated can read or create log items; UPDATE AND DELETE ARE PERMANENTLY FORBIDDEN.
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update, delete: if false; // [IMMUTABLE AUDIT TRAIL — NO OVERWRITES / DELETIONS ALLOWED]
+    }
+
+    match /slaBreaches/{breachId} {
+      // Plain English: Immutable SLA breach register for monthly penalty reconciliation. CREATION ALLOWED; UPDATE AND DELETE ARE PERMANENTLY FORBIDDEN.
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update, delete: if false; // [IMMUTABLE PENALTY LEDGER — NO OVERWRITES / DELETIONS ALLOWED]
+    }
+
+    // --------------------------------------------------------------------------
+    // 5. ATTENDANCE & FIELD ENGINEER GPS AUDIT TRAILS
+    // Privacy & Security: Engineers touch only their own attendance and GPS trails.
+    // --------------------------------------------------------------------------
+    match /attendance/{attendanceId} {
+      // Plain English: Engineers can read/write their own daily punch-in/out records. Admins/Managers can review all.
+      // [USES get() LOOKUP for manager roles]
+      allow read: if isAuthenticated() && (
+        request.auth.uid == resource.data.uid ||
+        isAdmin() ||
+        getUserProfile().role in ['callcentre', 'rm', 'regionalhead', 'unithead']
+      );
+      allow create, update: if isAuthenticated() && (
+        request.auth.uid == request.resource.data.uid ||
+        isAdmin()
+      );
+      allow delete: if isAdmin();
+    }
+
+    match /gpsTrail/{trailId} {
+      // Plain English: Field engineers upload GPS coordinate arrays only to their own UID document. Operations can audit trails.
+      // [USES get() LOOKUP for manager roles]
+      allow read: if isAuthenticated() && (
+        trailId.matches('^' + request.auth.uid + '_.*') ||
+        isAdmin() ||
+        getUserProfile().role in ['callcentre', 'rm', 'regionalhead', 'unithead']
+      );
+      allow create, update: if isAuthenticated() && (
+        trailId.matches('^' + request.auth.uid + '_.*') ||
+        isAdmin()
+      );
+      allow delete: if isAdmin();
+    }
+
+    // --------------------------------------------------------------------------
+    // 6. SENSITIVE GOVERNANCE & COMMERCIAL MODULES
+    // Billing, Security Incidents (Clause 4.9), CAPA (Clause 10.6), and Schedule IV BGV.
+    // Admin only write access; Senior Operations read.
+    // --------------------------------------------------------------------------
+    match /billing/{document=**} {
+      // Plain English: Monthly invoices and penalty reconciliations are accessible only to Admins and Senior Management.
+      // [USES get() LOOKUP]
+      allow read: if isAuthenticated() && (isAdmin() || getUserProfile().role in ['regionalhead', 'unithead']);
+      allow write: if isAdmin();
+    }
+
+    match /incidents/{incidentId} {
+      // Plain English: Clause 4.9 Security & Data Incident Register is restricted strictly to Admins and Regional Heads.
+      // [USES get() LOOKUP]
+      allow read: if isAuthenticated() && (isAdmin() || getUserProfile().role in ['regionalhead', 'unithead']);
+      allow write: if isAdmin();
+    }
+
+    match /capa/{capaId} {
+      // Plain English: Clause 10.6 Audit CAPA deficiency tracking is readable by Managers, writable by Admins only.
+      // [USES get() LOOKUP]
+      allow read: if isAuthenticated() && (isAdmin() || getUserProfile().role in ['rm', 'regionalhead', 'unithead']);
+      allow write: if isAdmin();
+    }
+
+    match /bgv/{engineerId} {
+      // Plain English: Schedule IV Background Verification records are confidential; readable by Managers, writable ONLY by Admin/HR.
+      // [USES get() LOOKUP]
+      allow read: if isAuthenticated() && (isAdmin() || getUserProfile().role in ['regionalhead', 'unithead']);
+      allow write: if isAdmin();
+    }
+
+    match /statutoryDocs/{docId} {
+      // Plain English: Licences and Insurance policies are readable by authenticated staff; writable ONLY by Admins.
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+  }
+}

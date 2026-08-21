@@ -1,0 +1,1247 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dockets Registry — TSPL ServiceDesk</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Firebase Compat 10.7.1 -->
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-storage-compat.js"></script>
+  <!-- SheetJS CDN for HPY Open Call XLSX export -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="firebase-config.js"></script>
+  <script src="auth-guard.js"></script>
+</head>
+<body class="bg-slate-100 min-h-screen flex flex-col font-sans antialiased text-slate-800">
+
+  <!-- Main Navigation injected by auth-guard.js -->
+  <div id="main-nav"></div>
+
+  <main class="flex-grow max-w-[1650px] w-full mx-auto p-4 sm:p-6 lg:p-8 space-y-4">
+
+    <!-- Top Bar: Header, Export & New Docket Trigger -->
+    <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4 sm:p-5 flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div>
+        <h1 class="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight">Docket Registry & Dispatch Management</h1>
+        <p class="text-xs text-slate-500 mt-0.5">Database-filtered incident records, active SLA trackers, and fast dispatch routing.</p>
+      </div>
+
+      <div class="flex flex-wrap items-center gap-3">
+        <!-- HPY Format 23-Column Excel Download Button -->
+        <button 
+          id="btn-download-xlsx" 
+          onclick="downloadOpenCallReportXLSX()" 
+          class="bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold py-2 px-3.5 rounded-lg border border-slate-300 shadow-sm transition flex items-center gap-2"
+        >
+          <svg class="h-4 w-4 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+          </svg>
+          Download Open Call Report (HPY format)
+        </button>
+
+        <!-- New Docket Button (Shown only for Admin & Call Centre) -->
+        <button 
+          id="btn-open-modal" 
+          onclick="openNewDocketModal()" 
+          class="hidden bg-[#4F46E5] hover:bg-indigo-700 text-white text-xs font-semibold py-2 px-4 rounded-lg shadow transition items-center gap-1.5"
+        >
+          <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+          </svg>
+          + New Docket
+        </button>
+      </div>
+    </div>
+
+    <!-- Filter & Search Controls Container -->
+    <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4 space-y-4">
+      <!-- Search Row: Exact Match Only -->
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-3 items-end">
+        <div class="lg:col-span-8">
+          <label class="block text-[11px] font-semibold text-slate-700 uppercase tracking-wider mb-1">
+            Search by Docket No or ATM ID (exact match)
+          </label>
+          <div class="relative">
+            <input 
+              type="text" 
+              id="exact-search-input" 
+              placeholder="Enter exact Docket No (e.g. TSPL-2026-000123) or ATM ID (e.g. HDFC001234)" 
+              class="w-full text-xs border border-slate-300 rounded-md py-2 pl-3 pr-20 focus:ring-1 focus:ring-indigo-500 focus:outline-none uppercase font-mono"
+              onkeydown="if(event.key==='Enter') executeExactSearch()"
+            />
+            <button 
+              onclick="executeExactSearch()" 
+              class="absolute right-1 top-1 bottom-1 bg-slate-800 hover:bg-slate-900 text-white text-xs font-medium px-3 rounded transition"
+            >
+              Search
+            </button>
+          </div>
+          <span class="text-[10px] text-slate-400 mt-1 block">For wider searches use the multi-field filters below.</span>
+        </div>
+
+        <div class="lg:col-span-4 flex items-center justify-end gap-3 pb-1">
+          <button 
+            onclick="applyFiltersAndFetch(true)" 
+            class="bg-[#4F46E5] hover:bg-indigo-700 text-white text-xs font-semibold px-4 py-2 rounded-md shadow-sm transition"
+          >
+            Apply Filters
+          </button>
+          <button 
+            onclick="clearAllFilters()" 
+            class="text-xs text-slate-500 hover:text-slate-800 underline font-medium"
+          >
+            Clear Filters
+          </button>
+        </div>
+      </div>
+
+      <!-- Multi-Field Query Filter Bar -->
+      <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-8 gap-3 pt-3 border-t border-slate-100">
+        <!-- Status -->
+        <div>
+          <label class="block text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1">Status</label>
+          <select id="filter-status" class="w-full text-xs border border-slate-300 rounded-md p-1.5 bg-white focus:ring-1 focus:ring-indigo-500">
+            <option value="">All Statuses</option>
+            <option value="open" selected>Open Only</option>
+            <option value="closed">Closed Only</option>
+          </select>
+        </div>
+
+        <!-- Bank -->
+        <div>
+          <label class="block text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1">Bank</label>
+          <select id="filter-bank" class="w-full text-xs border border-slate-300 rounded-md p-1.5 bg-white focus:ring-1 focus:ring-indigo-500">
+            <option value="">All Banks</option>
+          </select>
+        </div>
+
+        <!-- Dependency -->
+        <div>
+          <label class="block text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1">Dependency</label>
+          <select id="filter-dependency" class="w-full text-xs border border-slate-300 rounded-md p-1.5 bg-white focus:ring-1 focus:ring-indigo-500">
+            <option value="">All Dependencies</option>
+            <option value="Engineer Dependency">Engineer Dependency</option>
+            <option value="WIP">WIP</option>
+            <option value="HD Dependency">HD Dependency</option>
+            <option value="CRA Delay">CRA Delay</option>
+            <option value="SCM Dependency">SCM Dependency</option>
+            <option value="Bank Dependency">Bank Dependency</option>
+            <option value="TSS Dependency">TSS Dependency</option>
+            <option value="Third Party Dependency">Third Party</option>
+            <option value="Force Majeure">Force Majeure</option>
+            <option value="Access Time Exceeded">Access Time Exceeded</option>
+          </select>
+        </div>
+
+        <!-- Engineer -->
+        <div>
+          <label class="block text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1">Engineer</label>
+          <select id="filter-engineer" class="w-full text-xs border border-slate-300 rounded-md p-1.5 bg-white focus:ring-1 focus:ring-indigo-500">
+            <option value="">All Engineers</option>
+          </select>
+        </div>
+
+        <!-- Ageing Band -->
+        <div>
+          <label class="block text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1">Ageing Band</label>
+          <select id="filter-ageing" class="w-full text-xs border border-slate-300 rounded-md p-1.5 bg-white focus:ring-1 focus:ring-indigo-500">
+            <option value="">All Ageing</option>
+            <option value="a) 0-2days">a) 0-2days</option>
+            <option value="b) 3-4days">b) 3-4days</option>
+            <option value="c) 5-6days">c) 5-6days</option>
+            <option value="d) 7days">d) 7days</option>
+            <option value="e) 8-10days">e) 8-10days</option>
+            <option value="f) 11-14days">f) 11-14days</option>
+            <option value="g) >14days">g) >14days</option>
+          </select>
+        </div>
+
+        <!-- Location Category -->
+        <div>
+          <label class="block text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1">Category</label>
+          <select id="filter-category" class="w-full text-xs border border-slate-300 rounded-md p-1.5 bg-white focus:ring-1 focus:ring-indigo-500">
+            <option value="">All Categories</option>
+            <option value="Metro">Metro</option>
+            <option value="Urban">Urban</option>
+            <option value="Semi-Urban">Semi-Urban</option>
+            <option value="Rural">Rural</option>
+          </select>
+        </div>
+
+        <!-- SLA Status -->
+        <div>
+          <label class="block text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1">SLA Filter</label>
+          <select id="filter-sla" class="w-full text-xs border border-slate-300 rounded-md p-1.5 bg-white focus:ring-1 focus:ring-indigo-500">
+            <option value="">All SLA</option>
+            <option value="within">Within Target</option>
+            <option value="atrisk">At Risk (<60m)</option>
+            <option value="breached">Breached</option>
+          </select>
+        </div>
+
+        <!-- Date Range -->
+        <div>
+          <label class="block text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1">From Date</label>
+          <input type="date" id="filter-from-date" class="w-full text-xs border border-slate-300 rounded-md p-1 bg-white focus:ring-1 focus:ring-indigo-500" />
+        </div>
+      </div>
+    </div>
+
+    <!-- Dockets Table Card -->
+    <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+      <!-- Record Count Notice -->
+      <div class="bg-slate-50 px-4 py-2.5 border-b border-slate-200 flex items-center justify-between text-xs text-slate-600">
+        <span id="dockets-count-notice" class="font-medium">Showing 0 dockets. Load more to see additional records.</span>
+        <span id="live-ticking-badge" class="font-mono text-[11px] text-indigo-600 flex items-center gap-1.5">
+          <span class="h-2 w-2 rounded-full bg-emerald-500 animate-pulse"></span>
+          Live SLA Clock Active
+        </span>
+      </div>
+
+      <!-- Main Data Table (Sticky Header, Responsive Horizontal Scroll) -->
+      <div class="overflow-x-auto">
+        <table class="w-full text-xs text-left border-collapse min-w-[1200px]">
+          <thead class="bg-slate-100 text-slate-700 uppercase text-[10px] font-bold sticky top-0 z-10 border-b border-slate-300 shadow-sm">
+            <tr>
+              <th class="px-3 py-3">Docket No</th>
+              <th class="px-3 py-3">ATM ID</th>
+              <th class="px-3 py-3">Bank</th>
+              <th class="px-3 py-3">Call Type</th>
+              <th class="px-3 py-3">Sub Status</th>
+              <th class="px-3 py-3">Dependency</th>
+              <th class="px-3 py-3">Engineer</th>
+              <th class="px-3 py-3">City</th>
+              <th class="px-3 py-3">Call Date</th>
+              <th class="px-3 py-3">Ageing</th>
+              <th class="px-3 py-3 text-right">SLA Target</th>
+              <th class="px-3 py-3 text-center">Action</th>
+            </tr>
+          </thead>
+          <tbody id="dockets-tbody" class="divide-y divide-slate-200">
+            <tr>
+              <td colspan="12" class="text-center py-12 text-slate-400">Loading dockets registry...</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Load More Cursor Button -->
+      <div class="p-4 bg-slate-50 border-t border-slate-200 flex justify-center">
+        <button 
+          id="btn-load-more" 
+          onclick="fetchDockets(false)" 
+          class="hidden bg-white hover:bg-slate-100 text-slate-800 font-semibold text-xs py-2 px-6 rounded-lg border border-slate-300 shadow-sm transition"
+        >
+          Load More Dockets
+        </button>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- ===================================================================== -->
+  <!-- MODAL: + NEW DOCKET                                                   -->
+  <!-- ===================================================================== -->
+  <div id="new-docket-modal" class="hidden fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 flex items-center justify-center p-4">
+    <div class="bg-white rounded-xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto border border-slate-200">
+      
+      <!-- Modal Header -->
+      <div class="bg-slate-900 text-white px-6 py-4 rounded-t-xl flex items-center justify-between sticky top-0 z-20">
+        <div>
+          <h2 class="text-lg font-bold">Log New Service Docket</h2>
+          <p class="text-xs text-slate-400">ATM Second Level Maintenance — Instant Dispatch Allocation</p>
+        </div>
+        <button onclick="closeNewDocketModal()" class="text-slate-400 hover:text-white text-xl font-bold">&times;</button>
+      </div>
+
+      <!-- Modal Body Form -->
+      <form id="new-docket-form" onsubmit="handleSaveDocket(event)" class="p-6 space-y-6">
+
+        <!-- Pre-filled Docket No & Bank Grid -->
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div>
+            <label class="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">Docket Number</label>
+            <input type="text" id="modal-docket-no" readonly class="w-full bg-slate-100 text-slate-700 font-mono font-bold text-xs p-2.5 border border-slate-300 rounded-md cursor-not-allowed" />
+          </div>
+
+          <div>
+            <label class="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">Bank *</label>
+            <select id="modal-bank" required class="w-full text-xs p-2.5 border border-slate-300 rounded-md focus:ring-1 focus:ring-indigo-500 bg-white">
+              <option value="">Select Bank</option>
+            </select>
+          </div>
+
+          <div>
+            <label class="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">Call Date Time *</label>
+            <input type="datetime-local" id="modal-call-datetime" required class="w-full text-xs p-2 border border-slate-300 rounded-md focus:ring-1 focus:ring-indigo-500" />
+          </div>
+        </div>
+
+        <!-- ATM Autocomplete Search Box -->
+        <div class="relative bg-indigo-50/50 p-4 rounded-lg border border-indigo-100 space-y-3">
+          <div>
+            <label class="block text-xs font-bold text-indigo-950 uppercase tracking-wider mb-1">
+              ATM Search & Autocomplete (Type &ge; 3 chars) *
+            </label>
+            <div class="relative">
+              <input 
+                type="text" 
+                id="modal-atm-input" 
+                placeholder="Type ATM ID (e.g. HDFC0012)..." 
+                autocomplete="off"
+                oninput="handleAtmAutocomplete(this.value)"
+                class="w-full text-xs p-2.5 pr-8 border border-indigo-300 rounded-md focus:ring-2 focus:ring-indigo-500 uppercase font-mono bg-white"
+              />
+              <div id="atm-spinner" class="hidden absolute right-3 top-2.5">
+                <span class="inline-block h-4 w-4 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin"></span>
+              </div>
+            </div>
+
+            <!-- Autocomplete Results Dropdown -->
+            <div id="atm-results-dropdown" class="hidden absolute left-4 right-4 z-30 bg-white border border-slate-300 rounded-md shadow-lg max-h-48 overflow-y-auto mt-1 divide-y divide-slate-100">
+            </div>
+          </div>
+
+          <!-- Locked ATM Metadata Display -->
+          <div id="locked-atm-info" class="hidden grid grid-cols-2 sm:grid-cols-4 gap-3 bg-white p-3 rounded border border-indigo-200 text-xs">
+            <div><span class="text-slate-400 block text-[10px] uppercase">City / State:</span> <strong id="lock-city-state" class="text-slate-800">--</strong></div>
+            <div><span class="text-slate-400 block text-[10px] uppercase">RO / Region:</span> <strong id="lock-ro-region" class="text-slate-800">--</strong></div>
+            <div><span class="text-slate-400 block text-[10px] uppercase">Vendor:</span> <strong id="lock-vendor" class="text-slate-800">--</strong></div>
+            <div><span class="text-slate-400 block text-[10px] uppercase">Location Cat:</span> <strong id="lock-category" class="text-indigo-700 font-bold">--</strong></div>
+          </div>
+
+          <!-- SLA Commitment Notice -->
+          <div id="sla-commitment-notice" class="hidden p-2.5 bg-emerald-50 border border-emerald-200 rounded text-xs text-emerald-800 font-medium">
+            ⏱ Contractual SLA: <strong>Response target 2 hours. Resolution target 2 hours.</strong> (24x7 Coverage)
+          </div>
+
+          <!-- Repeat Call Warning Notice -->
+          <div id="repeat-warning-notice" class="hidden p-3 bg-amber-50 border border-amber-300 rounded text-xs text-amber-900 font-medium flex items-center gap-2">
+            <svg class="h-5 w-5 text-amber-600 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
+            <span id="repeat-warning-text">Repeat Call Warning: Similar fault logged at this ATM in the last 30 days.</span>
+          </div>
+        </div>
+
+        <!-- 5 Nearest Engineers Realtime Dispatch Assistant -->
+        <div id="nearest-engineers-panel" class="hidden bg-slate-50 p-4 rounded-lg border border-slate-200 space-y-2.5">
+          <div class="flex items-center justify-between">
+            <h3 class="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+              <span class="h-2 w-2 rounded-full bg-emerald-500 animate-ping"></span>
+              Fast Dispatch: 5 Nearest Field Engineers (Realtime GPS)
+            </h3>
+            <span class="text-[10px] text-slate-500">Haversine Calculated</span>
+          </div>
+          <div id="nearest-engineers-list" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+            <!-- Populated dynamically -->
+          </div>
+        </div>
+
+        <!-- Call Type & Sub Call Type & Sub Status -->
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div>
+            <label class="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">Call Type *</label>
+            <select id="modal-call-type" required class="w-full text-xs p-2.5 border border-slate-300 rounded-md focus:ring-1 focus:ring-indigo-500 bg-white">
+              <option value="">Select Call Type</option>
+            </select>
+          </div>
+
+          <div>
+            <label class="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">Sub Call Type *</label>
+            <select id="modal-sub-call-type" required onchange="checkRepeatCall()" class="w-full text-xs p-2.5 border border-slate-300 rounded-md focus:ring-1 focus:ring-indigo-500 bg-white">
+              <option value="">Select Sub Call Type</option>
+            </select>
+          </div>
+
+          <div>
+            <label class="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">Initial Sub Status</label>
+            <input type="text" id="modal-sub-status" readonly value="Pending for Dispatch" class="w-full bg-slate-100 text-slate-700 font-medium text-xs p-2.5 border border-slate-300 rounded-md cursor-not-allowed" />
+          </div>
+        </div>
+
+        <!-- Assigned Engineer & Diagnosis -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label class="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">Assign Engineer</label>
+            <select id="modal-assigned-engineer" onchange="syncSelectedEngineer(this.value)" class="w-full text-xs p-2.5 border border-slate-300 rounded-md focus:ring-1 focus:ring-indigo-500 bg-white">
+              <option value="">Select or use Nearest Assistant above</option>
+            </select>
+          </div>
+
+          <div>
+            <label class="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">Initial Diagnosis</label>
+            <input type="text" id="modal-diagnosis" placeholder="e.g. Card reader shutter jammed" class="w-full text-xs p-2.5 border border-slate-300 rounded-md focus:ring-1 focus:ring-indigo-500" />
+          </div>
+        </div>
+
+        <!-- Re-Dispatch Section -->
+        <div class="p-4 bg-slate-50 rounded-lg border border-slate-200 space-y-3">
+          <div class="flex items-center gap-2">
+            <input type="checkbox" id="modal-is-redispatch" onchange="toggleRedispatchFields(this.checked)" class="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 h-4 w-4" />
+            <label for="modal-is-redispatch" class="text-xs font-semibold text-slate-800">This is a Re-dispatch / Return Visit</label>
+          </div>
+
+          <div id="redispatch-details" class="hidden grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
+            <div>
+              <label class="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">Re-dispatch Reason *</label>
+              <select id="modal-redispatch-reason" onchange="handleRedispatchReasonChange(this.value)" class="w-full text-xs p-2 border border-slate-300 rounded-md bg-white">
+                <option value="">Select Reason</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">Parent Docket No</label>
+              <input type="text" id="modal-parent-docket-no" placeholder="e.g. TSPL-2026-000100" class="w-full text-xs p-2 border border-slate-300 rounded-md uppercase font-mono" />
+            </div>
+          </div>
+
+          <!-- Non-Billable Amber Warning -->
+          <div id="vendor-cause-warning" class="hidden p-3 bg-amber-50 border border-amber-300 rounded text-xs text-amber-900">
+            <strong>Commercial Warning:</strong> Vendor-caused re-dispatches are not billable to HPY and do not consume the free call allowance.
+          </div>
+        </div>
+
+        <!-- Remarks -->
+        <div>
+          <label class="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">Remarks / HD Notes</label>
+          <textarea id="modal-remarks" rows="2" placeholder="Additional details or special bank instructions..." class="w-full text-xs p-2.5 border border-slate-300 rounded-md focus:ring-1 focus:ring-indigo-500"></textarea>
+        </div>
+
+        <!-- Modal Footer Actions -->
+        <div class="flex items-center justify-end gap-3 pt-4 border-t border-slate-200">
+          <button type="button" onclick="closeNewDocketModal()" class="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-md transition">
+            Cancel
+          </button>
+          <button type="submit" id="btn-save-docket" class="px-6 py-2 text-xs font-semibold bg-[#4F46E5] hover:bg-indigo-700 text-white rounded-md shadow transition flex items-center gap-2">
+            Create Docket & Dispatch
+          </button>
+        </div>
+
+      </form>
+    </div>
+  </div>
+
+  <script>
+    // State management
+    var currentLoadedDockets = [];
+    var lastDocCursor = null;
+    var hasMoreRecords = false;
+    var tickerInterval = null;
+    var selectedAtmObject = null;
+    var isRepeatDetected = false;
+    var detectedParentDocket = '';
+    var engineersCache = [];
+
+    document.addEventListener('DOMContentLoaded', async function () {
+      if (typeof checkAuth === 'function') {
+        checkAuth(['admin', 'callcentre', 'techsupport', 'rm', 'regionalhead', 'unithead']);
+      }
+      if (typeof buildNav === 'function') {
+        buildNav('dockets.html');
+      }
+
+      // Show "+ New Docket" only for authorized dispatch roles
+      var userRole = localStorage.getItem('userRole');
+      if (userRole === 'admin' || userRole === 'callcentre') {
+        var modalBtn = document.getElementById('btn-open-modal');
+        if (modalBtn) modalBtn.classList.remove('hidden');
+      }
+
+      // Populate filter dropdowns from master taxonomy
+      await populateFilterDropdowns();
+
+      // Read URL Query params to auto-populate filters (e.g. ?ageing=a) 0-2days)
+      applyUrlQueryParams();
+
+      // Fetch first page of filtered dockets
+      await fetchDockets(true);
+
+      // Start client-side 1-second live countdown ticker
+      tickerInterval = setInterval(updateTableCountdowns, 1000);
+    });
+
+    // ========================================================================
+    // 1. POPULATE DROPDOWNS FROM MASTER COLLECTION
+    // ========================================================================
+    async function populateFilterDropdowns() {
+      try {
+        var [banks, engineersSnap] = await Promise.all([
+          getMasters('bank'),
+          db.collection('users').where('role', '==', 'engineer').where('isActive', '==', true).get()
+        ]);
+
+        var filterBank = document.getElementById('filter-bank');
+        var modalBank = document.getElementById('modal-bank');
+        banks.forEach(function (b) {
+          var o1 = new Option(b, b);
+          var o2 = new Option(b, b);
+          filterBank.appendChild(o1);
+          modalBank.appendChild(o2);
+        });
+
+        var filterEng = document.getElementById('filter-engineer');
+        var modalEng = document.getElementById('modal-assigned-engineer');
+        engineersCache = [];
+        engineersSnap.forEach(function (doc) {
+          var eng = doc.data();
+          eng.uid = doc.id;
+          engineersCache.push(eng);
+          var label = (eng.name || eng.email) + ' (' + (eng.ro || 'RO') + ')';
+          filterEng.appendChild(new Option(label, doc.id));
+          modalEng.appendChild(new Option(label, doc.id));
+        });
+
+        // Populate Call Type & Sub Call Type for Modal
+        var [callTypes, subCallTypes, redispatchReasons] = await Promise.all([
+          getMasters('callType'),
+          getMasters('subCallType'),
+          getMasters('reDispatchReason')
+        ]);
+
+        var modalCallType = document.getElementById('modal-call-type');
+        callTypes.forEach(function (ct) {
+          modalCallType.appendChild(new Option(ct, ct));
+        });
+
+        var modalSubCallType = document.getElementById('modal-sub-call-type');
+        subCallTypes.forEach(function (sct) {
+          modalSubCallType.appendChild(new Option(sct, sct));
+        });
+
+        var modalReason = document.getElementById('modal-redispatch-reason');
+        redispatchReasons.forEach(function (r) {
+          modalReason.appendChild(new Option(r, r));
+        });
+
+      } catch (e) {
+        console.warn('Error populating taxonomy dropdowns:', e);
+      }
+    }
+
+    function applyUrlQueryParams() {
+      var params = new URLSearchParams(window.location.search);
+      if (params.get('ageing')) {
+        document.getElementById('filter-ageing').value = params.get('ageing');
+      }
+      if (params.get('status')) {
+        document.getElementById('filter-status').value = params.get('status');
+      }
+      if (params.get('bank')) {
+        document.getElementById('filter-bank').value = params.get('bank');
+      }
+      if (params.get('dependency')) {
+        document.getElementById('filter-dependency').value = params.get('dependency');
+      }
+    }
+
+    function clearAllFilters() {
+      document.getElementById('exact-search-input').value = '';
+      document.getElementById('filter-status').value = 'open';
+      document.getElementById('filter-bank').value = '';
+      document.getElementById('filter-dependency').value = '';
+      document.getElementById('filter-engineer').value = '';
+      document.getElementById('filter-ageing').value = '';
+      document.getElementById('filter-category').value = '';
+      document.getElementById('filter-sla').value = '';
+      document.getElementById('filter-from-date').value = '';
+      applyFiltersAndFetch(true);
+    }
+
+    function applyFiltersAndFetch(resetCursor) {
+      fetchDockets(resetCursor);
+    }
+
+    // ========================================================================
+    // 2. DATABASE-FILTERED DOCKET QUERY & PAGINATION (limit 50, startAfter)
+    // ========================================================================
+    async function fetchDockets(isReset) {
+      var loadMoreBtn = document.getElementById('btn-load-more');
+      var tbody = document.getElementById('dockets-tbody');
+
+      if (isReset) {
+        lastDocCursor = null;
+        currentLoadedDockets = [];
+        tbody.innerHTML = '<tr><td colspan="12" class="text-center py-12 text-slate-400">Loading filtered dockets...</td></tr>';
+      }
+
+      try {
+        var query = scopedDocketQuery();
+
+        // 1. Status filter
+        var statusVal = document.getElementById('filter-status').value;
+        if (statusVal === 'open') {
+          query = query.where('isClosed', '==', false);
+        } else if (statusVal === 'closed') {
+          query = query.where('isClosed', '==', true);
+        }
+
+        // 2. Bank filter
+        var bankVal = document.getElementById('filter-bank').value;
+        if (bankVal) {
+          query = query.where('bank', '==', bankVal);
+        }
+
+        // 3. Dependency filter
+        var depVal = document.getElementById('filter-dependency').value;
+        if (depVal) {
+          query = query.where('currentDependency', '==', depVal);
+        }
+
+        // 4. Engineer filter
+        var engVal = document.getElementById('filter-engineer').value;
+        if (engVal) {
+          query = query.where('assignedEngineerId', '==', engVal);
+        }
+
+        // 5. Ageing band filter
+        var ageVal = document.getElementById('filter-ageing').value;
+        if (ageVal) {
+          query = query.where('ageingBucket', '==', ageVal);
+        }
+
+        // 6. Location Category filter
+        var catVal = document.getElementById('filter-category').value;
+        if (catVal) {
+          query = query.where('locationCategory', '==', catVal);
+        }
+
+        // 7. From Date filter
+        var fromDateVal = document.getElementById('filter-from-date').value;
+        if (fromDateVal) {
+          var startOfDay = new Date(fromDateVal + 'T00:00:00');
+          query = query.where('callDateTime', '>=', startOfDay);
+        }
+
+        // Order by call date descending and limit 50
+        query = query.orderBy('callDateTime', 'desc').limit(50);
+
+        if (lastDocCursor && !isReset) {
+          query = query.startAfter(lastDocCursor);
+        }
+
+        var snap = await query.get();
+
+        if (isReset && snap.empty) {
+          tbody.innerHTML = '<tr><td colspan="12" class="text-center py-12 text-slate-400">No matching dockets found for the selected filters.</td></tr>';
+          document.getElementById('dockets-count-notice').textContent = 'Showing 0 dockets. Load more to see additional records.';
+          loadMoreBtn.classList.add('hidden');
+          return;
+        }
+
+        var newDockets = [];
+        snap.forEach(function (doc) {
+          var d = doc.data();
+          d.id = doc.id;
+          newDockets.push(d);
+        });
+
+        // Client-side SLA post-filter if specified
+        var slaFilter = document.getElementById('filter-sla').value;
+        if (slaFilter) {
+          newDockets = newDockets.filter(function (d) {
+            var sla = slaStatus(d);
+            if (slaFilter === 'within') return !sla.breached && sla.minsRemaining > 60;
+            if (slaFilter === 'atrisk') return !sla.breached && sla.minsRemaining <= 60;
+            if (slaFilter === 'breached') return sla.breached;
+            return true;
+          });
+        }
+
+        if (isReset) {
+          currentLoadedDockets = newDockets;
+        } else {
+          currentLoadedDockets = currentLoadedDockets.concat(newDockets);
+        }
+
+        lastDocCursor = snap.docs.length > 0 ? snap.docs[snap.docs.length - 1] : null;
+        hasMoreRecords = snap.docs.length === 50;
+
+        if (hasMoreRecords) {
+          loadMoreBtn.classList.remove('hidden');
+        } else {
+          loadMoreBtn.classList.add('hidden');
+        }
+
+        document.getElementById('dockets-count-notice').textContent = 
+          'Showing ' + currentLoadedDockets.length + ' dockets. Load more to see additional records.';
+
+        renderDocketsTable();
+
+      } catch (err) {
+        console.error('Docket fetch error:', err);
+        tbody.innerHTML = '<tr><td colspan="12" class="text-center py-12 text-red-500 font-semibold">Error querying dockets: ' + err.message + '</td></tr>';
+      }
+    }
+
+    // ========================================================================
+    // 3. EXACT SEARCH (Docket No or ATM ID exact match)
+    // ========================================================================
+    async function executeExactSearch() {
+      var term = document.getElementById('exact-search-input').value.trim().toUpperCase();
+      if (!term) {
+        fetchDockets(true);
+        return;
+      }
+
+      var tbody = document.getElementById('dockets-tbody');
+      tbody.innerHTML = '<tr><td colspan="12" class="text-center py-12 text-slate-400">Searching exact match for "' + term + '"...</td></tr>';
+      document.getElementById('btn-load-more').classList.add('hidden');
+
+      try {
+        // Try exact docketNo first
+        var snapDocket = await scopedDocketQuery().where('docketNo', '==', term).limit(20).get();
+        var results = [];
+
+        snapDocket.forEach(function (doc) {
+          var d = doc.data();
+          d.id = doc.id;
+          results.push(d);
+        });
+
+        // If not found, try exact atmId
+        if (results.length === 0) {
+          var snapAtm = await scopedDocketQuery().where('atmId', '==', term).orderBy('callDateTime', 'desc').limit(20).get();
+          snapAtm.forEach(function (doc) {
+            var d = doc.data();
+            d.id = doc.id;
+            results.push(d);
+          });
+        }
+
+        currentLoadedDockets = results;
+        document.getElementById('dockets-count-notice').textContent = 'Found ' + results.length + ' exact match record(s).';
+
+        if (results.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="12" class="text-center py-12 text-slate-400">No docket or ATM found with exact match "' + term + '".</td></tr>';
+          return;
+        }
+
+        renderDocketsTable();
+
+      } catch (err) {
+        console.error('Exact search error:', err);
+        toast('Search error: ' + err.message, 'error');
+      }
+    }
+
+    // ========================================================================
+    // 4. TABLE RENDER & 1-SECOND LIVE TICKER
+    // ========================================================================
+    function renderDocketsTable() {
+      var tbody = document.getElementById('dockets-tbody');
+      if (currentLoadedDockets.length === 0) return;
+
+      var rowsHtml = currentLoadedDockets.map(function (d) {
+        var sla = slaStatus(d);
+        var countdownText = slaCountdownText(sla.minsRemaining);
+
+        var slaColorClass = 'text-[#16A34A] font-semibold';
+        if (sla.breached) {
+          slaColorClass = 'text-red-950 bg-red-100 px-2 py-0.5 rounded font-bold';
+        } else if (sla.ragColour === 'red') {
+          slaColorClass = 'text-[#DC2626] font-bold';
+        } else if (sla.ragColour === 'amber') {
+          slaColorClass = 'text-[#D97706] font-semibold';
+        }
+
+        var isEngDep = (d.currentDependency === 'Engineer Dependency' || d.currentDependency === 'WIP');
+        var depPill = isEngDep 
+          ? '<span class="px-2 py-0.5 rounded text-[11px] bg-red-100 text-red-800 font-semibold">' + (d.currentDependency || 'Engineer Dependency') + '</span>'
+          : '<span class="px-2 py-0.5 rounded text-[11px] bg-amber-100 text-amber-800">' + (d.currentDependency || 'HD Dependency') + '</span>';
+
+        var hrs = ageingHours(d.callDateTime);
+        var band = d.ageingBucket || ageingBucketDays(hrs);
+        var isAgeRed = (band === 'f) 11-14days' || band === 'g) >14days');
+        var ageCellClass = isAgeRed ? 'bg-red-50 text-red-700 font-bold px-3 py-2.5' : 'text-slate-700 px-3 py-2.5';
+
+        var repeatBadge = d.isRepeat ? '<span class="ml-1 bg-red-600 text-white text-[9px] font-bold px-1.5 py-0.5 rounded uppercase">REPEAT</span>' : '';
+
+        return (
+          '<tr class="hover:bg-slate-50 transition cursor-pointer" onclick="window.location.href=\'docket-detail.html?id=' + d.id + '\'">' +
+            '<td class="px-3 py-2.5 font-mono font-bold text-[#4F46E5] whitespace-nowrap">' + 
+              (d.docketNo || d.id) + repeatBadge + 
+            '</td>' +
+            '<td class="px-3 py-2.5 font-medium text-slate-800 whitespace-nowrap">' + (d.atmId || '--') + '</td>' +
+            '<td class="px-3 py-2.5 text-slate-700 whitespace-nowrap">' + (d.bank || '--') + '</td>' +
+            '<td class="px-3 py-2.5 text-slate-600 whitespace-nowrap">' + (d.callType || '--') + '</td>' +
+            '<td class="px-3 py-2.5 text-slate-600 whitespace-nowrap">' + (d.subStatus || '--') + '</td>' +
+            '<td class="px-3 py-2.5 whitespace-nowrap">' + depPill + '</td>' +
+            '<td class="px-3 py-2.5 text-slate-700 whitespace-nowrap">' + (d.assignedEngineerName || '<span class="text-red-600 font-bold">UNASSIGNED</span>') + '</td>' +
+            '<td class="px-3 py-2.5 text-slate-600 whitespace-nowrap">' + (d.city || d.state || '--') + '</td>' +
+            '<td class="px-3 py-2.5 text-slate-500 font-mono text-[11px] whitespace-nowrap">' + fmtDateTime(d.callDateTime) + '</td>' +
+            '<td class="' + ageCellClass + ' whitespace-nowrap">' + band + '</td>' +
+            '<td class="px-3 py-2.5 text-right font-mono whitespace-nowrap ' + slaColorClass + '" data-table-sla-id="' + d.id + '">' + 
+              countdownText + 
+            '</td>' +
+            '<td class="px-3 py-2.5 text-center whitespace-nowrap" onclick="event.stopPropagation()">' +
+              '<a href="docket-detail.html?id=' + d.id + '" class="text-xs bg-[#4F46E5] hover:bg-indigo-700 text-white px-2.5 py-1 rounded font-medium transition shadow-sm">' +
+                'View &rarr;' +
+              '</a>' +
+            '</td>' +
+          '</tr>'
+        );
+      }).join('');
+
+      tbody.innerHTML = rowsHtml;
+    }
+
+    function updateTableCountdowns() {
+      if (currentLoadedDockets.length === 0) return;
+      var now = Date.now();
+      var cells = document.querySelectorAll('[data-table-sla-id]');
+
+      cells.forEach(function (cell) {
+        var docId = cell.getAttribute('data-table-sla-id');
+        var d = currentLoadedDockets.find(function (x) { return x.id === docId; });
+        if (!d) return;
+
+        var callTime = d.callDateTime instanceof Date ? d.callDateTime : (d.callDateTime ? (d.callDateTime.toDate ? d.callDateTime.toDate() : new Date(d.callDateTime)) : new Date());
+        var targetMins = d.resolutionTargetMins || 120;
+        var elapsedMins = Math.max(0, Math.floor((now - callTime.getTime()) / 60000));
+        var remainingMins = targetMins - elapsedMins;
+
+        cell.textContent = slaCountdownText(remainingMins);
+      });
+    }
+
+    // ========================================================================
+    // 5. MODAL LOGIC & PREFIX-BASED ATM AUTOCOMPLETE
+    // ========================================================================
+    async function openNewDocketModal() {
+      var modal = document.getElementById('new-docket-modal');
+      var form = document.getElementById('new-docket-form');
+      form.reset();
+
+      // Pre-fill next Docket No
+      var nextNo = await nextDocketNo();
+      document.getElementById('modal-docket-no').value = nextNo;
+
+      // Set call date time to now
+      var nowLocal = new Date(Date.now() - (new Date().getTimezoneOffset() * 60000)).toISOString().slice(0, 16);
+      document.getElementById('modal-call-datetime').value = nowLocal;
+
+      // Reset state
+      selectedAtmObject = null;
+      isRepeatDetected = false;
+      detectedParentDocket = '';
+      document.getElementById('locked-atm-info').classList.add('hidden');
+      document.getElementById('sla-commitment-notice').classList.add('hidden');
+      document.getElementById('repeat-warning-notice').classList.add('hidden');
+      document.getElementById('nearest-engineers-panel').classList.add('hidden');
+      document.getElementById('redispatch-details').classList.add('hidden');
+      document.getElementById('vendor-cause-warning').classList.add('hidden');
+
+      modal.classList.remove('hidden');
+    }
+
+    function closeNewDocketModal() {
+      document.getElementById('new-docket-modal').classList.add('hidden');
+    }
+
+    var atmSearchTimeout = null;
+    async function handleAtmAutocomplete(typed) {
+      clearTimeout(atmSearchTimeout);
+      var dropdown = document.getElementById('atm-results-dropdown');
+      var spinner = document.getElementById('atm-spinner');
+
+      if (!typed || typed.trim().length < 3) {
+        dropdown.classList.add('hidden');
+        spinner.classList.add('hidden');
+        return;
+      }
+
+      var prefix = typed.trim().toUpperCase();
+      spinner.classList.remove('hidden');
+
+      atmSearchTimeout = setTimeout(async function () {
+        try {
+          // Efficient Firestore prefix query (handles 25,000+ records)
+          var snap = await db.collection('atms')
+            .where('atmId', '>=', prefix)
+            .where('atmId', '<=', prefix + '\uf8ff')
+            .limit(10)
+            .get();
+
+          spinner.classList.add('hidden');
+
+          if (snap.empty) {
+            dropdown.innerHTML = '<div class="p-3 text-xs text-slate-400">No ATM found matching "' + prefix + '"</div>';
+            dropdown.classList.remove('hidden');
+            return;
+          }
+
+          var itemsHtml = '';
+          snap.forEach(function (doc) {
+            var atm = doc.data();
+            atm.id = doc.id;
+            var jsonAtm = JSON.stringify(atm).replace(/"/g, '&quot;');
+
+            itemsHtml += 
+              '<div class="p-2.5 hover:bg-indigo-50 cursor-pointer text-xs flex items-center justify-between" onclick="selectAtmFromDropdown(' + jsonAtm + ')">' +
+                '<div>' +
+                  '<span class="font-mono font-bold text-indigo-900">' + (atm.atmId || doc.id) + '</span> &bull; ' +
+                  '<span class="text-slate-700 font-medium">' + (atm.bank || '--') + '</span>' +
+                  '<div class="text-[11px] text-slate-500">' + (atm.city || '--') + ', ' + (atm.state || '--') + ' (' + (atm.locationCategory || 'Metro') + ')</div>' +
+                '</div>' +
+                '<span class="text-[10px] bg-slate-100 text-slate-600 px-2 py-0.5 rounded font-mono uppercase">' + (atm.ro || 'RO') + '</span>' +
+              '</div>';
+          });
+
+          dropdown.innerHTML = itemsHtml;
+          dropdown.classList.remove('hidden');
+
+        } catch (err) {
+          console.error('ATM prefix search error:', err);
+          spinner.classList.add('hidden');
+        }
+      }, 250);
+    }
+
+    function selectAtmFromDropdown(atm) {
+      selectedAtmObject = atm;
+      document.getElementById('atm-results-dropdown').classList.add('hidden');
+      document.getElementById('modal-atm-input').value = atm.atmId;
+
+      // Lock and show metadata
+      document.getElementById('lock-city-state').textContent = (atm.city || '--') + ', ' + (atm.state || '--');
+      document.getElementById('lock-ro-region').textContent = (atm.ro || '--') + ' / ' + (atm.region || '--');
+      document.getElementById('lock-vendor').textContent = atm.vendor || 'HPY';
+      document.getElementById('lock-category').textContent = atm.locationCategory || 'Metro';
+      document.getElementById('locked-atm-info').classList.remove('hidden');
+
+      // Auto-set Bank if matching
+      if (atm.bank) {
+        document.getElementById('modal-bank').value = atm.bank;
+      }
+
+      // Show SLA Commitment
+      document.getElementById('sla-commitment-notice').classList.remove('hidden');
+
+      // Trigger 5 Nearest Engineer Assistant
+      calculateNearestEngineers(atm);
+
+      // Check Repeat Call
+      checkRepeatCall();
+    }
+
+    // ========================================================================
+    // 6. NEAREST 5 ENGINEERS DISPATCH TOOL (Realtime DB GPS + Haversine)
+    // ========================================================================
+    async function calculateNearestEngineers(atm) {
+      var panel = document.getElementById('nearest-engineers-panel');
+      var listEl = document.getElementById('nearest-engineers-list');
+      panel.classList.remove('hidden');
+      listEl.innerHTML = '<div class="text-xs text-slate-400 col-span-full py-2">Computing GPS distances to active field force...</div>';
+
+      var atmLat = parseFloat(atm.latitude || 0);
+      var atmLng = parseFloat(atm.longitude || 0);
+
+      try {
+        var snap = await rtdb.ref('liveLocations').once('value');
+        var liveData = snap.val() || {};
+        var candidates = [];
+
+        engineersCache.forEach(function (eng) {
+          var live = liveData[eng.uid];
+          if (!live || !live.latitude || !live.longitude) return;
+
+          var distKm = 0;
+          if (atmLat !== 0 && atmLng !== 0) {
+            distKm = haversineDistanceKm(atmLat, atmLng, live.latitude, live.longitude);
+          }
+
+          candidates.push({
+            uid: eng.uid,
+            name: eng.name || eng.email,
+            phone: eng.phone || live.phone || '',
+            ro: eng.ro || '',
+            distanceKm: distKm,
+            mode: live.mode || 'onduty'
+          });
+        });
+
+        // Sort by nearest distance
+        candidates.sort(function (a, b) {
+          return a.distanceKm - b.distanceKm;
+        });
+
+        var top5 = candidates.slice(0, 5);
+
+        if (top5.length === 0) {
+          listEl.innerHTML = '<div class="text-xs text-slate-400 col-span-full py-2">No active engineers with GPS lock found. Please assign manually.</div>';
+          return;
+        }
+
+        var html = top5.map(function (c) {
+          var distText = c.distanceKm > 0 ? c.distanceKm.toFixed(1) + ' km away' : 'Location available';
+          return (
+            '<div class="bg-white p-2.5 rounded border border-slate-200 shadow-sm flex items-center justify-between gap-2">' +
+              '<div class="truncate">' +
+                '<div class="font-bold text-slate-800 text-xs truncate">' + c.name + '</div>' +
+                '<div class="text-[10px] text-indigo-600 font-semibold">' + distText + ' &bull; <span class="uppercase font-mono text-slate-500">' + c.mode + '</span></div>' +
+              '</div>' +
+              '<button type="button" onclick="assignEngineerFromAssistant(\'' + c.uid + '\')" class="bg-indigo-50 hover:bg-[#4F46E5] text-indigo-700 hover:text-white px-2.5 py-1 rounded text-xs font-semibold border border-indigo-200 transition shrink-0">' +
+                'Assign' +
+              '</button>' +
+            '</div>'
+          );
+        }).join('');
+
+        listEl.innerHTML = html;
+
+      } catch (err) {
+        console.warn('Nearest engineers calculation error:', err);
+        listEl.innerHTML = '<div class="text-xs text-slate-400 col-span-full py-2">GPS assistant offline. Select engineer manually.</div>';
+      }
+    }
+
+    function assignEngineerFromAssistant(uid) {
+      document.getElementById('modal-assigned-engineer').value = uid;
+      toast('Engineer assigned to dispatch slot', 'success');
+    }
+
+    function syncSelectedEngineer(uid) {
+      // Sync handler
+    }
+
+    // ========================================================================
+    // 7. REPEAT CALL CHECK (Last 30 Days)
+    // ========================================================================
+    async function checkRepeatCall() {
+      var atmId = document.getElementById('modal-atm-input').value.trim().toUpperCase();
+      var subCallType = document.getElementById('modal-sub-call-type').value;
+      var warningEl = document.getElementById('repeat-warning-notice');
+      var warningText = document.getElementById('repeat-warning-text');
+
+      if (!atmId || !subCallType) {
+        warningEl.classList.add('hidden');
+        return;
+      }
+
+      var thirtyDaysAgo = new Date(Date.now() - (30 * 24 * 60 * 60 * 1000));
+
+      try {
+        var snap = await db.collection('dockets')
+          .where('atmId', '==', atmId)
+          .where('subCallType', '==', subCallType)
+          .where('callDateTime', '>=', thirtyDaysAgo)
+          .limit(1)
+          .get();
+
+        if (!snap.empty) {
+          var prev = snap.docs[0].data();
+          isRepeatDetected = true;
+          detectedParentDocket = prev.docketNo || snap.docs[0].id;
+          warningText.innerHTML = '<strong>Repeat Call Warning:</strong> Similar issue (' + subCallType + ') logged on ' + fmtDate(prev.callDateTime) + ' under Docket #' + detectedParentDocket + '.';
+          warningEl.classList.remove('hidden');
+        } else {
+          isRepeatDetected = false;
+          detectedParentDocket = '';
+          warningEl.classList.add('hidden');
+        }
+      } catch (e) {
+        console.warn('Repeat call check:', e);
+      }
+    }
+
+    // ========================================================================
+    // 8. RE-DISPATCH & VENDOR WARNING LOGIC
+    // ========================================================================
+    function toggleRedispatchFields(checked) {
+      var details = document.getElementById('redispatch-details');
+      if (checked) {
+        details.classList.remove('hidden');
+        if (detectedParentDocket) {
+          document.getElementById('modal-parent-docket-no').value = detectedParentDocket;
+        }
+      } else {
+        details.classList.add('hidden');
+        document.getElementById('vendor-cause-warning').classList.add('hidden');
+      }
+    }
+
+    function handleRedispatchReasonChange(reason) {
+      var warning = document.getElementById('vendor-cause-warning');
+      if (reason && reason.toLowerCase().indexOf('vendor') !== -1) {
+        warning.classList.remove('hidden');
+      } else {
+        warning.classList.add('hidden');
+      }
+    }
+
+    // ========================================================================
+    // 9. SAVE DOCKET (Single Firestore WriteBatch)
+    // ========================================================================
+    async function handleSaveDocket(e) {
+      e.preventDefault();
+      var btn = document.getElementById('btn-save-docket');
+
+      if (!selectedAtmObject) {
+        toast('Please search and select a valid ATM from the autocomplete list.', 'warn');
+        return;
+      }
+
+      showLoader(btn, 'Saving Docket...');
+
+      try {
+        var docketNo = document.getElementById('modal-docket-no').value;
+        var bank = document.getElementById('modal-bank').value;
+        var callDateTimeInput = document.getElementById('modal-call-datetime').value;
+        var callDateTime = new Date(callDateTimeInput);
+        var callType = document.getElementById('modal-call-type').value;
+        var subCallType = document.getElementById('modal-sub-call-type').value;
+        var diagnosis = document.getElementById('modal-diagnosis').value.trim();
+        var remarks = document.getElementById('modal-remarks').value.trim();
+        var isRedispatch = document.getElementById('modal-is-redispatch').checked;
+        var redispatchReason = isRedispatch ? document.getElementById('modal-redispatch-reason').value : '';
+        var parentDocketNo = isRedispatch ? document.getElementById('modal-parent-docket-no').value.trim() : (detectedParentDocket || '');
+
+        var assignedEngUid = document.getElementById('modal-assigned-engineer').value;
+        var assignedEng = engineersCache.find(function (x) { return x.uid === assignedEngUid; });
+
+        var initialSubStatus = assignedEngUid ? 'Dispatched Engineer' : 'Pending for Dispatch';
+        var statusMap = await getStatusMap();
+        var currentDep = (statusMap[initialSubStatus] && statusMap[initialSubStatus].dependency) || 'HD Dependency';
+
+        // Commercial classification via helper
+        var isBillable = classifyBillability(callType, isRedispatch, redispatchReason);
+
+        // Prepare Docket Document
+        var docketDocRef = db.collection('dockets').doc();
+        var docketPayload = {
+          docketNo: docketNo,
+          bank: bank,
+          atmId: selectedAtmObject.atmId,
+          city: selectedAtmObject.city || '',
+          state: selectedAtmObject.state || '',
+          ro: selectedAtmObject.ro || 'NORTH',
+          region: selectedAtmObject.region || '',
+          vendor: selectedAtmObject.vendor || 'HPY',
+          locationCategory: selectedAtmObject.locationCategory || 'Metro',
+          latitude: selectedAtmObject.latitude || null,
+          longitude: selectedAtmObject.longitude || null,
+          rmUid: selectedAtmObject.rmUid || '',
+          regionalHeadUid: selectedAtmObject.regionalHeadUid || '',
+          unitHeadUid: selectedAtmObject.unitHeadUid || '',
+          callType: callType,
+          subCallType: subCallType,
+          diagnosis: diagnosis,
+          remarks: remarks,
+          callDateTime: callDateTime,
+          status: 'Open',
+          subStatus: initialSubStatus,
+          currentDependency: currentDep,
+          isClosed: false,
+          isRepeat: isRepeatDetected,
+          isRedispatch: isRedispatch,
+          redispatchReason: redispatchReason,
+          parentDocketNo: parentDocketNo,
+          isBillable: isBillable,
+          assignedEngineerId: assignedEngUid || null,
+          assignedEngineerName: assignedEng ? (assignedEng.name || assignedEng.email) : null,
+          engineerPhone: assignedEng ? (assignedEng.phone || '') : null,
+          responseTargetMins: 120,
+          resolutionTargetMins: 120,
+          ageingBucket: 'a) 0-2days',
+          createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+          updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+        };
+
+        // Prepare Activity Entry
+        var activityRef = db.collection('dockets').doc(docketDocRef.id).collection('activity').doc();
+        var activityPayload = {
+          action: 'Docket Created',
+          by: localStorage.getItem('userName') || 'Call Centre Operator',
+          subStatus: initialSubStatus,
+          dependency: currentDep,
+          remarks: remarks || 'Initial dispatch logging',
+          timestamp: firebase.firestore.FieldValue.serverTimestamp()
+        };
+
+        // Atomic Batch Commit
+        var batch = db.batch();
+        batch.set(docketDocRef, docketPayload);
+        batch.set(activityRef, activityPayload);
+
+        // Atomic Stats Bump
+        var depKey = 'dep_' + currentDep.replace(/\s+/g, '_');
+        var statsIncrement = {
+          open: firebase.firestore.FieldValue.increment(1),
+          age_a: firebase.firestore.FieldValue.increment(1)
+        };
+        statsIncrement[depKey] = firebase.firestore.FieldValue.increment(1);
+
+        batch.update(db.collection('stats').doc('live'), statsIncrement);
+        if (selectedAtmObject.ro) {
+          batch.update(db.collection('stats').doc('ro_' + selectedAtmObject.ro.toLowerCase()), statsIncrement);
+        }
+
+        await batch.commit();
+
+        toast('Docket #' + docketNo + ' logged & dispatched successfully!', 'success');
+        closeNewDocketModal();
+        fetchDockets(true);
+
+      } catch (err) {
+        console.error('Save docket error:', err);
+        toast('Error saving docket: ' + err.message, 'error');
+      } finally {
+        hideLoader(btn);
+      }
+    }
+
+    // ========================================================================
+    // 10. HPY FORMAT 23-COLUMN EXCEL EXPORT (SheetJS)
+    // ========================================================================
+    function downloadOpenCallReportXLSX() {
+      if (currentLoadedDockets.length === 0) {
+        toast('No dockets currently loaded to export.', 'warn');
+        return;
+      }
+
+      var rows = currentLoadedDockets.map(function (d, idx) {
+        var hrs = ageingHours(d.callDateTime);
+        var sla = slaStatus(d);
+
+        return {
+          "Sl No": idx + 1,
+          "Call Slip No / Docket No": d.docketNo || d.id,
+          "ATM ID": d.atmId || '',
+          "Bank": d.bank || '',
+          "Vendor": d.vendor || 'HPY',
+          "RO": d.ro || '',
+          "Region": d.region || '',
+          "City": d.city || '',
+          "State": d.state || '',
+          "Location Category": d.locationCategory || 'Metro',
+          "Call Type": d.callType || '',
+          "Sub Call Type": d.subCallType || '',
+          "Call Date Time": fmtDateTime(d.callDateTime),
+          "Current Sub Status": d.subStatus || '',
+          "Current Dependency": d.currentDependency || '',
+          "Assigned Engineer": d.assignedEngineerName || 'UNASSIGNED',
+          "Ageing (Hours)": hrs,
+          "Ageing Bucket": d.ageingBucket || ageingBucketDays(hrs),
+          "SLA Target (Mins)": d.resolutionTargetMins || 120,
+          "SLA Remaining (Mins)": sla.minsRemaining,
+          "SLA Breached": sla.breached ? 'YES' : 'NO',
+          "Billable to HPY": d.isBillable !== false ? 'YES' : 'NO',
+          "Remarks": d.remarks || ''
+        };
+      });
+
+      var ws = XLSX.utils.json_to_sheet(rows);
+      var wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Open Call Report");
+
+      var dateStr = new Date().toISOString().slice(0, 10);
+      XLSX.writeFile(wb, "TSPL_HPY_Open_Call_Report_" + dateStr + ".xlsx");
+      toast('Open Call Report generated successfully', 'success');
+    }
+  </script>
+</body>
+</html>

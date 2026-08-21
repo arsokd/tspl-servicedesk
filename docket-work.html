@@ -1,0 +1,1811 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>TSPL Work Screen — Field Execution</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Firebase Compat 10.7.1 -->
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-storage-compat.js"></script>
+  <script src="firebase-config.js"></script>
+  <script src="auth-guard.js"></script>
+  <style>
+    * { -webkit-tap-highlight-color: transparent; }
+    body { touch-action: manipulation; }
+    .touch-target { min-height: 48px; min-width: 48px; }
+    .no-scrollbar::-webkit-scrollbar { display: none; }
+    .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+    canvas { touch-action: none; }
+  </style>
+</head>
+<body class="bg-slate-100 min-h-screen text-slate-900 font-sans antialiased select-none flex justify-center">
+
+  <!-- Mobile Viewport Wrapper (375px mobile baseline, max-w-[420px] on larger screens) -->
+  <div class="w-full max-w-[420px] bg-slate-50 min-h-screen flex flex-col shadow-2xl relative pb-20">
+
+    <!-- =================================================================== -->
+    <!-- PERMISSION / ACCESS DENIED SCREEN                                   -->
+    <!-- =================================================================== -->
+    <div id="access-denied-screen" class="hidden p-6 text-center space-y-4 my-auto">
+      <div class="inline-flex p-3 bg-red-100 text-red-600 rounded-2xl">
+        <svg class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+        </svg>
+      </div>
+      <h2 class="text-base font-bold text-slate-900">Access Denied</h2>
+      <p class="text-xs text-slate-600">This docket is not assigned to your engineer account. Contractual security rules prevent viewing or editing unauthorized calls.</p>
+      <button onclick="window.location.href='engineer.html'" class="w-full bg-slate-900 text-white font-bold text-xs py-3 rounded-xl touch-target">
+        &larr; Back to My Home
+      </button>
+    </div>
+
+    <!-- =================================================================== -->
+    <!-- WORK SCREEN CONTENT WRAPPER                                         -->
+    <!-- =================================================================== -->
+    <div id="work-content" class="flex flex-col flex-grow">
+
+      <!-- ================================================================= -->
+      <!-- FIXED TOP HEADER: Docket Info, Address, Live SLA Ticker           -->
+      <!-- ================================================================= -->
+      <header class="bg-slate-900 text-white p-4 shadow-md sticky top-0 z-30 space-y-2">
+        <div class="flex items-start justify-between gap-2">
+          <div>
+            <div class="flex items-center gap-1.5">
+              <a href="engineer.html" class="text-slate-400 hover:text-white mr-1 touch-target flex items-center">
+                <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M15 19l-7-7 7-7" />
+                </svg>
+              </a>
+              <span id="hdr-docket-no" class="font-mono font-bold text-sm tracking-tight text-white">--</span>
+              <span id="hdr-repeat-pill" class="hidden bg-amber-400 text-amber-950 text-[9px] font-black px-1.5 py-0.5 rounded uppercase">REPEAT</span>
+            </div>
+            <div class="text-xs font-bold text-slate-200 mt-0.5" id="hdr-atm-bank">-- • --</div>
+          </div>
+
+          <!-- Live SLA Countdown Clock -->
+          <div class="text-right">
+            <div class="text-[9px] uppercase font-bold text-slate-400">SLA Clock</div>
+            <div id="hdr-sla-ticker" class="text-base font-black font-mono tracking-tight text-yellow-300">
+              --:--
+            </div>
+          </div>
+        </div>
+
+        <div class="flex items-center justify-between text-[11px] text-slate-300 pt-1 border-t border-slate-800">
+          <div class="truncate max-w-[240px]">
+            <span id="hdr-call-type" class="font-semibold text-indigo-300">--</span> &bull; <span id="hdr-city" class="text-slate-400">--</span>
+          </div>
+          <button id="btn-open-maps" onclick="openAtmInMaps()" class="text-indigo-400 hover:text-indigo-200 font-bold underline shrink-0 flex items-center gap-1 touch-target">
+            <svg class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>
+            Open in Maps
+          </button>
+        </div>
+
+        <div id="hdr-address" class="text-[10px] text-slate-400 truncate bg-slate-950/60 px-2 py-1 rounded">
+          Loading site address...
+        </div>
+      </header>
+
+      <!-- ================================================================= -->
+      <!-- STEP PROGRESS INDICATOR                                           -->
+      <!-- ================================================================= -->
+      <div class="bg-white border-b border-slate-200 px-4 py-2 flex items-center justify-between text-[10px] font-bold text-slate-500">
+        <span id="wizard-step-label">Step 1 of 7: Accept Call</span>
+        <div class="flex items-center gap-1">
+          <span id="dot-1" class="h-2 w-2 rounded-full bg-slate-300"></span>
+          <span id="dot-2" class="h-2 w-2 rounded-full bg-slate-300"></span>
+          <span id="dot-3" class="h-2 w-2 rounded-full bg-slate-300"></span>
+          <span id="dot-4" class="h-2 w-2 rounded-full bg-slate-300"></span>
+          <span id="dot-5" class="h-2 w-2 rounded-full bg-slate-300"></span>
+          <span id="dot-6" class="h-2 w-2 rounded-full bg-slate-300"></span>
+          <span id="dot-7" class="h-2 w-2 rounded-full bg-slate-300"></span>
+        </div>
+      </div>
+
+      <!-- MAIN STEP CONTAINER -->
+      <main class="flex-grow p-4 space-y-4">
+
+        <!-- =============================================================== -->
+        <!-- STEP 1: ACCEPT CALL                                             -->
+        <!-- =============================================================== -->
+        <div id="step-1" class="step-card hidden bg-white rounded-2xl p-5 shadow-sm border border-slate-200 space-y-4">
+          <div class="text-center space-y-1">
+            <div class="inline-flex p-3 bg-indigo-50 text-indigo-600 rounded-full mb-1">
+              <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </div>
+            <h2 class="text-sm font-bold text-slate-900 uppercase">Step 1: Accept Assigned Call</h2>
+            <p class="text-xs text-slate-500">Acknowledge this dispatch ticket to start your mobilization clock.</p>
+          </div>
+
+          <div class="bg-slate-50 p-3.5 rounded-xl border border-slate-200 text-xs space-y-1.5">
+            <div class="flex justify-between"><span class="text-slate-500">Call Logged:</span> <strong id="step1-logged-time" class="font-mono text-slate-800">--</strong></div>
+            <div class="flex justify-between"><span class="text-slate-500">Priority:</span> <strong id="step1-priority" class="text-red-700 font-bold">P1 - Critical</strong></div>
+            <div class="flex justify-between"><span class="text-slate-500">Fault:</span> <strong id="step1-fault" class="text-slate-800 truncate max-w-[200px]">--</strong></div>
+          </div>
+
+          <button id="btn-step1-accept" onclick="executeStep1Accept()" class="w-full bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white font-bold text-xs py-3.5 px-4 rounded-xl shadow-md touch-target flex items-center justify-center gap-2">
+            <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+            </svg>
+            <span>Accept Call & Acknowledge</span>
+          </button>
+        </div>
+
+        <!-- =============================================================== -->
+        <!-- STEP 2: START TRAVEL                                            -->
+        <!-- =============================================================== -->
+        <div id="step-2" class="step-card hidden bg-white rounded-2xl p-5 shadow-sm border border-slate-200 space-y-4">
+          <div class="text-center space-y-1">
+            <div class="inline-flex p-3 bg-blue-50 text-blue-600 rounded-full mb-1">
+              <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
+              </svg>
+            </div>
+            <h2 class="text-sm font-bold text-slate-900 uppercase">Step 2: Start Travel</h2>
+            <p class="text-xs text-slate-500">Captures departure GPS and switches telemetry to active transit mode.</p>
+          </div>
+
+          <div class="p-3 bg-blue-50 border border-blue-200 rounded-xl text-xs text-blue-900 space-y-1">
+            <div class="font-bold flex items-center gap-1.5">
+              <span class="h-2 w-2 rounded-full bg-blue-600 animate-ping"></span>
+              En-Route Tracking
+            </div>
+            <p class="text-[11px] text-blue-800">
+              Your location will be broadcast to the Operations Control Room to provide real-time ETA updates to the bank.
+            </p>
+          </div>
+
+          <button id="btn-step2-travel" onclick="executeStep2Travel()" class="w-full bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-bold text-xs py-3.5 px-4 rounded-xl shadow-md touch-target flex items-center justify-center gap-2">
+            <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+            </svg>
+            <span>Start Travel (GPS Verified)</span>
+          </button>
+        </div>
+
+        <!-- =============================================================== -->
+        <!-- STEP 3: REACH SITE (GPS Geofence vs Photo Fallback)             -->
+        <!-- =============================================================== -->
+        <div id="step-3" class="step-card hidden bg-white rounded-2xl p-5 shadow-sm border border-slate-200 space-y-4">
+          <div class="text-center space-y-1">
+            <div class="inline-flex p-3 bg-emerald-50 text-emerald-600 rounded-full mb-1">
+              <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+              </svg>
+            </div>
+            <h2 class="text-sm font-bold text-slate-900 uppercase">Step 3: Reach Site</h2>
+            <p class="text-xs text-slate-500">Stops the contractual Response SLA Clock.</p>
+          </div>
+
+          <!-- Live Distance Evaluation Card -->
+          <div id="step3-distance-box" class="p-3.5 bg-slate-50 border border-slate-200 rounded-xl text-xs space-y-2">
+            <div class="flex items-center justify-between">
+              <span class="text-slate-500">Target Geofence:</span>
+              <strong id="step3-geofence-radius" class="text-slate-800 font-mono">150 metres</strong>
+            </div>
+            <div class="flex items-center justify-between">
+              <span class="text-slate-500">Current Distance:</span>
+              <strong id="step3-current-distance" class="text-indigo-600 font-mono font-bold">Measuring GPS...</strong>
+            </div>
+          </div>
+
+          <!-- Amber Weak GPS inside ATM lobby warning -->
+          <div id="step3-weak-gps-alert" class="hidden p-3 bg-amber-50 border border-amber-300 rounded-xl text-xs text-amber-900 space-y-1">
+            <div class="font-bold flex items-center gap-1">
+              <svg class="h-4 w-4 text-amber-600 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </svg>
+              <span>Weak GPS Inside Lobby</span>
+            </div>
+            <p id="step3-weak-gps-text" class="text-[11px] text-amber-800">
+              You appear to be 210 metres from this ATM. GPS is often weak inside ATM lobbies. Use the photo option below.
+            </p>
+          </div>
+
+          <!-- Method A: GPS Arrival Button -->
+          <button id="btn-step3-gps" onclick="executeStep3ReachGps()" class="w-full bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-bold text-xs py-3.5 px-4 rounded-xl shadow-md touch-target flex items-center justify-center gap-2">
+            <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+            </svg>
+            <span>Method A: Confirm Arrival via GPS</span>
+          </button>
+
+          <!-- Method B: Photograph ATM ID Plate -->
+          <div class="pt-2 border-t border-slate-100 space-y-2">
+            <div class="text-[11px] font-bold text-slate-600 uppercase tracking-wider text-center">Or Method B: Photo Verification</div>
+            <button onclick="document.getElementById('camera-reach-photo').click()" class="w-full bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs py-3 px-4 rounded-xl border border-slate-200 touch-target flex items-center justify-center gap-2">
+              <svg class="h-4 w-4 text-slate-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+              <span>Photograph ATM ID Plate</span>
+            </button>
+            <input type="file" id="camera-reach-photo" accept="image/*" capture="environment" class="hidden" onchange="executeStep3ReachPhoto(this)" />
+          </div>
+
+          <!-- Capture Missing ATM Coords (if unmapped) -->
+          <div id="step3-capture-coords-box" class="hidden pt-2 text-center">
+            <button onclick="captureAtmMissingCoords()" class="text-xs text-indigo-600 font-bold underline touch-target">
+              + Capture &amp; save this ATM's GPS coordinates for future calls
+            </button>
+          </div>
+        </div>
+
+        <!-- =============================================================== -->
+        <!-- STEP 4: CUSTODIAN ARRIVAL & CONTACT RECORD                      -->
+        <!-- =============================================================== -->
+        <div id="step-4" class="step-card hidden bg-white rounded-2xl p-5 shadow-sm border border-slate-200 space-y-4">
+          <div class="text-center space-y-1">
+            <div class="inline-flex p-3 bg-amber-50 text-amber-600 rounded-full mb-1">
+              <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+              </svg>
+            </div>
+            <h2 class="text-sm font-bold text-slate-900 uppercase">Step 4: Custodian Verification</h2>
+            <p class="text-xs text-slate-500">Bank vault combination & security key handover.</p>
+          </div>
+
+          <!-- SLA Protection Amber Notice -->
+          <div class="p-3.5 bg-amber-50 border border-amber-300 rounded-xl text-xs text-amber-900 space-y-1">
+            <div class="font-bold">Contractual SLA Protection Notice:</div>
+            <p class="text-[11px] leading-relaxed text-amber-800">
+              You cannot open the ATM until the custodian arrives. The waiting time from now is recorded against the bank, not against you, and is excluded from TSPL's SLA calculation.
+            </p>
+          </div>
+
+          <!-- Custodian Delay Button -->
+          <button id="btn-custodian-delay" onclick="recordCustodianDelay()" class="w-full bg-amber-600 hover:bg-amber-700 active:bg-amber-800 text-white font-bold text-xs py-3 px-4 rounded-xl shadow-sm touch-target flex items-center justify-center gap-2">
+            <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <span>CUSTODIAN NOT YET ARRIVED (Log Waiting Time)</span>
+          </button>
+
+          <!-- Custodian Arrival Form -->
+          <form onsubmit="executeStep4CustodianArrival(event)" class="space-y-3 pt-2 border-t border-slate-100 text-xs">
+            <div class="font-bold text-slate-800 uppercase text-[11px]">When Custodian Reaches Site:</div>
+
+            <div>
+              <label class="block font-semibold text-slate-700 mb-1">Custodian Full Name *</label>
+              <input type="text" id="cust-name" required placeholder="e.g. Ramesh Kumar" class="w-full p-2.5 border border-slate-300 rounded-lg" />
+            </div>
+
+            <div class="grid grid-cols-2 gap-2">
+              <div>
+                <label class="block font-semibold text-slate-700 mb-1">Employee ID *</label>
+                <input type="text" id="cust-empid" required placeholder="e.g. CMS-9821" class="w-full p-2.5 border border-slate-300 rounded-lg" />
+              </div>
+              <div>
+                <label class="block font-semibold text-slate-700 mb-1">10-Digit Mobile *</label>
+                <input type="tel" id="cust-phone" required pattern="[0-9]{10}" placeholder="9876543210" class="w-full p-2.5 border border-slate-300 rounded-lg font-mono" />
+              </div>
+            </div>
+
+            <div>
+              <label class="block font-semibold text-slate-700 mb-1">Email (Optional)</label>
+              <input type="email" id="cust-email" placeholder="custodian@agency.com" class="w-full p-2.5 border border-slate-300 rounded-lg" />
+            </div>
+
+            <button type="submit" id="btn-custodian-arrived" class="w-full bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-bold text-xs py-3.5 px-4 rounded-xl shadow-md touch-target flex items-center justify-center gap-2">
+              <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <span>CUSTODIAN HAS ARRIVED (Start Diagnostics)</span>
+            </button>
+          </form>
+        </div>
+
+        <!-- =============================================================== -->
+        <!-- STEP 5: START WORK & 15-MIN BENCHMARK COUNTDOWN                -->
+        <!-- =============================================================== -->
+        <div id="step-5" class="step-card hidden bg-white rounded-2xl p-5 shadow-sm border border-slate-200 space-y-4">
+          <div class="text-center space-y-1">
+            <div class="inline-flex p-3 bg-purple-50 text-purple-600 rounded-full mb-1">
+              <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+            </div>
+            <h2 class="text-sm font-bold text-slate-900 uppercase">Step 5: Diagnostics &amp; Work Execution</h2>
+            <p class="text-xs text-slate-500">HPY 15-minute standard diagnostic benchmark.</p>
+          </div>
+
+          <!-- 15-Minute Live Diagnostic Ticker -->
+          <div id="diag-countdown-box" class="p-4 bg-slate-900 text-white rounded-xl text-center space-y-1">
+            <div class="text-[10px] uppercase font-bold text-slate-400">Diagnostic Benchmark Timer (15 min)</div>
+            <div id="diag-timer-display" class="text-2xl font-black font-mono text-emerald-400">15:00</div>
+          </div>
+
+          <button id="btn-step5-start" onclick="executeStep5StartWork()" class="w-full bg-purple-600 hover:bg-purple-700 active:bg-purple-800 text-white font-bold text-xs py-3.5 px-4 rounded-xl shadow-md touch-target flex items-center justify-center gap-2">
+            <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <span>Open Work Actions &amp; Spares Menu</span>
+          </button>
+        </div>
+
+        <!-- =============================================================== -->
+        <!-- STEP 6: FIELD ACTIONS (Spares, Reimbursables, Resolve, Hold)    -->
+        <!-- =============================================================== -->
+        <div id="step-6" class="step-card hidden space-y-3">
+          <div class="bg-white rounded-2xl p-4 shadow-sm border border-slate-200 space-y-2">
+            <h3 class="text-xs font-bold uppercase tracking-wider text-slate-800">Step 6: Work Actions</h3>
+            <p class="text-[11px] text-slate-500">Perform repairs, request spares, claim reimbursables or mark resolved.</p>
+          </div>
+
+          <!-- 4 Core Action Buttons -->
+          <div class="grid grid-cols-2 gap-2">
+            <button onclick="openPartsRequestModal()" class="bg-white hover:bg-slate-50 border border-slate-200 text-slate-800 font-bold text-xs p-3 rounded-xl shadow-sm text-left touch-target flex flex-col justify-between">
+              <span class="text-purple-600 font-extrabold text-sm mb-1">&plus; Spares</span>
+              <span class="text-[11px] text-slate-700">Raise Parts Request</span>
+            </button>
+
+            <button onclick="openPartsReplacedModal()" class="bg-white hover:bg-slate-50 border border-slate-200 text-slate-800 font-bold text-xs p-3 rounded-xl shadow-sm text-left touch-target flex flex-col justify-between">
+              <span class="text-blue-600 font-extrabold text-sm mb-1">&check; Replaced</span>
+              <span class="text-[11px] text-slate-700">Parts Replaced</span>
+            </button>
+
+            <button onclick="openPutOnHoldModal()" class="bg-white hover:bg-slate-50 border border-slate-200 text-slate-800 font-bold text-xs p-3 rounded-xl shadow-sm text-left touch-target flex flex-col justify-between">
+              <span class="text-amber-600 font-extrabold text-sm mb-1">&bull;&bull;&bull; Hold</span>
+              <span class="text-[11px] text-slate-700">Put on Hold</span>
+            </button>
+
+            <button onclick="openReimbursableModal()" class="bg-white hover:bg-slate-50 border border-slate-200 text-slate-800 font-bold text-xs p-3 rounded-xl shadow-sm text-left touch-target flex flex-col justify-between">
+              <span class="text-emerald-600 font-extrabold text-sm mb-1">&#8377; Claim</span>
+              <span class="text-[11px] text-slate-700">Raise Reimbursable</span>
+            </button>
+          </div>
+
+          <!-- Mark As Resolved Form -->
+          <div class="bg-white rounded-2xl p-4 shadow-sm border border-slate-200 space-y-3">
+            <h4 class="text-xs font-bold uppercase tracking-wider text-emerald-800 flex items-center gap-1.5">
+              <svg class="h-4 w-4 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              Mark As Resolved
+            </h4>
+
+            <form onsubmit="executeMarkAsResolved(event)" class="space-y-3 text-xs">
+              <div>
+                <label class="block font-semibold text-slate-700 mb-1">Work Done Summary *</label>
+                <textarea id="resolve-work-done" required rows="3" placeholder="e.g. Replaced faulty presenter belt, cleared card jam in motorized reader, executed diagnostic test dispense of 5 notes successfully." class="w-full p-2.5 border border-slate-300 rounded-lg"></textarea>
+              </div>
+
+              <div class="flex items-center gap-2 p-2.5 bg-emerald-50 border border-emerald-200 rounded-lg">
+                <input type="checkbox" id="chk-atm-tested" required class="h-4 w-4 text-emerald-600 rounded border-slate-300 focus:ring-emerald-500" />
+                <label for="chk-atm-tested" class="text-[11px] font-bold text-emerald-950 cursor-pointer">
+                  ATM is fully tested, operational and in service.
+                </label>
+              </div>
+
+              <button type="submit" id="btn-resolve-submit" class="w-full bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-bold text-xs py-3.5 px-4 rounded-xl shadow-md touch-target flex items-center justify-center gap-2">
+                <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                </svg>
+                <span>Mark Resolved &amp; Proceed to Custodian Sign-Off</span>
+              </button>
+            </form>
+          </div>
+        </div>
+
+        <!-- =============================================================== -->
+        <!-- STEP 7: CUSTODIAN CLOSURE & OTP / SIGNATURE SIGN-OFF            -->
+        <!-- =============================================================== -->
+        <div id="step-7" class="step-card hidden bg-white rounded-2xl p-5 shadow-sm border border-slate-200 space-y-4">
+          <div class="text-center space-y-1">
+            <div class="inline-flex p-3 bg-emerald-50 text-emerald-600 rounded-full mb-1">
+              <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+              </svg>
+            </div>
+            <h2 class="text-sm font-bold text-slate-900 uppercase">Step 7: Custodian Closure Verification</h2>
+            <p class="text-[11px] text-slate-500 leading-relaxed">
+              Ask the custodian to confirm the work. A 6 digit code will be shown on this screen. Read it out to the custodian, ask them to confirm they are satisfied, and enter it below in their presence.
+            </p>
+          </div>
+
+          <!-- Large 6-Digit In-Person OTP Display -->
+          <div class="p-4 bg-slate-900 rounded-xl text-center space-y-1">
+            <div class="text-[10px] uppercase font-bold text-slate-400">In-Person Verification OTP</div>
+            <div id="otp-large-display" class="text-3xl font-black font-mono tracking-widest text-yellow-300">
+              ------
+            </div>
+          </div>
+
+          <form onsubmit="executeStep7FinalClosure(event)" class="space-y-3 text-xs">
+            <div>
+              <label class="block font-semibold text-slate-700 mb-1">Enter Code Read Back by Custodian *</label>
+              <input type="text" id="otp-input-verify" required pattern="[0-9]{6}" maxlength="6" placeholder="6-digit code" class="w-full p-3 text-center text-lg font-mono font-bold tracking-widest border border-slate-300 rounded-xl bg-slate-50" />
+            </div>
+
+            <!-- Custodian Finger Signature Canvas -->
+            <div class="space-y-1">
+              <div class="flex items-center justify-between">
+                <label class="font-semibold text-slate-700">Custodian Signature *</label>
+                <button type="button" onclick="clearSignatureCanvas()" class="text-[10px] text-indigo-600 font-bold underline touch-target">
+                  Clear Signature
+                </button>
+              </div>
+              <div class="border border-slate-300 rounded-xl bg-white overflow-hidden shadow-inner">
+                <canvas id="signature-canvas" width="340" height="130" class="w-full bg-white block"></canvas>
+              </div>
+            </div>
+
+            <div id="closure-error-msg" class="hidden text-[11px] text-red-600 font-bold bg-red-50 p-2.5 rounded-lg border border-red-200 text-center">
+              Code does not match. Please check with the custodian.
+            </div>
+
+            <button type="submit" id="btn-final-close" class="w-full bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-bold text-xs py-3.5 px-4 rounded-xl shadow-md touch-target flex items-center justify-center gap-2">
+              <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <span>Verify Code &amp; Complete Docket</span>
+            </button>
+
+            <div class="text-center pt-2">
+              <button type="button" onclick="handleCustodianNotSatisfied()" class="text-[11px] text-slate-500 hover:text-slate-800 underline font-medium touch-target">
+                Custodian is not satisfied — reopen (Under Observation)
+              </button>
+            </div>
+          </form>
+        </div>
+
+      </main>
+    </div>
+
+    <!-- =================================================================== -->
+    <!-- STEP 8: FULL-SCREEN GREEN COMPLETION SUCCESS SCREEN                -->
+    <!-- =================================================================== -->
+    <div id="success-screen" class="hidden fixed inset-0 z-50 bg-emerald-700 text-white flex flex-col items-center justify-center p-6 text-center space-y-5 animate-in fade-in">
+      <div class="p-4 bg-white/20 rounded-full animate-bounce">
+        <svg class="h-12 w-12 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7" />
+        </svg>
+      </div>
+
+      <div class="space-y-1">
+        <h1 class="text-2xl font-black uppercase tracking-tight">Call Completed Successfully!</h1>
+        <p id="succ-docket-no" class="text-xs text-emerald-100 font-mono">Docket: --</p>
+      </div>
+
+      <!-- Metrics Breakdown Box -->
+      <div class="w-full max-w-xs bg-white text-slate-900 rounded-2xl p-4 shadow-xl text-left space-y-2.5 text-xs">
+        <div class="flex justify-between border-b border-slate-100 pb-2">
+          <span class="text-slate-500">Gross TAT:</span>
+          <strong id="succ-gross-tat" class="font-mono text-slate-800">-- min</strong>
+        </div>
+        <div class="flex justify-between border-b border-slate-100 pb-2">
+          <span class="text-slate-500">TSPL Net TAT:</span>
+          <strong id="succ-net-tat" class="font-mono text-indigo-700 font-bold">-- min</strong>
+        </div>
+        <div class="flex justify-between border-b border-slate-100 pb-2">
+          <span class="text-slate-500">SLA Contract Result:</span>
+          <span id="succ-sla-result" class="font-bold text-emerald-600 uppercase">SLA MET &check;</span>
+        </div>
+        <div class="flex justify-between">
+          <span class="text-slate-500">Billability:</span>
+          <strong id="succ-billability" class="text-slate-800">--</strong>
+        </div>
+      </div>
+
+      <button onclick="window.location.href='engineer.html'" class="w-full max-w-xs bg-slate-900 hover:bg-black text-white font-bold text-xs py-3.5 px-4 rounded-xl shadow-lg touch-target">
+        Return to My Dockets &rarr;
+      </button>
+    </div>
+
+  </div>
+
+  <!-- ===================================================================== -->
+  <!-- MODAL: RAISE PARTS REQUEST                                            -->
+  <!-- ===================================================================== -->
+  <div id="modal-parts-req" class="hidden fixed inset-0 z-50 bg-slate-900/70 flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-2xl max-w-sm w-full border border-slate-200 p-5 space-y-4">
+      <div class="flex items-center justify-between border-b border-slate-100 pb-2">
+        <h3 class="text-sm font-bold text-slate-900 uppercase">Raise Parts Request</h3>
+        <button onclick="closePartsRequestModal()" class="text-slate-400 hover:text-slate-700 text-xl font-bold touch-target">&times;</button>
+      </div>
+
+      <form onsubmit="handleSavePartsRequest(event)" class="space-y-3 text-xs">
+        <div>
+          <label class="block font-semibold text-slate-700 mb-1">Part Required *</label>
+          <select id="part-req-name" required class="w-full p-2.5 border border-slate-300 rounded-lg bg-white">
+            <option value="Card Reader Motor">Card Reader Motor / Head</option>
+            <option value="Presenter Timing Belt">Presenter Timing Belt</option>
+            <option value="Receipt Printer Mechanism">Receipt Printer Mechanism</option>
+            <option value="Cash Dispenser Pick Module">Cash Dispenser Pick Module</option>
+            <option value="EPP V6 Keypad">EPP V6 Encrypted Pin Pad</option>
+            <option value="Motherboard IPC-810">Motherboard IPC-810</option>
+          </select>
+        </div>
+
+        <div class="grid grid-cols-2 gap-2">
+          <div>
+            <label class="block font-semibold text-slate-700 mb-1">Quantity *</label>
+            <input type="number" id="part-req-qty" required min="1" value="1" class="w-full p-2.5 border border-slate-300 rounded-lg" />
+          </div>
+          <div>
+            <label class="block font-semibold text-slate-700 mb-1">Old Serial No *</label>
+            <input type="text" id="part-req-old-serial" required placeholder="SN-10294" class="w-full p-2.5 border border-slate-300 rounded-lg font-mono" />
+          </div>
+        </div>
+
+        <div>
+          <label class="block font-semibold text-slate-700 mb-1">Defect Reason *</label>
+          <input type="text" id="part-req-reason" required placeholder="Gears stripped during card eject" class="w-full p-2.5 border border-slate-300 rounded-lg" />
+        </div>
+
+        <div>
+          <label class="block font-semibold text-slate-700 mb-1">Old Part Photo *</label>
+          <input type="file" id="part-req-photo" accept="image/*" capture="environment" required class="w-full text-[11px] text-slate-500" />
+        </div>
+
+        <div class="flex justify-end gap-2 pt-2 border-t border-slate-100">
+          <button type="button" onclick="closePartsRequestModal()" class="px-3 py-2 text-slate-600 rounded-lg">Cancel</button>
+          <button type="submit" id="btn-save-part-req" class="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-lg shadow touch-target">Submit Spares Request</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ===================================================================== -->
+  <!-- MODAL: PARTS REPLACED & INSTALLED                                     -->
+  <!-- ===================================================================== -->
+  <div id="modal-parts-rep" class="hidden fixed inset-0 z-50 bg-slate-900/70 flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-2xl max-w-sm w-full border border-slate-200 p-5 space-y-4">
+      <div class="flex items-center justify-between border-b border-slate-100 pb-2">
+        <h3 class="text-sm font-bold text-slate-900 uppercase">Record Replaced Part</h3>
+        <button onclick="closePartsReplacedModal()" class="text-slate-400 hover:text-slate-700 text-xl font-bold touch-target">&times;</button>
+      </div>
+
+      <form onsubmit="handleSavePartsReplaced(event)" class="space-y-3 text-xs">
+        <div>
+          <label class="block font-semibold text-slate-700 mb-1">New Part Serial Number *</label>
+          <input type="text" id="part-new-serial" required placeholder="SN-NEW-9982" class="w-full p-2.5 border border-slate-300 rounded-lg font-mono" />
+        </div>
+
+        <div>
+          <label class="block font-semibold text-slate-700 mb-1">Installed Part Photo *</label>
+          <input type="file" id="part-new-photo" accept="image/*" capture="environment" required class="w-full text-[11px] text-slate-500" />
+        </div>
+
+        <div class="flex justify-end gap-2 pt-2 border-t border-slate-100">
+          <button type="button" onclick="closePartsReplacedModal()" class="px-3 py-2 text-slate-600 rounded-lg">Cancel</button>
+          <button type="submit" id="btn-save-part-rep" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg shadow touch-target">Record Replacement</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ===================================================================== -->
+  <!-- MODAL: PUT ON HOLD                                                    -->
+  <!-- ===================================================================== -->
+  <div id="modal-hold" class="hidden fixed inset-0 z-50 bg-slate-900/70 flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-2xl max-w-sm w-full border border-slate-200 p-5 space-y-4">
+      <div class="flex items-center justify-between border-b border-slate-100 pb-2">
+        <h3 class="text-sm font-bold text-slate-900 uppercase">Put Call on Hold</h3>
+        <button onclick="closePutOnHoldModal()" class="text-slate-400 hover:text-slate-700 text-xl font-bold touch-target">&times;</button>
+      </div>
+
+      <form onsubmit="handleSavePutOnHold(event)" class="space-y-3 text-xs">
+        <div>
+          <label class="block font-semibold text-slate-700 mb-1">Hold Reason Dependency *</label>
+          <select id="hold-reason" required class="w-full p-2.5 border border-slate-300 rounded-lg bg-white font-semibold">
+            <option value="Bank Accompaniment">Bank Accompaniment (Branch Key Handover)</option>
+            <option value="Cash Dependency">Cash Dependency (CRA Cash Loading)</option>
+            <option value="Power Outage">Power Outage / Line Fault</option>
+            <option value="Site Civil Work">Site Civil Work / Canopy Repair</option>
+            <option value="Under Observation">Under Observation (Intermittent Fault)</option>
+          </select>
+        </div>
+
+        <div>
+          <label class="block font-semibold text-slate-700 mb-1">Notes / Context *</label>
+          <textarea id="hold-notes" required rows="2" placeholder="Explain the delay for client bank notification..." class="w-full p-2.5 border border-slate-300 rounded-lg"></textarea>
+        </div>
+
+        <div class="flex justify-end gap-2 pt-2 border-t border-slate-100">
+          <button type="button" onclick="closePutOnHoldModal()" class="px-3 py-2 text-slate-600 rounded-lg">Cancel</button>
+          <button type="submit" id="btn-save-hold" class="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-lg shadow touch-target">Apply Hold</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ===================================================================== -->
+  <!-- MODAL: RAISE REIMBURSABLE EXPENSE                                     -->
+  <!-- ===================================================================== -->
+  <div id="modal-reimbursable" class="hidden fixed inset-0 z-50 bg-slate-900/70 flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-2xl max-w-sm w-full border border-slate-200 p-5 space-y-4">
+      <div class="flex items-center justify-between border-b border-slate-100 pb-2">
+        <h3 class="text-sm font-bold text-slate-900 uppercase">Raise Reimbursable Expense</h3>
+        <button onclick="closeReimbursableModal()" class="text-slate-400 hover:text-slate-700 text-xl font-bold touch-target">&times;</button>
+      </div>
+
+      <form onsubmit="handleSaveReimbursable(event)" class="space-y-3 text-xs">
+        <div>
+          <label class="block font-semibold text-slate-700 mb-1">Expense Item *</label>
+          <select id="reimb-item" required class="w-full p-2.5 border border-slate-300 rounded-lg bg-white">
+            <option value="Break Open">Break Open (Vault Lock Drilling)</option>
+            <option value="Battery Replacement">Battery Replacement (Local Exide / Amaron)</option>
+            <option value="Third Party Labour">Third Party Mason / Fabricator</option>
+            <option value="Emergency Transport">Emergency Transport / Toll</option>
+          </select>
+        </div>
+
+        <div>
+          <label class="block font-semibold text-slate-700 mb-1">Amount (INR) *</label>
+          <input type="number" id="reimb-amount" required min="1" step="1" placeholder="₹1200" class="w-full p-2.5 border border-slate-300 rounded-lg font-mono font-bold" />
+        </div>
+
+        <div>
+          <label class="block font-semibold text-slate-700 mb-1">Photo of Bill / Cash Voucher *</label>
+          <input type="file" id="reimb-photo" accept="image/*" capture="environment" required class="w-full text-[11px] text-slate-500" />
+        </div>
+
+        <div class="flex justify-end gap-2 pt-2 border-t border-slate-100">
+          <button type="button" onclick="closeReimbursableModal()" class="px-3 py-2 text-slate-600 rounded-lg">Cancel</button>
+          <button type="submit" id="btn-save-reimb" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg shadow touch-target">Submit Expense</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ===================================================================== -->
+  <!-- SCRIPT LOGIC                                                          -->
+  <!-- ===================================================================== -->
+  <script>
+    // Without all of these the clock, the dashboard and the penalty evidence drift apart.
+
+    var currentDocketId = null;
+    var currentDocket = null;
+    var currentAtm = null;
+    var generatedOtp = null;
+    var slaTickerInterval = null;
+    var diagTickerInterval = null;
+
+    // Signature Canvas setup
+    var sigCanvas, sigCtx, isDrawing = false;
+
+    document.addEventListener('DOMContentLoaded', async function () {
+      if (typeof checkAuth === 'function') {
+        checkAuth(['engineer']);
+      }
+
+      // Read docket id from URL query parameter
+      var params = new URLSearchParams(window.location.search);
+      currentDocketId = params.get('id');
+
+      if (!currentDocketId) {
+        window.location.replace('engineer.html');
+        return;
+      }
+
+      initSignaturePad();
+      await loadDocketDetails();
+    });
+
+    // ------------------------------------------------------------------------
+    // LOAD DOCKET & VERIFY ENGINEER UID
+    // ------------------------------------------------------------------------
+    async function loadDocketDetails() {
+      try {
+        var doc = await db.collection('dockets').doc(currentDocketId).get();
+        if (!doc.exists) {
+          showAccessDenied();
+          return;
+        }
+
+        currentDocket = { id: doc.id, ...doc.data() };
+        var loggedUid = localStorage.getItem('userUid') || (auth.currentUser ? auth.currentUser.uid : null);
+
+        // Security check: verify this docket is assigned to this engineer
+        var assignedId = currentDocket.assignedEngineerId || currentDocket.engineerId;
+        if (assignedId && assignedId !== loggedUid) {
+          showAccessDenied();
+          return;
+        }
+
+        // Fetch ATM master coordinates if available
+        if (currentDocket.atmId) {
+          try {
+            var atmDoc = await db.collection('atms').doc(currentDocket.atmId).get();
+            if (atmDoc.exists) {
+              currentAtm = atmDoc.data();
+            }
+          } catch (e) {}
+        }
+
+        renderHeader();
+        determineActiveStep();
+        startSlaTicker();
+      } catch (err) {
+        console.error('Error loading docket:', err);
+        showAccessDenied();
+      }
+    }
+
+    function showAccessDenied() {
+      document.getElementById('work-content').classList.add('hidden');
+      document.getElementById('access-denied-screen').classList.remove('hidden');
+    }
+
+    // ------------------------------------------------------------------------
+    // RENDER HEADER
+    // ------------------------------------------------------------------------
+    function renderHeader() {
+      document.getElementById('hdr-docket-no').textContent = currentDocket.docketNo || currentDocket.id;
+      document.getElementById('hdr-atm-bank').textContent = (currentDocket.atmId || '--') + ' • ' + (currentDocket.bank || 'Bank');
+      document.getElementById('hdr-call-type').textContent = currentDocket.subCallType || currentDocket.callType || 'Fault Call';
+      document.getElementById('hdr-city').textContent = currentDocket.city || currentDocket.location || 'Site';
+      document.getElementById('hdr-address').textContent = currentDocket.address || (currentAtm ? currentAtm.address : 'ATM Lobby Address');
+
+      if (currentDocket.isRepeat || currentDocket.repeatCallCount > 0) {
+        document.getElementById('hdr-repeat-pill').classList.remove('hidden');
+      }
+    }
+
+    function openAtmInMaps() {
+      var lat = (currentAtm && currentAtm.lat) || (currentDocket.atmCoords && currentDocket.atmCoords.lat);
+      var lng = (currentAtm && currentAtm.lng) || (currentDocket.atmCoords && currentDocket.atmCoords.lng);
+      var address = encodeURIComponent(currentDocket.address || currentDocket.atmId || 'ATM');
+
+      if (lat && lng) {
+        window.open('https://www.google.com/maps/dir/?api=1&destination=' + lat + ',' + lng, '_blank');
+      } else {
+        window.open('https://www.google.com/maps/search/?api=1&query=' + address, '_blank');
+      }
+    }
+
+    // ------------------------------------------------------------------------
+    // SLA TICKER
+    // ------------------------------------------------------------------------
+    function startSlaTicker() {
+      if (slaTickerInterval) clearInterval(slaTickerInterval);
+      function update() {
+        if (!currentDocket) return;
+        var sla = slaStatus(currentDocket);
+        var rem = sla.minsRemaining;
+        var tickEl = document.getElementById('hdr-sla-ticker');
+
+        if (currentDocket.status === 'Closed' || currentDocket.status === 'Resolved') {
+          tickEl.textContent = 'COMPLETED';
+          tickEl.className = 'text-base font-black font-mono tracking-tight text-emerald-400';
+          return;
+        }
+
+        if (rem <= 0 || sla.breached) {
+          var oM = Math.abs(rem);
+          var h = Math.floor(oM / 60);
+          var m = oM % 60;
+          tickEl.textContent = 'BREACH ' + (h > 0 ? h + 'h ' : '') + m + 'm';
+          tickEl.className = 'text-base font-black font-mono tracking-tight text-red-400 animate-pulse';
+        } else {
+          var h = Math.floor(rem / 60);
+          var m = rem % 60;
+          tickEl.textContent = (h > 0 ? h + 'h ' : '') + m + 'm left';
+          tickEl.className = rem <= 30
+            ? 'text-base font-black font-mono tracking-tight text-red-400'
+            : 'text-base font-black font-mono tracking-tight text-yellow-300';
+        }
+      }
+      update();
+      slaTickerInterval = setInterval(update, 1000);
+    }
+
+    // ------------------------------------------------------------------------
+    // STEP WIZARD ROUTING: Evaluates existing timestamps
+    // ------------------------------------------------------------------------
+    function determineActiveStep() {
+      document.querySelectorAll('.step-card').forEach(function (el) { el.classList.add('hidden'); });
+
+      // Step Completion Hierarchy:
+      // Step 7: Final Custodian Sign-Off (if status is Resolved)
+      // Step 6: Work Execution / Actions (if workStartedAt exists)
+      // Step 5: Start Work Benchmark (if reachedAt & custodianReachedAt exist)
+      // Step 4: Custodian Arrival (if reachedAt exists)
+      // Step 3: Reach Site (if travelStartedAt exists)
+      // Step 2: Start Travel (if acceptedAt exists)
+      // Step 1: Accept Call (if not accepted)
+
+      var d = currentDocket;
+
+      if (d.status === 'Resolved') {
+        showStep(7);
+        initStep7OtpAndCanvas();
+      } else if (d.workStartedAt) {
+        showStep(6);
+      } else if (d.custodianReachedAt && d.reachedAt) {
+        showStep(5);
+        initStep5Timer();
+      } else if (d.reachedAt) {
+        showStep(4);
+      } else if (d.travelStartedAt) {
+        showStep(3);
+        initStep3Geofence();
+      } else if (d.acceptedAt) {
+        showStep(2);
+      } else {
+        showStep(1);
+        initStep1Details();
+      }
+    }
+
+    function showStep(stepNum) {
+      document.getElementById('step-' + stepNum).classList.remove('hidden');
+      document.getElementById('wizard-step-label').textContent = 'Step ' + stepNum + ' of 7';
+
+      // Update dots
+      for (var i = 1; i <= 7; i++) {
+        var dot = document.getElementById('dot-' + i);
+        if (i < stepNum) {
+          dot.className = 'h-2 w-2 rounded-full bg-emerald-500';
+        } else if (i === stepNum) {
+          dot.className = 'h-2 w-2 rounded-full bg-indigo-600 ring-2 ring-indigo-300';
+        } else {
+          dot.className = 'h-2 w-2 rounded-full bg-slate-300';
+        }
+      }
+    }
+
+    // ------------------------------------------------------------------------
+    // STEP 1: ACCEPT CALL
+    // ------------------------------------------------------------------------
+    function initStep1Details() {
+      var callTime = currentDocket.callDateTime ? (currentDocket.callDateTime.toDate ? currentDocket.callDateTime.toDate() : new Date(currentDocket.callDateTime)) : new Date();
+      document.getElementById('step1-logged-time').textContent = callTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      document.getElementById('step1-priority').textContent = currentDocket.priority || 'P1 - Critical';
+      document.getElementById('step1-fault').textContent = currentDocket.subCallType || currentDocket.faultDescription || 'ATM Hardware Fault';
+    }
+
+    async function executeStep1Accept() {
+      var btn = document.getElementById('btn-step1-accept');
+      setBtnBusy(btn, true, 'Accepting...');
+
+      try {
+        var batch = db.batch();
+        var docketRef = db.collection('dockets').doc(currentDocketId);
+        var actRef = db.collection('docketActivity').doc();
+
+        var updates = {
+          acceptedAt: firebase.firestore.FieldValue.serverTimestamp(),
+          status: 'Call Accepted',
+          currentDependency: 'Engineer Dependency'
+        };
+
+        batch.update(docketRef, updates);
+
+        // Immutable activity row
+        batch.set(actRef, {
+          docketId: currentDocketId,
+          timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+          action: 'Call Accepted',
+          performedBy: localStorage.getItem('userName') || 'Field Engineer',
+          role: 'engineer',
+          notes: 'Engineer accepted dispatch via mobile work screen'
+        });
+
+        // Bump stats
+        var statsRef = db.collection('stats').doc('today');
+        batch.set(statsRef, { acceptedCalls: firebase.firestore.FieldValue.increment(1) }, { merge: true });
+
+        await batch.commit();
+
+        currentDocket.acceptedAt = new Date();
+        currentDocket.status = 'Call Accepted';
+        determineActiveStep();
+        toast('Call Accepted', 'success');
+      } catch (err) {
+        console.error('Step 1 error:', err);
+        toast('Error accepting call: ' + err.message, 'error');
+      } finally {
+        setBtnBusy(btn, false, 'Accept Call & Acknowledge');
+      }
+    }
+
+    // ------------------------------------------------------------------------
+    // STEP 2: START TRAVEL
+    // ------------------------------------------------------------------------
+    async function executeStep2Travel() {
+      var btn = document.getElementById('btn-step2-travel');
+      setBtnBusy(btn, true, 'Capturing GPS...');
+
+      navigator.geolocation.getCurrentPosition(
+        async function (pos) {
+          try {
+            var coords = {
+              lat: parseFloat(pos.coords.latitude.toFixed(5)),
+              lng: parseFloat(pos.coords.longitude.toFixed(5)),
+              accuracy: Math.round(pos.coords.accuracy)
+            };
+
+            var batch = db.batch();
+            var docketRef = db.collection('dockets').doc(currentDocketId);
+            var actRef = db.collection('docketActivity').doc();
+
+            batch.update(docketRef, {
+              travelStartedAt: firebase.firestore.FieldValue.serverTimestamp(),
+              travelStartCoords: coords,
+              status: 'Dispatched Engineer',
+              currentDependency: 'Engineer Dependency'
+            });
+
+            batch.set(actRef, {
+              docketId: currentDocketId,
+              timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+              action: 'Dispatched Engineer',
+              performedBy: localStorage.getItem('userName') || 'Field Engineer',
+              role: 'engineer',
+              notes: 'Travel started. GPS Departure Lat: ' + coords.lat + ', Lng: ' + coords.lng
+            });
+
+            var statsRef = db.collection('stats').doc('today');
+            batch.set(statsRef, { enRouteCount: firebase.firestore.FieldValue.increment(1) }, { merge: true });
+
+            await batch.commit();
+
+            // Switch telemetry to transit mode
+            if (typeof setTrackingMode === 'function') {
+              setTrackingMode('travelling');
+            }
+
+            currentDocket.travelStartedAt = new Date();
+            currentDocket.status = 'Dispatched Engineer';
+            determineActiveStep();
+            toast('Travel Started. En-Route GPS Active.', 'success');
+          } catch (err) {
+            console.error('Step 2 write error:', err);
+            toast('Failed to record travel: ' + err.message, 'error');
+          } finally {
+            setBtnBusy(btn, false, 'Start Travel (GPS Verified)');
+          }
+        },
+        function (err) {
+          setBtnBusy(btn, false, 'Start Travel (GPS Verified)');
+          toast('GPS required to start travel: ' + err.message, 'error');
+        },
+        { enableHighAccuracy: true, timeout: 12000 }
+      );
+    }
+
+    // ------------------------------------------------------------------------
+    // STEP 3: REACH SITE (Method A GPS & Method B Photo)
+    // ------------------------------------------------------------------------
+    function initStep3Geofence() {
+      var targetRadius = (currentAtm && currentAtm.geofenceRadius) || 150;
+      document.getElementById('step3-geofence-radius').textContent = targetRadius + ' metres';
+
+      var atmLat = (currentAtm && currentAtm.lat) || (currentDocket.atmCoords && currentDocket.atmCoords.lat);
+      var atmLng = (currentAtm && currentAtm.lng) || (currentDocket.atmCoords && currentDocket.atmCoords.lng);
+
+      if (!atmLat || !atmLng) {
+        document.getElementById('step3-current-distance').textContent = 'No ATM coordinates mapped';
+        document.getElementById('step3-capture-coords-box').classList.remove('hidden');
+        return;
+      }
+
+      navigator.geolocation.getCurrentPosition(
+        function (pos) {
+          var distMeters = Math.round(haversineDistance(pos.coords.latitude, pos.coords.longitude, atmLat, atmLng));
+          document.getElementById('step3-current-distance').textContent = distMeters + ' metres';
+
+          if (distMeters > targetRadius && distMeters <= 500) {
+            document.getElementById('step3-weak-gps-alert').classList.remove('hidden');
+            document.getElementById('step3-weak-gps-text').textContent = 
+              'You appear to be ' + distMeters + ' metres from this ATM. GPS is often weak inside ATM lobbies. Use the photo option below.';
+          } else if (distMeters <= targetRadius) {
+            document.getElementById('step3-weak-gps-alert').classList.add('hidden');
+          }
+        },
+        function () {},
+        { enableHighAccuracy: true, timeout: 10000 }
+      );
+    }
+
+    async function executeStep3ReachGps() {
+      var btn = document.getElementById('btn-step3-gps');
+      setBtnBusy(btn, true, 'Verifying site radius...');
+
+      navigator.geolocation.getCurrentPosition(
+        async function (pos) {
+          var atmLat = (currentAtm && currentAtm.lat) || (currentDocket.atmCoords && currentDocket.atmCoords.lat);
+          var atmLng = (currentAtm && currentAtm.lng) || (currentDocket.atmCoords && currentDocket.atmCoords.lng);
+          var targetRadius = (currentAtm && currentAtm.geofenceRadius) || 150;
+
+          var distMeters = 0;
+          if (atmLat && atmLng) {
+            distMeters = Math.round(haversineDistance(pos.coords.latitude, pos.coords.longitude, atmLat, atmLng));
+          }
+
+          var coords = {
+            lat: parseFloat(pos.coords.latitude.toFixed(5)),
+            lng: parseFloat(pos.coords.longitude.toFixed(5)),
+            accuracy: Math.round(pos.coords.accuracy)
+          };
+
+          await recordArrival(coords, distMeters, 'gps');
+          setBtnBusy(btn, false, 'Method A: Confirm Arrival via GPS');
+        },
+        function (err) {
+          setBtnBusy(btn, false, 'Method A: Confirm Arrival via GPS');
+          toast('GPS capture failed. Please use Photo verification: ' + err.message, 'warning');
+          document.getElementById('step3-weak-gps-alert').classList.remove('hidden');
+        },
+        { enableHighAccuracy: true, timeout: 12000 }
+      );
+    }
+
+    async function executeStep3ReachPhoto(input) {
+      var file = input.files[0];
+      if (!file) return;
+
+      toast('Compressing ATM plate photo & recording arrival...', 'info');
+
+      try {
+        var compressedBlob = await compressImage(file, 1000, 0.7);
+        var reader = new FileReader();
+        reader.onloadend = async function () {
+          var base64Photo = reader.result;
+          await recordArrival(null, 0, 'photo', base64Photo);
+        };
+        reader.readAsDataURL(compressedBlob);
+      } catch (err) {
+        toast('Photo compression failed: ' + err.message, 'error');
+      }
+    }
+
+    async function recordArrival(coords, distMeters, method, photoBase64) {
+      try {
+        var now = new Date();
+        var batch = db.batch();
+        var docketRef = db.collection('dockets').doc(currentDocketId);
+        var actRef = db.collection('docketActivity').doc();
+
+        // Calculate Response SLA status
+        var sla = slaStatus(currentDocket);
+        var responseMet = (sla.minsRemaining > 0);
+        var deltaMins = Math.abs(sla.minsRemaining);
+
+        var updatePayload = {
+          reachedAt: firebase.firestore.FieldValue.serverTimestamp(),
+          arrivalMethod: method,
+          status: 'Engineer Reached',
+          currentDependency: 'Bank Accompaniment'
+        };
+
+        if (coords) updatePayload.arrivalCoords = coords;
+        if (distMeters) updatePayload.arrivalDistanceMeters = distMeters;
+        if (photoBase64) updatePayload.arrivalPhotoBase64 = photoBase64;
+
+        batch.update(docketRef, updatePayload);
+
+        // Immutable activity row
+        var note = 'Engineer reached site (' + method.toUpperCase() + '). Measured Distance: ' + distMeters + 'm. ';
+        note += responseMet ? ('Response MET with ' + deltaMins + ' min to spare.') : ('Response BREACHED by ' + deltaMins + ' min.');
+
+        batch.set(actRef, {
+          docketId: currentDocketId,
+          timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+          action: 'Engineer Reached',
+          performedBy: localStorage.getItem('userName') || 'Field Engineer',
+          role: 'engineer',
+          notes: note
+        });
+
+        // Record Breach in SAME batch if response was breached
+        if (!responseMet) {
+          var breachRef = db.collection('slaBreaches').doc();
+          batch.set(breachRef, {
+            docketId: currentDocketId,
+            docketNo: currentDocket.docketNo || currentDocketId,
+            atmId: currentDocket.atmId || '',
+            bank: currentDocket.bank || '',
+            breachType: 'Response TAT Exceeded',
+            breachedAt: firebase.firestore.FieldValue.serverTimestamp(),
+            loggedAt: firebase.firestore.FieldValue.serverTimestamp(),
+            overdueMins: deltaMins,
+            engineerId: localStorage.getItem('userUid') || '',
+            engineerName: localStorage.getItem('userName') || ''
+          });
+        }
+
+        var statsRef = db.collection('stats').doc('today');
+        batch.set(statsRef, { reachedCount: firebase.firestore.FieldValue.increment(1) }, { merge: true });
+
+        await batch.commit();
+
+        // Switch tracking mode back to onduty
+        if (typeof setTrackingMode === 'function') {
+          setTrackingMode('onduty');
+        }
+
+        currentDocket.reachedAt = now;
+        currentDocket.status = 'Engineer Reached';
+        determineActiveStep();
+
+        if (responseMet) {
+          toast('Response MET with ' + deltaMins + ' minutes to spare!', 'success');
+        } else {
+          toast('Response BREACHED by ' + deltaMins + ' minutes.', 'error');
+        }
+      } catch (err) {
+        console.error('Record arrival error:', err);
+        toast('Failed to record arrival: ' + err.message, 'error');
+      }
+    }
+
+    async function captureAtmMissingCoords() {
+      navigator.geolocation.getCurrentPosition(
+        async function (pos) {
+          try {
+            var coords = {
+              lat: parseFloat(pos.coords.latitude.toFixed(5)),
+              lng: parseFloat(pos.coords.longitude.toFixed(5))
+            };
+            if (currentDocket.atmId) {
+              await db.collection('atms').doc(currentDocket.atmId).set({
+                lat: coords.lat,
+                lng: coords.lng,
+                coordinatesCapturedBy: localStorage.getItem('userName') || 'Field Engineer',
+                coordinatesCapturedAt: firebase.firestore.FieldValue.serverTimestamp()
+              }, { merge: true });
+              toast('Saved coordinates for ' + currentDocket.atmId, 'success');
+              initStep3Geofence();
+            }
+          } catch (e) {
+            toast('Failed to save coordinates: ' + e.message, 'error');
+          }
+        },
+        function (err) { toast('GPS error: ' + err.message, 'error'); },
+        { enableHighAccuracy: true }
+      );
+    }
+
+    // ------------------------------------------------------------------------
+    // STEP 4: CUSTODIAN DELAY & ARRIVAL FORM
+    // ------------------------------------------------------------------------
+    async function recordCustodianDelay() {
+      var btn = document.getElementById('btn-custodian-delay');
+      setBtnBusy(btn, true, 'Logging delay...');
+
+      try {
+        var batch = db.batch();
+        var docketRef = db.collection('dockets').doc(currentDocketId);
+        var actRef = db.collection('docketActivity').doc();
+
+        batch.update(docketRef, {
+          status: 'Custodian Delay',
+          currentDependency: 'Bank Accompaniment',
+          custodianDelayCount: firebase.firestore.FieldValue.increment(1)
+        });
+
+        batch.set(actRef, {
+          docketId: currentDocketId,
+          timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+          action: 'Custodian Delay',
+          performedBy: localStorage.getItem('userName') || 'Field Engineer',
+          role: 'engineer',
+          notes: 'Custodian not yet at site. Waiting time recorded against Bank Accompaniment SLA exclusion.'
+        });
+
+        await batch.commit();
+        toast('Custodian waiting time recorded (Excluded from TSPL Net TAT)', 'warning');
+      } catch (err) {
+        toast('Error logging delay: ' + err.message, 'error');
+      } finally {
+        setBtnBusy(btn, false, 'CUSTODIAN NOT YET ARRIVED (Log Waiting Time)');
+      }
+    }
+
+    async function executeStep4CustodianArrival(e) {
+      e.preventDefault();
+      var btn = document.getElementById('btn-custodian-arrived');
+      setBtnBusy(btn, true, 'Saving Custodian Profile...');
+
+      var custName = document.getElementById('cust-name').value.trim();
+      var custEmpId = document.getElementById('cust-empid').value.trim();
+      var custPhone = document.getElementById('cust-phone').value.trim();
+      var custEmail = document.getElementById('cust-email').value.trim();
+
+      try {
+        var now = new Date();
+        var batch = db.batch();
+        var docketRef = db.collection('dockets').doc(currentDocketId);
+        var actRef = db.collection('docketActivity').doc();
+
+        var custodianData = {
+          name: custName,
+          empId: custEmpId,
+          phone: custPhone,
+          email: custEmail,
+          verifiedAt: firebase.firestore.FieldValue.serverTimestamp()
+        };
+
+        batch.update(docketRef, {
+          custodianReachedAt: firebase.firestore.FieldValue.serverTimestamp(),
+          custodianDetails: custodianData,
+          status: 'In Progress',
+          currentDependency: 'Engineer Dependency'
+        });
+
+        batch.set(actRef, {
+          docketId: currentDocketId,
+          timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+          action: 'Custodian Arrived',
+          performedBy: localStorage.getItem('userName') || 'Field Engineer',
+          role: 'engineer',
+          notes: 'Custodian ' + custName + ' (' + custEmpId + ', Ph: ' + custPhone + ') verified on site.'
+        });
+
+        await batch.commit();
+
+        currentDocket.custodianReachedAt = now;
+        currentDocket.custodianDetails = custodianData;
+        currentDocket.status = 'In Progress';
+        determineActiveStep();
+        toast('Custodian verified. Diagnostics started.', 'success');
+      } catch (err) {
+        toast('Error recording custodian: ' + err.message, 'error');
+      } finally {
+        setBtnBusy(btn, false, 'CUSTODIAN HAS ARRIVED (Start Diagnostics)');
+      }
+    }
+
+    // ------------------------------------------------------------------------
+    // STEP 5: 15-MINUTE DIAGNOSTICS BENCHMARK TIMER
+    // ------------------------------------------------------------------------
+    function initStep5Timer() {
+      if (diagTickerInterval) clearInterval(diagTickerInterval);
+
+      var rTime = currentDocket.reachedAt ? (currentDocket.reachedAt.toDate ? currentDocket.reachedAt.toDate() : new Date(currentDocket.reachedAt)) : new Date();
+      var cTime = currentDocket.custodianReachedAt ? (currentDocket.custodianReachedAt.toDate ? currentDocket.custodianReachedAt.toDate() : new Date(currentDocket.custodianReachedAt)) : new Date();
+
+      var startTime = new Date(Math.max(rTime.getTime(), cTime.getTime()));
+      var targetDeadline = new Date(startTime.getTime() + (15 * 60 * 1000));
+
+      function updateDiag() {
+        var diffMs = targetDeadline.getTime() - Date.now();
+        var disp = document.getElementById('diag-timer-display');
+
+        if (diffMs > 0) {
+          var mins = Math.floor(diffMs / 60000);
+          var secs = Math.floor((diffMs % 60000) / 1000);
+          disp.textContent = padZero(mins) + ':' + padZero(secs);
+          disp.className = 'text-2xl font-black font-mono text-emerald-400';
+        } else {
+          var overMs = Math.abs(diffMs);
+          var oM = Math.floor(overMs / 60000);
+          var oS = Math.floor((overMs % 60000) / 1000);
+          disp.textContent = 'Target missed by ' + oM + ':' + padZero(oS);
+          disp.className = 'text-xl font-black font-mono text-red-400 animate-pulse';
+        }
+      }
+      updateDiag();
+      diagTickerInterval = setInterval(updateDiag, 1000);
+    }
+
+    async function executeStep5StartWork() {
+      var btn = document.getElementById('btn-step5-start');
+      setBtnBusy(btn, true, 'Opening work actions...');
+
+      try {
+        var batch = db.batch();
+        var docketRef = db.collection('dockets').doc(currentDocketId);
+        var actRef = db.collection('docketActivity').doc();
+
+        batch.update(docketRef, {
+          workStartedAt: firebase.firestore.FieldValue.serverTimestamp(),
+          status: 'In Progress'
+        });
+
+        batch.set(actRef, {
+          docketId: currentDocketId,
+          timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+          action: 'Diagnostics Active',
+          performedBy: localStorage.getItem('userName') || 'Field Engineer',
+          role: 'engineer',
+          notes: 'Field Engineer initiated diagnostic tests & repair.'
+        });
+
+        await batch.commit();
+
+        currentDocket.workStartedAt = new Date();
+        currentDocket.status = 'In Progress';
+        determineActiveStep();
+      } catch (err) {
+        toast('Error opening work screen: ' + err.message, 'error');
+      } finally {
+        setBtnBusy(btn, false, 'Open Work Actions & Spares Menu');
+      }
+    }
+
+    // ------------------------------------------------------------------------
+    // STEP 6: FIELD ACTIONS & MARK AS RESOLVED
+    // ------------------------------------------------------------------------
+    function openPartsRequestModal() { document.getElementById('modal-parts-req').classList.remove('hidden'); }
+    function closePartsRequestModal() { document.getElementById('modal-parts-req').classList.add('hidden'); }
+
+    async function handleSavePartsRequest(e) {
+      e.preventDefault();
+      var btn = document.getElementById('btn-save-part-req');
+      setBtnBusy(btn, true, 'Uploading...');
+
+      var part = document.getElementById('part-req-name').value;
+      var qty = parseInt(document.getElementById('part-req-qty').value, 10);
+      var oldSerial = document.getElementById('part-req-old-serial').value.trim();
+      var reason = document.getElementById('part-req-reason').value.trim();
+      var photoFile = document.getElementById('part-req-photo').files[0];
+
+      try {
+        var compressedBlob = await compressImage(photoFile, 800, 0.6);
+        var reader = new FileReader();
+        reader.onloadend = async function () {
+          var base64Photo = reader.result;
+
+          var batch = db.batch();
+          var docketRef = db.collection('dockets').doc(currentDocketId);
+          var actRef = db.collection('docketActivity').doc();
+
+          var partsRequest = {
+            partName: part,
+            quantity: qty,
+            oldSerial: oldSerial,
+            reason: reason,
+            photoBase64: base64Photo,
+            requestedAt: firebase.firestore.FieldValue.serverTimestamp()
+          };
+
+          batch.update(docketRef, {
+            status: 'Pending Spares',
+            currentDependency: 'Part Required',
+            partsRequested: firebase.firestore.FieldValue.arrayUnion(partsRequest)
+          });
+
+          batch.set(actRef, {
+            docketId: currentDocketId,
+            timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+            action: 'Pending Spares',
+            performedBy: localStorage.getItem('userName') || 'Field Engineer',
+            role: 'engineer',
+            notes: 'Spares Requested: ' + qty + 'x ' + part + ' (Old SN: ' + oldSerial + '). Reason: ' + reason
+          });
+
+          await batch.commit();
+
+          closePartsRequestModal();
+          toast('Parts request submitted. Docket set to Pending Spares.', 'success');
+        };
+        reader.readAsDataURL(compressedBlob);
+      } catch (err) {
+        toast('Failed to submit parts request: ' + err.message, 'error');
+      } finally {
+        setBtnBusy(btn, false, 'Submit Spares Request');
+      }
+    }
+
+    function openPartsReplacedModal() { document.getElementById('modal-parts-rep').classList.remove('hidden'); }
+    function closePartsReplacedModal() { document.getElementById('modal-parts-rep').classList.add('hidden'); }
+
+    async function handleSavePartsReplaced(e) {
+      e.preventDefault();
+      var btn = document.getElementById('btn-save-part-rep');
+      setBtnBusy(btn, true, 'Saving...');
+
+      var newSerial = document.getElementById('part-new-serial').value.trim();
+      var photoFile = document.getElementById('part-new-photo').files[0];
+
+      try {
+        var compressedBlob = await compressImage(photoFile, 800, 0.6);
+        var reader = new FileReader();
+        reader.onloadend = async function () {
+          var base64Photo = reader.result;
+
+          var batch = db.batch();
+          var docketRef = db.collection('dockets').doc(currentDocketId);
+          var actRef = db.collection('docketActivity').doc();
+
+          var replacementRecord = {
+            newSerial: newSerial,
+            photoBase64: base64Photo,
+            installedAt: firebase.firestore.FieldValue.serverTimestamp()
+          };
+
+          batch.update(docketRef, {
+            status: 'In Progress',
+            currentDependency: 'Engineer Dependency',
+            partsReplaced: firebase.firestore.FieldValue.arrayUnion(replacementRecord)
+          });
+
+          batch.set(actRef, {
+            docketId: currentDocketId,
+            timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+            action: 'Parts Replaced',
+            performedBy: localStorage.getItem('userName') || 'Field Engineer',
+            role: 'engineer',
+            notes: 'Part replaced successfully. New Serial: ' + newSerial
+          });
+
+          await batch.commit();
+          closePartsReplacedModal();
+          toast('Part replacement recorded.', 'success');
+        };
+        reader.readAsDataURL(compressedBlob);
+      } catch (err) {
+        toast('Error recording replacement: ' + err.message, 'error');
+      } finally {
+        setBtnBusy(btn, false, 'Record Replacement');
+      }
+    }
+
+    function openPutOnHoldModal() { document.getElementById('modal-hold').classList.remove('hidden'); }
+    function closePutOnHoldModal() { document.getElementById('modal-hold').classList.add('hidden'); }
+
+    async function handleSavePutOnHold(e) {
+      e.preventDefault();
+      var btn = document.getElementById('btn-save-hold');
+      setBtnBusy(btn, true, 'Applying hold...');
+
+      var reason = document.getElementById('hold-reason').value;
+      var notes = document.getElementById('hold-notes').value.trim();
+
+      try {
+        var batch = db.batch();
+        var docketRef = db.collection('dockets').doc(currentDocketId);
+        var actRef = db.collection('docketActivity').doc();
+
+        batch.update(docketRef, {
+          status: reason,
+          currentDependency: reason,
+          holdAppliedAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+
+        batch.set(actRef, {
+          docketId: currentDocketId,
+          timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+          action: 'Put On Hold',
+          performedBy: localStorage.getItem('userName') || 'Field Engineer',
+          role: 'engineer',
+          notes: 'Call placed on hold: ' + reason + '. Notes: ' + notes
+        });
+
+        await batch.commit();
+        closePutOnHoldModal();
+        toast('Call placed on ' + reason, 'warning');
+      } catch (err) {
+        toast('Error applying hold: ' + err.message, 'error');
+      } finally {
+        setBtnBusy(btn, false, 'Apply Hold');
+      }
+    }
+
+    function openReimbursableModal() { document.getElementById('modal-reimbursable').classList.remove('hidden'); }
+    function closeReimbursableModal() { document.getElementById('modal-reimbursable').classList.add('hidden'); }
+
+    async function handleSaveReimbursable(e) {
+      e.preventDefault();
+      var btn = document.getElementById('btn-save-reimb');
+      setBtnBusy(btn, true, 'Submitting claim...');
+
+      var item = document.getElementById('reimb-item').value;
+      var amount = parseFloat(document.getElementById('reimb-amount').value);
+      var photoFile = document.getElementById('reimb-photo').files[0];
+
+      try {
+        var compressedBlob = await compressImage(photoFile, 1000, 0.7);
+        var reader = new FileReader();
+        reader.onloadend = async function () {
+          var base64Photo = reader.result;
+
+          var batch = db.batch();
+          var docketRef = db.collection('dockets').doc(currentDocketId);
+          var actRef = db.collection('docketActivity').doc();
+
+          var reimbEntry = {
+            item: item,
+            amount: amount,
+            billPhotoBase64: base64Photo,
+            claimedBy: localStorage.getItem('userName') || 'Field Engineer',
+            claimedAt: firebase.firestore.FieldValue.serverTimestamp(),
+            status: 'Pending Approval'
+          };
+
+          batch.update(docketRef, {
+            reimbursableClaims: firebase.firestore.FieldValue.arrayUnion(reimbEntry)
+          });
+
+          batch.set(actRef, {
+            docketId: currentDocketId,
+            timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+            action: 'Reimbursable Raised',
+            performedBy: localStorage.getItem('userName') || 'Field Engineer',
+            role: 'engineer',
+            notes: 'Claim raised: ' + item + ' for ₹' + amount
+          });
+
+          await batch.commit();
+          closeReimbursableModal();
+          toast('Reimbursable expense submitted for approval (₹' + amount + ')', 'success');
+        };
+        reader.readAsDataURL(compressedBlob);
+      } catch (err) {
+        toast('Error submitting expense: ' + err.message, 'error');
+      } finally {
+        setBtnBusy(btn, false, 'Submit Expense');
+      }
+    }
+
+    async function executeMarkAsResolved(e) {
+      e.preventDefault();
+      var btn = document.getElementById('btn-resolve-submit');
+      setBtnBusy(btn, true, 'Marking resolved...');
+
+      var workSummary = document.getElementById('resolve-work-done').value.trim();
+
+      try {
+        var now = new Date();
+        var batch = db.batch();
+        var docketRef = db.collection('dockets').doc(currentDocketId);
+        var actRef = db.collection('docketActivity').doc();
+
+        batch.update(docketRef, {
+          resolvedAt: firebase.firestore.FieldValue.serverTimestamp(),
+          workDoneSummary: workSummary,
+          status: 'Resolved'
+        });
+
+        batch.set(actRef, {
+          docketId: currentDocketId,
+          timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+          action: 'Resolved',
+          performedBy: localStorage.getItem('userName') || 'Field Engineer',
+          role: 'engineer',
+          notes: 'Engineer marked call as resolved. Summary: ' + workSummary
+        });
+
+        var statsRef = db.collection('stats').doc('today');
+        batch.set(statsRef, { resolvedCalls: firebase.firestore.FieldValue.increment(1) }, { merge: true });
+
+        await batch.commit();
+
+        currentDocket.resolvedAt = now;
+        currentDocket.workDoneSummary = workSummary;
+        currentDocket.status = 'Resolved';
+
+        determineActiveStep();
+        toast('Marked Resolved. Proceed with Custodian Sign-Off.', 'success');
+      } catch (err) {
+        toast('Error marking resolved: ' + err.message, 'error');
+      } finally {
+        setBtnBusy(btn, false, 'Mark Resolved & Proceed to Custodian Sign-Off');
+      }
+    }
+
+    // ------------------------------------------------------------------------
+    // STEP 7: CUSTODIAN CLOSURE & OTP SIGN-OFF
+    // ------------------------------------------------------------------------
+    function initStep7OtpAndCanvas() {
+      // Generate 6-digit random in-person OTP
+      if (!generatedOtp) {
+        generatedOtp = Math.floor(100000 + Math.random() * 900000).toString();
+      }
+      document.getElementById('otp-large-display').textContent = generatedOtp;
+    }
+
+    function initSignaturePad() {
+      sigCanvas = document.getElementById('signature-canvas');
+      if (!sigCanvas) return;
+      sigCtx = sigCanvas.getContext('2d');
+      sigCtx.lineWidth = 2.5;
+      sigCtx.lineCap = 'round';
+      sigCtx.strokeStyle = '#0f172a';
+
+      function getPos(e) {
+        var rect = sigCanvas.getBoundingClientRect();
+        var clientX = e.touches ? e.touches[0].clientX : e.clientX;
+        var clientY = e.touches ? e.touches[0].clientY : e.clientY;
+        return {
+          x: clientX - rect.left,
+          y: clientY - rect.top
+        };
+      }
+
+      function startDraw(e) {
+        isDrawing = true;
+        var pos = getPos(e);
+        sigCtx.beginPath();
+        sigCtx.moveTo(pos.x, pos.y);
+      }
+
+      function draw(e) {
+        if (!isDrawing) return;
+        e.preventDefault();
+        var pos = getPos(e);
+        sigCtx.lineTo(pos.x, pos.y);
+        sigCtx.stroke();
+      }
+
+      function stopDraw() {
+        isDrawing = false;
+      }
+
+      sigCanvas.addEventListener('mousedown', startDraw);
+      sigCanvas.addEventListener('mousemove', draw);
+      sigCanvas.addEventListener('mouseup', stopDraw);
+
+      sigCanvas.addEventListener('touchstart', startDraw, { passive: false });
+      sigCanvas.addEventListener('touchmove', draw, { passive: false });
+      sigCanvas.addEventListener('touchend', stopDraw);
+    }
+
+    function clearSignatureCanvas() {
+      if (sigCtx && sigCanvas) {
+        sigCtx.clearRect(0, 0, sigCanvas.width, sigCanvas.height);
+      }
+    }
+
+    async function executeStep7FinalClosure(e) {
+      e.preventDefault();
+      var inputOtp = document.getElementById('otp-input-verify').value.trim();
+      var errBox = document.getElementById('closure-error-msg');
+
+      if (inputOtp !== generatedOtp) {
+        errBox.classList.remove('hidden');
+        return;
+      }
+      errBox.classList.add('hidden');
+
+      var btn = document.getElementById('btn-final-close');
+      setBtnBusy(btn, true, 'Validating & Closing Docket...');
+
+      try {
+        var sigPngBase64 = sigCanvas.toDataURL('image/png');
+        var now = new Date();
+
+        // Calculate Gross TAT & TSPL Net TAT
+        var callTime = currentDocket.callDateTime ? (currentDocket.callDateTime.toDate ? currentDocket.callDateTime.toDate() : new Date(currentDocket.callDateTime)) : now;
+        var grossMins = Math.max(1, Math.round((now.getTime() - callTime.getTime()) / 60000));
+
+        // Deduct bank exclusion / custodian delay time for TSPL Net TAT
+        var exclusionMins = (currentDocket.custodianDelayCount || 0) * 30; // 30 min per delay unit
+        var netMins = Math.max(1, grossMins - exclusionMins);
+
+        var slaTargetMins = 120; // 2 hours HPY baseline
+        var slaMet = (netMins <= slaTargetMins);
+
+        var billability = (typeof classifyBillability === 'function') 
+          ? classifyBillability(currentDocket) 
+          : 'Free / SLA Covered';
+
+        var batch = db.batch();
+        var docketRef = db.collection('dockets').doc(currentDocketId);
+        var actRef = db.collection('docketActivity').doc();
+
+        batch.update(docketRef, {
+          status: 'Closed',
+          closedAt: firebase.firestore.FieldValue.serverTimestamp(),
+          completionDate: firebase.firestore.FieldValue.serverTimestamp(),
+          closedBy: localStorage.getItem('userName') || 'Field Engineer',
+          otpVerifiedAt: firebase.firestore.FieldValue.serverTimestamp(),
+          custodianSignatureBase64: sigPngBase64,
+          grossTATMinutes: grossMins,
+          tsplNetTATMinutes: netMins,
+          slaMet: slaMet,
+          billability: billability
+        });
+
+        // Immutable activity log
+        batch.set(actRef, {
+          docketId: currentDocketId,
+          timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+          action: 'Completed',
+          performedBy: localStorage.getItem('userName') || 'Field Engineer',
+          role: 'engineer',
+          notes: 'In-person OTP ' + generatedOtp + ' verified and signed by custodian. Gross TAT: ' + grossMins + 'm, Net TAT: ' + netMins + 'm.'
+        });
+
+        // Record resolution breach if Net TAT failed
+        if (!slaMet) {
+          var breachRef = db.collection('slaBreaches').doc();
+          batch.set(breachRef, {
+            docketId: currentDocketId,
+            docketNo: currentDocket.docketNo || currentDocketId,
+            atmId: currentDocket.atmId || '',
+            bank: currentDocket.bank || '',
+            breachType: 'Resolution TAT Exceeded',
+            breachedAt: firebase.firestore.FieldValue.serverTimestamp(),
+            loggedAt: firebase.firestore.FieldValue.serverTimestamp(),
+            overdueMins: (netMins - slaTargetMins),
+            engineerId: localStorage.getItem('userUid') || '',
+            engineerName: localStorage.getItem('userName') || ''
+          });
+        }
+
+        var statsRef = db.collection('stats').doc('today');
+        batch.set(statsRef, {
+          closedCalls: firebase.firestore.FieldValue.increment(1),
+          openCalls: firebase.firestore.FieldValue.increment(-1)
+        }, { merge: true });
+
+        await batch.commit();
+
+        // Render full screen green completion page
+        document.getElementById('succ-docket-no').textContent = 'Docket: ' + (currentDocket.docketNo || currentDocket.id);
+        document.getElementById('succ-gross-tat').textContent = grossMins + ' minutes';
+        document.getElementById('succ-net-tat').textContent = netMins + ' minutes';
+        document.getElementById('succ-sla-result').textContent = slaMet ? 'SLA MET ✓ (Compliant)' : 'SLA BREACHED ✗';
+        document.getElementById('succ-sla-result').className = slaMet ? 'font-bold text-emerald-600 uppercase' : 'font-bold text-red-600 uppercase';
+        document.getElementById('succ-billability').textContent = billability;
+
+        document.getElementById('success-screen').classList.remove('hidden');
+      } catch (err) {
+        console.error('Final closure error:', err);
+        toast('Failed to complete docket: ' + err.message, 'error');
+      } finally {
+        setBtnBusy(btn, false, 'Verify Code & Complete Docket');
+      }
+    }
+
+    async function handleCustodianNotSatisfied() {
+      if (!confirm('Reopen call under observation?')) return;
+
+      try {
+        var batch = db.batch();
+        var docketRef = db.collection('dockets').doc(currentDocketId);
+        var actRef = db.collection('docketActivity').doc();
+
+        batch.update(docketRef, {
+          status: 'Under Observation',
+          resolvedAt: null
+        });
+
+        batch.set(actRef, {
+          docketId: currentDocketId,
+          timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+          action: 'Reopened Under Observation',
+          performedBy: localStorage.getItem('userName') || 'Field Engineer',
+          role: 'engineer',
+          notes: 'Custodian declined final sign-off. Ticket returned to diagnostic observation.'
+        });
+
+        await batch.commit();
+
+        currentDocket.status = 'Under Observation';
+        currentDocket.resolvedAt = null;
+        determineActiveStep();
+        toast('Call returned to Step 6 (Under Observation)', 'warning');
+      } catch (err) {
+        toast('Error reopening call: ' + err.message, 'error');
+      }
+    }
+
+    // ------------------------------------------------------------------------
+    // UI HELPERS
+    // ------------------------------------------------------------------------
+    function setBtnBusy(btn, busy, text) {
+      if (!btn) return;
+      btn.disabled = busy;
+      if (busy) {
+        btn.dataset.prevHtml = btn.innerHTML;
+        btn.innerHTML = '<svg class="animate-spin h-4 w-4 text-white inline-block" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path></svg> <span class="ml-1">' + text + '</span>';
+        btn.classList.add('opacity-75', 'cursor-not-allowed');
+      } else {
+        btn.innerHTML = btn.dataset.prevHtml || text;
+        btn.classList.remove('opacity-75', 'cursor-not-allowed');
+      }
+    }
+
+    function padZero(num) {
+      return num < 10 ? '0' + num : num;
+    }
+  </script>
+</body>
+</html>

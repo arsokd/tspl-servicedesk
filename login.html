@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Login — TSPL ServiceDesk</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Firebase Compat 10.7.1 -->
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-storage-compat.js"></script>
+  <script src="firebase-config.js"></script>
+</head>
+<body class="bg-slate-100 min-h-screen flex items-center justify-center p-4 font-sans antialiased text-slate-800">
+
+  <!-- Main Login Card Container -->
+  <div class="w-full max-w-[400px]">
+
+    <!-- Standard Login Card -->
+    <div id="login-card" class="bg-white rounded-xl shadow-lg p-8">
+      <div class="text-center mb-6">
+        <div class="flex justify-center mb-3">
+          <img src="assets/tspl-logo.svg" alt="TSPL — Assurance Delivered" class="h-20 w-auto object-contain drop-shadow-sm rounded-lg" />
+        </div>
+        <h1 class="text-xl font-bold text-slate-900 tracking-tight">TSPL ServiceDesk</h1>
+        <p class="text-xs text-slate-500 mt-1">Tech Servisphere Pvt Ltd &bull; ATM Second Level Maintenance</p>
+      </div>
+
+      <!-- Error Alert Box -->
+      <div id="error-box" class="hidden mb-4 p-3 bg-red-50 border border-red-200 text-red-700 text-xs rounded-md leading-relaxed">
+        <span id="error-message">Login failed. Please check your email and password.</span>
+      </div>
+
+      <!-- Login Form -->
+      <form id="login-form" class="space-y-4" onsubmit="handleLoginSubmit(event)">
+        <div>
+          <label for="email" class="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">Email Address</label>
+          <input 
+            type="email" 
+            id="email" 
+            required 
+            autocomplete="email"
+            class="w-full px-3 py-2 text-sm border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#4F46E5] focus:border-transparent transition"
+            placeholder="engineer@techservisphere.com"
+          />
+        </div>
+
+        <div>
+          <div class="flex items-center justify-between mb-1">
+            <label for="password" class="block text-xs font-semibold text-slate-700 uppercase tracking-wider">Password</label>
+            <button type="button" onclick="handleForgotPassword()" class="text-xs text-[#4F46E5] hover:underline focus:outline-none">
+              Forgot password?
+            </button>
+          </div>
+          <div class="relative">
+            <input 
+              type="password" 
+              id="password" 
+              required 
+              autocomplete="current-password"
+              class="w-full px-3 py-2 pr-10 text-sm border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#4F46E5] focus:border-transparent transition"
+              placeholder="••••••••"
+            />
+            <button 
+              type="button" 
+              onclick="togglePasswordVisibility('password', 'eye-icon')" 
+              class="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600 focus:outline-none"
+              tabindex="-1"
+              aria-label="Toggle password visibility"
+            >
+              <svg id="eye-icon" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <button 
+          type="submit" 
+          id="login-btn" 
+          class="w-full mt-2 bg-[#4F46E5] hover:bg-indigo-700 text-white font-medium py-2.5 px-4 rounded-md shadow transition duration-150 flex items-center justify-center text-sm disabled:opacity-60 disabled:cursor-not-allowed"
+        >
+          Sign In
+        </button>
+      </form>
+
+      <div class="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-xs">
+        <button 
+          type="button" 
+          onclick="fillDeveloperCredentials()" 
+          class="text-indigo-600 hover:text-indigo-800 font-medium flex items-center gap-1 transition"
+        >
+          <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/></svg>
+          Developer Fast Access (<span class="font-mono">ars.okd</span>)
+        </button>
+        <a href="setup-data.html" class="text-slate-400 hover:text-slate-600 transition">System Setup</a>
+      </div>
+
+      <div class="mt-4 text-center">
+        <p class="text-[11px] text-slate-400">Built by Analytics Spire</p>
+      </div>
+    </div>
+
+    <!-- First-Login Password Change Card (shown if mustChangePassword === true) -->
+    <div id="password-change-card" class="hidden bg-white rounded-xl shadow-lg p-8">
+      <div class="text-center mb-6">
+        <h2 class="text-xl font-bold text-slate-800">Change Temporary Password</h2>
+        <p class="text-xs text-slate-500 mt-1">Set your own password before continuing.</p>
+      </div>
+
+      <div id="pw-error-box" class="hidden mb-4 p-3 bg-red-50 border border-red-200 text-red-700 text-xs rounded-md leading-relaxed">
+        <span id="pw-error-message"></span>
+      </div>
+
+      <form id="password-change-form" class="space-y-4" onsubmit="handlePasswordChangeSubmit(event)">
+        <div>
+          <label for="new-password" class="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">New Password (min 8 chars)</label>
+          <div class="relative">
+            <input 
+              type="password" 
+              id="new-password" 
+              required 
+              minlength="8"
+              class="w-full px-3 py-2 pr-10 text-sm border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#4F46E5] focus:border-transparent"
+              placeholder="••••••••"
+            />
+            <button 
+              type="button" 
+              onclick="togglePasswordVisibility('new-password', 'new-eye-icon')" 
+              class="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600 focus:outline-none"
+              tabindex="-1"
+            >
+              <svg id="new-eye-icon" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <div>
+          <label for="confirm-password" class="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">Confirm New Password</label>
+          <input 
+            type="password" 
+            id="confirm-password" 
+            required 
+            minlength="8"
+            class="w-full px-3 py-2 text-sm border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#4F46E5] focus:border-transparent"
+            placeholder="••••••••"
+          />
+        </div>
+
+        <button 
+          type="submit" 
+          id="change-pw-btn" 
+          class="w-full mt-2 bg-[#4F46E5] hover:bg-indigo-700 text-white font-medium py-2.5 px-4 rounded-md shadow transition duration-150 flex items-center justify-center text-sm disabled:opacity-60 disabled:cursor-not-allowed"
+        >
+          Update Password & Proceed
+        </button>
+      </form>
+    </div>
+
+  </div>
+
+  <script>
+    var authenticatedUser = null;
+    var userProfileData = null;
+
+    function fillDeveloperCredentials() {
+      var emailInput = document.getElementById('email');
+      var passwordInput = document.getElementById('password');
+      emailInput.value = 'ars.okd@gmail.com';
+      passwordInput.value = 'Dev@2026!';
+      hideError();
+      passwordInput.focus();
+    }
+
+    function showError(msg) {
+      var box = document.getElementById('error-box');
+      var txt = document.getElementById('error-message');
+      txt.textContent = msg || 'Login failed. Please check your email and password.';
+      box.classList.remove('hidden');
+    }
+
+    function hideError() {
+      var box = document.getElementById('error-box');
+      box.classList.add('hidden');
+    }
+
+    function showPwError(msg) {
+      var box = document.getElementById('pw-error-box');
+      var txt = document.getElementById('pw-error-message');
+      txt.textContent = msg;
+      box.classList.remove('hidden');
+    }
+
+    function hidePwError() {
+      var box = document.getElementById('pw-error-box');
+      box.classList.add('hidden');
+    }
+
+    function togglePasswordVisibility(inputId, iconId) {
+      var input = document.getElementById(inputId);
+      var icon = document.getElementById(iconId);
+      if (input.type === 'password') {
+        input.type = 'text';
+        icon.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l18 18" />';
+      } else {
+        input.type = 'password';
+        icon.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />';
+      }
+    }
+
+    async function handleForgotPassword() {
+      var email = prompt('Enter your registered email address for password reset instructions:');
+      if (!email || !email.trim()) return;
+      try {
+        await auth.sendPasswordResetEmail(email.trim());
+        alert('Password reset link sent to ' + email.trim() + '. Please check your inbox.');
+      } catch (err) {
+        alert('Error: ' + (err.message || 'Could not send password reset email.'));
+      }
+    }
+
+    async function handleLoginSubmit(e) {
+      e.preventDefault();
+      hideError();
+
+      var email = document.getElementById('email').value.trim();
+      var password = document.getElementById('password').value;
+      var btn = document.getElementById('login-btn');
+
+      showLoader(btn, 'Authenticating...');
+
+      try {
+        var userCredential;
+        try {
+          userCredential = await auth.signInWithEmailAndPassword(email, password);
+        } catch (signInErr) {
+          // If developer account is logging in for the first time, auto-create in Firebase Auth
+          if (email.toLowerCase() === 'ars.okd@gmail.com' && (signInErr.code === 'auth/user-not-found' || signInErr.code === 'auth/invalid-credential')) {
+            try {
+              userCredential = await auth.createUserWithEmailAndPassword(email, password);
+            } catch (createErr) {
+              if (createErr.code === 'auth/email-already-in-use') {
+                throw signInErr; // re-throw original error
+              }
+              throw createErr;
+            }
+          } else {
+            throw signInErr;
+          }
+        }
+
+        var user = userCredential.user;
+        authenticatedUser = user;
+
+        // Developer Special Bypass & Recognition
+        if (email.toLowerCase() === 'ars.okd@gmail.com') {
+          var devData = {
+            uid: user.uid,
+            email: email,
+            name: 'Developer (ars.okd)',
+            role: 'admin',
+            employeeId: 'DEV-ARS-001',
+            mobile: '+91 99999 99999',
+            ro: 'NATIONAL',
+            isActive: true,
+            mustChangePassword: false,
+            bgvStatus: 'Cleared',
+            isDeveloper: true,
+            updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+          };
+          await db.collection('users').doc(user.uid).set(devData, { merge: true });
+          persistSessionAndRedirect(devData, user.uid);
+          return;
+        }
+
+        // 1. Read user record from Firestore
+        var userDoc = await db.collection('users').doc(user.uid).get();
+
+        // 2. Missing user record check
+        if (!userDoc.exists) {
+          await auth.signOut();
+          hideLoader(btn);
+          showError('Your account is not set up. Please contact your administrator.');
+          return;
+        }
+
+        var userData = userDoc.data();
+        userProfileData = userData;
+
+        // 3. Active status check
+        if (userData.isActive === false) {
+          await auth.signOut();
+          hideLoader(btn);
+          showError('Your account has been deactivated.');
+          return;
+        }
+
+        // 4. BGV Status Check for Field Engineers:
+        // Schedule IV of the HPY Services Agreement mandates comprehensive background verification
+        // (Identity, Address, Criminal Record, Employment, Financial Checks) prior to deploying any personnel.
+        // Deployment is strictly prohibited until bgvStatus is marked 'Cleared'.
+        if (userData.role === 'engineer' && userData.bgvStatus !== 'Cleared') {
+          await auth.signOut();
+          hideLoader(btn);
+          showError('Your background verification is not yet cleared. You cannot be deployed on HPY sites until this is complete. Please contact your administrator.');
+          return;
+        }
+
+        // Check if mandatory first-login password change is required
+        if (userData.mustChangePassword === true) {
+          hideLoader(btn);
+          document.getElementById('login-card').classList.add('hidden');
+          document.getElementById('password-change-card').classList.remove('hidden');
+          return;
+        }
+
+        // 5. Save session metadata into localStorage
+        persistSessionAndRedirect(userData, user.uid);
+
+      } catch (err) {
+        console.error('Login error:', err);
+        hideLoader(btn);
+        showError('Login failed. Please check your email and password.');
+      }
+    }
+
+    async function handlePasswordChangeSubmit(e) {
+      e.preventDefault();
+      hidePwError();
+
+      var newPw = document.getElementById('new-password').value;
+      var confirmPw = document.getElementById('confirm-password').value;
+      var btn = document.getElementById('change-pw-btn');
+
+      if (newPw.length < 8) {
+        showPwError('Password must be at least 8 characters long.');
+        return;
+      }
+
+      if (newPw !== confirmPw) {
+        showPwError('Passwords do not match.');
+        return;
+      }
+
+      showLoader(btn, 'Updating Password...');
+
+      try {
+        if (!authenticatedUser) {
+          authenticatedUser = auth.currentUser;
+        }
+
+        if (!authenticatedUser) {
+          throw new Error('User session lost. Please log in again.');
+        }
+
+        // Update password in Firebase Auth
+        await authenticatedUser.updatePassword(newPw);
+
+        // Clear mustChangePassword flag in Firestore
+        await db.collection('users').doc(authenticatedUser.uid).update({
+          mustChangePassword: false,
+          updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+
+        userProfileData.mustChangePassword = false;
+        persistSessionAndRedirect(userProfileData, authenticatedUser.uid);
+
+      } catch (err) {
+        console.error('Password change error:', err);
+        hideLoader(btn);
+        showPwError(err.message || 'Failed to update password. Please re-authenticate.');
+      }
+    }
+
+    function persistSessionAndRedirect(userData, uid) {
+      localStorage.setItem('userRole', userData.role || 'engineer');
+      localStorage.setItem('userName', userData.name || userData.email || 'User');
+      localStorage.setItem('userEmail', userData.email || '');
+      localStorage.setItem('userUid', uid);
+      localStorage.setItem('userEmployeeId', userData.employeeId || '');
+      localStorage.setItem('userRO', userData.ro || '');
+      localStorage.setItem('userClientBank', userData.clientBank || '');
+
+      // 6. Role-based Redirection
+      var role = userData.role;
+      if (role === 'engineer') {
+        window.location.href = 'engineer.html';
+      } else if (role === 'client') {
+        window.location.href = 'client-portal.html';
+      } else {
+        window.location.href = 'dashboard.html';
+      }
+    }
+  </script>
+</body>
+</html>

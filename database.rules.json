@@ -1,0 +1,25 @@
+{
+  "rules": {
+    /* ---------------------------------------------------------------------- */
+    /* TSPL ServiceDesk — Firebase Realtime Database Security Rules           */
+    /* For 600+ Concurrent Field Engineers & Control Room Telemetry           */
+    /* ---------------------------------------------------------------------- */
+
+    /* Default deny all top-level root access */
+    ".read": false,
+    ".write": false,
+
+    "liveLocations": {
+      /* Plain English: Any authenticated engineer, call centre agent, or manager can read live fleet GPS coordinates. */
+      ".read": "auth != null",
+
+      "$uid": {
+        /* Plain English: An engineer can ONLY write to their OWN specific UID node. Impersonation of other engineers is blocked. */
+        ".write": "auth != null && auth.uid === $uid",
+
+        /* Plain English: Enforce strict coordinate boundaries and mandatory telemetry fields */
+        ".validate": "newData.hasChildren(['lat', 'lng', 'updatedAt']) && newData.child('lat').isNumber() && newData.child('lat').val() >= -90 && newData.child('lat').val() <= 90 && newData.child('lng').isNumber() && newData.child('lng').val() >= -180 && newData.child('lng').val() <= 180"
+      }
+    }
+  }
+}

@@ -1,0 +1,1114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>User & Personnel Management — TSPL ServiceDesk</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Firebase Compat 10.7.1 -->
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-storage-compat.js"></script>
+  <script src="firebase-config.js"></script>
+  <script src="auth-guard.js"></script>
+</head>
+<body class="bg-slate-100 min-h-screen flex flex-col font-sans antialiased text-slate-800">
+
+  <!-- Main Navigation injected by auth-guard.js -->
+  <div id="main-nav"></div>
+
+  <main class="flex-grow max-w-[1650px] w-full mx-auto p-4 sm:p-6 lg:p-8 space-y-5">
+
+    <!-- Header & Action Row -->
+    <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4 sm:p-5 flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div>
+        <h1 class="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight">Personnel Directory & User Access (600 Users)</h1>
+        <p class="text-xs text-slate-500 mt-0.5">Management of national operations, regional hierarchy, client roles, and Schedule IV BGV clearances.</p>
+      </div>
+
+      <div class="flex flex-wrap items-center gap-2.5">
+        <!-- CSV Bulk User Import Trigger -->
+        <button 
+          onclick="openBulkUserModal()" 
+          class="bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold py-2 px-3.5 rounded-lg border border-slate-300 shadow-sm transition flex items-center gap-1.5"
+        >
+          <svg class="h-4 w-4 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+          </svg>
+          Import Users (CSV)
+        </button>
+
+        <!-- + Add New User Button -->
+        <button 
+          onclick="openUserModal(null)" 
+          class="bg-[#4F46E5] hover:bg-indigo-700 text-white text-xs font-semibold py-2 px-4 rounded-lg shadow transition flex items-center gap-1.5"
+        >
+          <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
+          </svg>
+          + Add User / Engineer
+        </button>
+      </div>
+    </div>
+
+    <!-- Filters Container -->
+    <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4 space-y-3">
+      <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-3 items-end">
+        <!-- Search Name / Email -->
+        <div>
+          <label class="block text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1">Search Name / Email</label>
+          <input 
+            type="text" 
+            id="filter-user-search" 
+            placeholder="Search..." 
+            class="w-full text-xs border border-slate-300 rounded-md p-1.5 focus:ring-1 focus:ring-indigo-500"
+            onkeydown="if(event.key==='Enter') fetchUsers(true)"
+          />
+        </div>
+
+        <!-- Role Filter -->
+        <div>
+          <label class="block text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1">Role</label>
+          <select id="filter-user-role" onchange="fetchUsers(true)" class="w-full text-xs border border-slate-300 rounded-md p-1.5 bg-white focus:ring-1 focus:ring-indigo-500">
+            <option value="">All Roles</option>
+            <option value="admin">Admin</option>
+            <option value="callcentre">Call Centre</option>
+            <option value="techsupport">Tech Support</option>
+            <option value="rm">Regional Manager (RM)</option>
+            <option value="regionalhead">Regional Head</option>
+            <option value="unithead">Unit Head</option>
+            <option value="engineer">Field Engineer</option>
+            <option value="client">Client Bank</option>
+          </select>
+        </div>
+
+        <!-- RO Filter -->
+        <div>
+          <label class="block text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1">RO</label>
+          <select id="filter-user-ro" onchange="fetchUsers(true)" class="w-full text-xs border border-slate-300 rounded-md p-1.5 bg-white focus:ring-1 focus:ring-indigo-500">
+            <option value="">All ROs</option>
+            <option value="NORTH">NORTH</option>
+            <option value="SOUTH">SOUTH</option>
+            <option value="EAST">EAST</option>
+            <option value="WEST">WEST</option>
+          </select>
+        </div>
+
+        <!-- BGV Status Filter -->
+        <div>
+          <label class="block text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1">BGV Status</label>
+          <select id="filter-user-bgv" onchange="fetchUsers(true)" class="w-full text-xs border border-slate-300 rounded-md p-1.5 bg-white focus:ring-1 focus:ring-indigo-500">
+            <option value="">All BGV Statuses</option>
+            <option value="Cleared">Cleared</option>
+            <option value="In Progress">In Progress</option>
+            <option value="Not Started">Not Started</option>
+            <option value="Failed">Failed</option>
+          </select>
+        </div>
+
+        <!-- Active / Inactive -->
+        <div>
+          <label class="block text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1">Account State</label>
+          <select id="filter-user-active" onchange="fetchUsers(true)" class="w-full text-xs border border-slate-300 rounded-md p-1.5 bg-white focus:ring-1 focus:ring-indigo-500">
+            <option value="">All (Active & Deactivated)</option>
+            <option value="true" selected>Active Only</option>
+            <option value="false">Deactivated Only</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <!-- Data Table Container -->
+    <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+      <div class="bg-slate-50 px-4 py-2.5 border-b border-slate-200 flex items-center justify-between text-xs text-slate-600">
+        <span id="users-count-notice">Loading personnel database...</span>
+        <button onclick="resetUserFilters()" class="text-indigo-600 hover:text-indigo-800 text-[11px] font-medium underline">Reset Filters</button>
+      </div>
+
+      <div class="overflow-x-auto">
+        <table class="w-full text-xs text-left border-collapse min-w-[1100px]">
+          <thead class="bg-slate-100 text-slate-700 uppercase text-[10px] font-bold sticky top-0 z-10 border-b border-slate-300 shadow-sm">
+            <tr>
+              <th class="px-3 py-3">Employee</th>
+              <th class="px-3 py-3">Role</th>
+              <th class="px-3 py-3">Phone</th>
+              <th class="px-3 py-3">Vendor / Partner</th>
+              <th class="px-3 py-3">RO / State</th>
+              <th class="px-3 py-3">Reports To / Hierarchy</th>
+              <th class="px-3 py-3">BGV Status</th>
+              <th class="px-3 py-3">Device Platform</th>
+              <th class="px-3 py-3">Status</th>
+              <th class="px-3 py-3 text-center">Action</th>
+            </tr>
+          </thead>
+          <tbody id="users-tbody" class="divide-y divide-slate-200">
+            <tr>
+              <td colspan="10" class="text-center py-12 text-slate-400">Loading users...</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="p-4 bg-slate-50 border-t border-slate-200 flex justify-center">
+        <button 
+          id="btn-load-more-users" 
+          onclick="fetchUsers(false)" 
+          class="hidden bg-white hover:bg-slate-100 text-slate-800 font-semibold text-xs py-2 px-6 rounded-lg border border-slate-300 shadow-sm transition"
+        >
+          Load Next 50 Users
+        </button>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- ===================================================================== -->
+  <!-- MODAL: ADD / EDIT USER (With Schedule IV BGV & Secondary Auth)        -->
+  <!-- ===================================================================== -->
+  <div id="user-modal" class="hidden fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 flex items-center justify-center p-4">
+    <div class="bg-white rounded-xl shadow-2xl max-w-4xl w-full max-h-[92vh] overflow-y-auto border border-slate-200">
+      
+      <div class="bg-slate-900 text-white px-6 py-4 rounded-t-xl flex items-center justify-between sticky top-0 z-20">
+        <div>
+          <h2 id="user-modal-title" class="text-lg font-bold">Add User / Engineer</h2>
+          <p class="text-xs text-slate-400">Role configuration, operational hierarchy, and Schedule IV BGV</p>
+        </div>
+        <button onclick="closeUserModal()" class="text-slate-400 hover:text-white text-xl font-bold">&times;</button>
+      </div>
+
+      <form id="user-form" onsubmit="handleSaveUser(event)" class="p-6 space-y-5">
+        <input type="hidden" id="modal-uid" value="" />
+        <input type="hidden" id="modal-is-edit" value="false" />
+
+        <!-- 1. Profile Core Fields -->
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div>
+            <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">Full Name *</label>
+            <input type="text" id="modal-user-name" required placeholder="e.g. Ramesh Kumar" class="w-full text-xs p-2.5 border border-slate-300 rounded-md focus:ring-1 focus:ring-indigo-500" />
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">Email Address *</label>
+            <input type="email" id="modal-user-email" required placeholder="ramesh@tspl.in" class="w-full text-xs p-2.5 border border-slate-300 rounded-md focus:ring-1 focus:ring-indigo-500" />
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">Phone Number (10 Digits) *</label>
+            <input 
+              type="text" 
+              id="modal-user-phone" 
+              required 
+              pattern="[0-9]{10}" 
+              maxlength="10" 
+              placeholder="9876543210" 
+              class="w-full text-xs p-2.5 border border-slate-300 rounded-md font-mono focus:ring-1 focus:ring-indigo-500" 
+            />
+            <span class="text-[10px] text-slate-400">Exact 10 digits. Used for default initial PIN.</span>
+          </div>
+        </div>
+
+        <!-- 2. Role, Emp ID, Vendor Partner -->
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div>
+            <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">Role *</label>
+            <select id="modal-user-role" required onchange="handleRoleChange()" class="w-full text-xs p-2.5 border border-slate-300 rounded-md bg-white font-semibold text-slate-800">
+              <option value="engineer">engineer (Field Engineer)</option>
+              <option value="rm">rm (Regional Manager)</option>
+              <option value="regionalhead">regionalhead (Regional Head)</option>
+              <option value="unithead">unithead (Unit Head)</option>
+              <option value="callcentre">callcentre (Call Centre)</option>
+              <option value="techsupport">techsupport (Tech Support / Helpdesk)</option>
+              <option value="client">client (Client Bank Viewer)</option>
+              <option value="admin">admin (Administrator)</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">Employee ID</label>
+            <input type="text" id="modal-user-empid" placeholder="TSPL-9082" class="w-full text-xs p-2.5 border border-slate-300 rounded-md font-mono" />
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">Vendor Partner</label>
+            <select id="modal-user-vendor" class="w-full text-xs p-2.5 border border-slate-300 rounded-md bg-white">
+              <option value="HPY">HPY</option>
+              <option value="Techbite">Techbite</option>
+              <option value="FIPL">FIPL</option>
+              <option value="MRV">MRV</option>
+              <option value="OptimATM">OptimATM</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Dynamic Client Bank (Visible ONLY when role === 'client') -->
+        <div id="row-client-bank" class="hidden p-3 bg-indigo-50/50 border border-indigo-200 rounded-md">
+          <label class="block text-xs font-bold text-indigo-900 uppercase tracking-wider mb-1">Assigned Client Bank *</label>
+          <select id="modal-user-clientbank" class="w-full text-xs p-2 border border-indigo-300 rounded-md bg-white">
+            <option value="">Select Bank</option>
+          </select>
+          <span class="text-[10px] text-indigo-600">Client role is restricted to viewing calls and analytics for their specific bank.</span>
+        </div>
+
+        <!-- 3. Regional Assignment & Operational Hierarchy -->
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 p-4 bg-slate-50 border border-slate-200 rounded-lg">
+          <div>
+            <label class="block text-[10px] font-semibold text-slate-600 uppercase mb-1">RO *</label>
+            <select id="modal-user-ro" required class="w-full text-xs p-2 border border-slate-300 rounded bg-white">
+              <option value="NORTH">NORTH</option>
+              <option value="SOUTH">SOUTH</option>
+              <option value="EAST">EAST</option>
+              <option value="WEST">WEST</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-[10px] font-semibold text-slate-600 uppercase mb-1">State</label>
+            <select id="modal-user-state" class="w-full text-xs p-2 border border-slate-300 rounded bg-white">
+              <option value="">Select State</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-[10px] font-semibold text-slate-600 uppercase mb-1">Direct Reports To</label>
+            <select id="modal-user-reportsto" class="w-full text-xs p-2 border border-slate-300 rounded bg-white">
+              <option value="">Select Manager</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-[10px] font-semibold text-slate-600 uppercase mb-1">Regional Manager (RM)</label>
+            <select id="modal-user-rm" class="w-full text-xs p-2 border border-slate-300 rounded bg-white">
+              <option value="">Select RM</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-[10px] font-semibold text-slate-600 uppercase mb-1">Regional Head</label>
+            <select id="modal-user-reghead" class="w-full text-xs p-2 border border-slate-300 rounded bg-white">
+              <option value="">Select Regional Head</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-[10px] font-semibold text-slate-600 uppercase mb-1">Unit Head</label>
+            <select id="modal-user-unithead" class="w-full text-xs p-2 border border-slate-300 rounded bg-white">
+              <option value="">Select Unit Head</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-[10px] font-semibold text-slate-600 uppercase mb-1">Shift Start</label>
+            <input type="time" id="modal-user-shift-start" value="09:00" class="w-full text-xs p-1.5 border border-slate-300 rounded bg-white" />
+          </div>
+          <div>
+            <label class="block text-[10px] font-semibold text-slate-600 uppercase mb-1">Shift End</label>
+            <input type="time" id="modal-user-shift-end" value="18:00" class="w-full text-xs p-1.5 border border-slate-300 rounded bg-white" />
+          </div>
+        </div>
+
+        <!-- 4. Device Platform & Account Activation -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label class="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">Device Platform</label>
+            <select id="modal-user-platform" class="w-full text-xs p-2.5 border border-slate-300 rounded-md bg-white">
+              <option value="Not Set">Not Set</option>
+              <option value="Android">Android</option>
+              <option value="iPhone">iPhone</option>
+            </select>
+          </div>
+          <div class="flex items-center pt-6">
+            <input type="checkbox" id="modal-user-isactive" checked class="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500" />
+            <label for="modal-user-isactive" class="ml-2 text-xs font-bold text-slate-800 uppercase">Account Is Active (Deactivate never delete)</label>
+          </div>
+        </div>
+
+        <!-- =============================================================== -->
+        <!-- 5. SCHEDULE IV BACKGROUND VERIFICATION (BGV) SECTION            -->
+        <!-- =============================================================== -->
+        <div id="bgv-section" class="p-4 bg-slate-50 border border-slate-300 rounded-lg space-y-4">
+          <div class="border-b border-slate-200 pb-2">
+            <div class="flex items-center justify-between">
+              <h3 class="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
+                <svg class="h-4 w-4 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                </svg>
+                Schedule IV Background Verification (Mandatory for Field Engineers)
+              </h3>
+              <span id="bgv-badge-indicator" class="text-[10px] font-bold px-2 py-0.5 rounded bg-slate-200 text-slate-700">NOT STARTED</span>
+            </div>
+            <p class="text-xs text-slate-600 mt-1 italic">
+              "Schedule IV of the HPY agreement requires background verification before any person performs the Services. An engineer cannot log in until this shows Cleared."
+            </p>
+          </div>
+
+          <!-- 7 Checkboxes with Dates -->
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+            <!-- 1. Academic -->
+            <div class="flex items-center justify-between p-2 bg-white rounded border border-slate-200">
+              <label class="flex items-center gap-2 text-slate-700 font-medium">
+                <input type="checkbox" id="bgv-chk-1" onchange="evaluateBgvCheckboxes()" class="h-3.5 w-3.5 rounded text-indigo-600" />
+                1. Academic verification
+              </label>
+              <input type="date" id="bgv-date-1" onchange="evaluateBgvCheckboxes()" class="text-[11px] p-1 border border-slate-200 rounded" />
+            </div>
+
+            <!-- 2. Employment -->
+            <div class="flex items-center justify-between p-2 bg-white rounded border border-slate-200">
+              <label class="flex items-center gap-2 text-slate-700 font-medium">
+                <input type="checkbox" id="bgv-chk-2" onchange="evaluateBgvCheckboxes()" class="h-3.5 w-3.5 rounded text-indigo-600" />
+                2. Previous employment verification
+              </label>
+              <input type="date" id="bgv-date-2" onchange="evaluateBgvCheckboxes()" class="text-[11px] p-1 border border-slate-200 rounded" />
+            </div>
+
+            <!-- 3. Criminal -->
+            <div class="flex items-center justify-between p-2 bg-white rounded border border-slate-200">
+              <label class="flex items-center gap-2 text-slate-700 font-medium">
+                <input type="checkbox" id="bgv-chk-3" onchange="evaluateBgvCheckboxes()" class="h-3.5 w-3.5 rounded text-indigo-600" />
+                3. Criminal and civil record check
+              </label>
+              <input type="date" id="bgv-date-3" onchange="evaluateBgvCheckboxes()" class="text-[11px] p-1 border border-slate-200 rounded" />
+            </div>
+
+            <!-- 4. Financial -->
+            <div class="flex items-center justify-between p-2 bg-white rounded border border-slate-200">
+              <label class="flex items-center gap-2 text-slate-700 font-medium">
+                <input type="checkbox" id="bgv-chk-4" onchange="evaluateBgvCheckboxes()" class="h-3.5 w-3.5 rounded text-indigo-600" />
+                4. Financial check
+              </label>
+              <input type="date" id="bgv-date-4" onchange="evaluateBgvCheckboxes()" class="text-[11px] p-1 border border-slate-200 rounded" />
+            </div>
+
+            <!-- 5. References -->
+            <div class="flex items-center justify-between p-2 bg-white rounded border border-slate-200">
+              <label class="flex items-center gap-2 text-slate-700 font-medium">
+                <input type="checkbox" id="bgv-chk-5" onchange="evaluateBgvCheckboxes()" class="h-3.5 w-3.5 rounded text-indigo-600" />
+                5. Employment references
+              </label>
+              <input type="date" id="bgv-date-5" onchange="evaluateBgvCheckboxes()" class="text-[11px] p-1 border border-slate-200 rounded" />
+            </div>
+
+            <!-- 6. Address -->
+            <div class="flex items-center justify-between p-2 bg-white rounded border border-slate-200">
+              <label class="flex items-center gap-2 text-slate-700 font-medium">
+                <input type="checkbox" id="bgv-chk-6" onchange="evaluateBgvCheckboxes()" class="h-3.5 w-3.5 rounded text-indigo-600" />
+                6. Address confirmation
+              </label>
+              <input type="date" id="bgv-date-6" onchange="evaluateBgvCheckboxes()" class="text-[11px] p-1 border border-slate-200 rounded" />
+            </div>
+
+            <!-- 7. Eligibility -->
+            <div class="flex items-center justify-between p-2 bg-white rounded border border-slate-200 md:col-span-2">
+              <label class="flex items-center gap-2 text-slate-700 font-medium">
+                <input type="checkbox" id="bgv-chk-7" onchange="evaluateBgvCheckboxes()" class="h-3.5 w-3.5 rounded text-indigo-600" />
+                7. Eligibility to work
+              </label>
+              <input type="date" id="bgv-date-7" onchange="evaluateBgvCheckboxes()" class="text-[11px] p-1 border border-slate-200 rounded" />
+            </div>
+          </div>
+
+          <!-- BGV Status Dropdown, Cleared On Date, PDF Upload -->
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
+            <div>
+              <label class="block text-[10px] font-bold text-slate-700 uppercase mb-1">BGV Status *</label>
+              <select id="modal-user-bgvstatus" onchange="updateBgvBadge(this.value)" class="w-full text-xs p-2 border border-slate-300 rounded bg-white font-bold">
+                <option value="Not Started">Not Started</option>
+                <option value="In Progress">In Progress</option>
+                <option value="Cleared">Cleared</option>
+                <option value="Failed">Failed</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-[10px] font-semibold text-slate-700 uppercase mb-1">Cleared On Date</label>
+              <input type="date" id="modal-user-bgvclearedon" class="w-full text-xs p-1.5 border border-slate-300 rounded bg-white" />
+            </div>
+            <div>
+              <label class="block text-[10px] font-semibold text-slate-700 uppercase mb-1">BGV Report (PDF)</label>
+              <input type="file" id="modal-user-bgvpdf" accept="application/pdf" class="text-[11px] file:mr-2 file:py-1.5 file:px-3 file:rounded file:border-0 file:bg-slate-200 file:text-slate-700 hover:file:bg-slate-300" />
+              <input type="hidden" id="modal-user-bgvpdf-url" value="" />
+            </div>
+          </div>
+        </div>
+
+        <!-- Footer Buttons -->
+        <div class="flex items-center justify-end gap-3 pt-4 border-t border-slate-200">
+          <button type="button" onclick="closeUserModal()" class="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-md transition">Cancel</button>
+          <button type="submit" id="btn-save-user" class="px-6 py-2 text-xs font-semibold bg-[#4F46E5] hover:bg-indigo-700 text-white rounded-md shadow transition">Save User Record</button>
+        </div>
+
+      </form>
+    </div>
+  </div>
+
+  <!-- ===================================================================== -->
+  <!-- MODAL: BULK CSV IMPORT OF USERS (With Password Download List)         -->
+  <!-- ===================================================================== -->
+  <div id="bulk-user-modal" class="hidden fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 flex items-center justify-center p-4">
+    <div class="bg-white rounded-xl shadow-2xl max-w-3xl w-full max-h-[90vh] overflow-y-auto border border-slate-200 p-6 space-y-5">
+      
+      <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+        <div>
+          <h2 class="text-base font-bold text-slate-900">Bulk Import Personnel (CSV)</h2>
+          <p class="text-xs text-slate-500">Sequential creation via Secondary Auth instance with temporary passwords (TSPL@last4digits).</p>
+        </div>
+        <button onclick="closeBulkUserModal()" class="text-slate-400 hover:text-slate-700 text-xl font-bold">&times;</button>
+      </div>
+
+      <!-- Warning & Header Preview -->
+      <div class="text-[11px] font-mono bg-slate-50 p-2.5 rounded border border-slate-200 text-slate-700 overflow-x-auto">
+        <strong>Required CSV Headers:</strong><br/>
+        name,email,phone,role,employeeId,vendorPartner,ro,state,platform,unitHead,regionalHead,regionalManager
+      </div>
+
+      <div class="p-3 bg-amber-50 border border-amber-300 rounded-lg text-xs text-amber-900">
+        <strong>Schedule IV Notice:</strong> Imported engineers default to BGV Status <span class="font-bold underline">"Not Started"</span> and cannot log in until verified.
+      </div>
+
+      <!-- File Input -->
+      <div>
+        <input type="file" id="user-csv-file" accept=".csv" onchange="handleUserCsvSelected(event)" class="text-xs file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100" />
+      </div>
+
+      <!-- Import Progress & Status -->
+      <div id="user-import-progress-box" class="hidden space-y-2">
+        <div class="flex justify-between text-xs font-semibold">
+          <span id="user-import-status-text">Processing users...</span>
+          <span id="user-import-pct" class="font-mono text-indigo-600 font-bold">0%</span>
+        </div>
+        <div class="w-full bg-slate-200 rounded-full h-2">
+          <div id="user-import-fill" class="bg-[#4F46E5] h-2 rounded-full transition-all" style="width: 0%"></div>
+        </div>
+      </div>
+
+      <!-- Download Temporary Passwords Result Area -->
+      <div id="user-passwords-result" class="hidden p-4 bg-emerald-50 border border-emerald-300 rounded-lg space-y-3">
+        <div class="flex items-center gap-2 text-emerald-900 font-bold text-xs">
+          <svg class="h-5 w-5 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          Import Complete! Temporary credentials generated.
+        </div>
+        <p class="text-xs text-emerald-800">
+          A temporary password list has been generated. Download the CSV below and distribute securely.
+        </p>
+        <div class="p-2.5 bg-red-100 border border-red-300 text-red-900 text-xs font-bold rounded">
+          WARNING: Delete the downloaded credential file immediately after secure distribution!
+        </div>
+        <button onclick="downloadTempPasswordCsv()" class="w-full py-2 bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold rounded shadow transition">
+          Download Temporary Passwords (CSV)
+        </button>
+      </div>
+
+      <!-- Footer Buttons -->
+      <div class="flex items-center justify-end gap-3 pt-3 border-t border-slate-100">
+        <button type="button" onclick="closeBulkUserModal()" class="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-md">Cancel</button>
+        <button type="button" id="btn-start-user-import" onclick="executeUserBulkImport()" disabled class="px-6 py-2 text-xs font-semibold bg-[#4F46E5] text-white rounded-md shadow disabled:opacity-40 disabled:cursor-not-allowed">
+          Start Import
+        </button>
+      </div>
+
+    </div>
+  </div>
+
+  <script>
+    // State management
+    var lastUserDoc = null;
+    var currentUsers = [];
+    var parsedUserRows = [];
+    var generatedCredentials = [];
+    var masterStates = [];
+    var masterBanks = [];
+
+    document.addEventListener('DOMContentLoaded', async function () {
+      if (typeof checkAuth === 'function') {
+        checkAuth(['admin']);
+      }
+      if (typeof buildNav === 'function') {
+        buildNav('masters-users.html');
+      }
+
+      await loadUserTaxonomy();
+      fetchUsers(true);
+    });
+
+    async function loadUserTaxonomy() {
+      try {
+        var [banks, states, allUsersSnap] = await Promise.all([
+          getMasters('bank'),
+          getMasters('state'),
+          db.collection('users').get()
+        ]);
+
+        masterBanks = banks;
+        masterStates = states;
+
+        var clientBankSel = document.getElementById('modal-user-clientbank');
+        banks.forEach(function (b) {
+          clientBankSel.appendChild(new Option(b, b));
+        });
+
+        var stateSel = document.getElementById('modal-user-state');
+        states.forEach(function (st) {
+          stateSel.appendChild(new Option(st, st));
+        });
+
+        var reportsSel = document.getElementById('modal-user-reportsto');
+        var rmSel = document.getElementById('modal-user-rm');
+        var regHeadSel = document.getElementById('modal-user-reghead');
+        var unitHeadSel = document.getElementById('modal-user-unithead');
+
+        allUsersSnap.forEach(function (doc) {
+          var u = doc.data();
+          var text = (u.name || u.email) + ' (' + (u.role || '') + ')';
+          reportsSel.appendChild(new Option(text, doc.id));
+          if (u.role === 'rm') rmSel.appendChild(new Option(text, doc.id));
+          if (u.role === 'regionalhead') regHeadSel.appendChild(new Option(text, doc.id));
+          if (u.role === 'unithead') unitHeadSel.appendChild(new Option(text, doc.id));
+        });
+
+      } catch (err) {
+        console.warn('Error loading user taxonomy:', err);
+      }
+    }
+
+    // ========================================================================
+    // 1. PAGED USER QUERY (Limit 50, Cursor Pagination)
+    // ========================================================================
+    async function fetchUsers(isReset) {
+      var tbody = document.getElementById('users-tbody');
+      var loadMoreBtn = document.getElementById('btn-load-more-users');
+
+      if (isReset) {
+        lastUserDoc = null;
+        currentUsers = [];
+        tbody.innerHTML = '<tr><td colspan="10" class="text-center py-12 text-slate-400">Filtering personnel records...</td></tr>';
+      }
+
+      try {
+        var query = db.collection('users');
+
+        var roleVal = document.getElementById('filter-user-role').value;
+        var roVal = document.getElementById('filter-user-ro').value;
+        var bgvVal = document.getElementById('filter-user-bgv').value;
+        var activeVal = document.getElementById('filter-user-active').value;
+        var searchVal = document.getElementById('filter-user-search').value.trim().toLowerCase();
+
+        if (roleVal) query = query.where('role', '==', roleVal);
+        if (roVal) query = query.where('ro', '==', roVal);
+        if (bgvVal) query = query.where('bgvStatus', '==', bgvVal);
+        if (activeVal !== '') query = query.where('isActive', '==', activeVal === 'true');
+
+        query = query.limit(50);
+
+        if (lastUserDoc && !isReset) {
+          query = query.startAfter(lastUserDoc);
+        }
+
+        var snap = await query.get();
+
+        if (isReset && snap.empty) {
+          tbody.innerHTML = '<tr><td colspan="10" class="text-center py-12 text-slate-400">No personnel records match your filter.</td></tr>';
+          document.getElementById('users-count-notice').textContent = 'Showing 0 records.';
+          loadMoreBtn.classList.add('hidden');
+          return;
+        }
+
+        var pageItems = [];
+        snap.forEach(function (doc) {
+          var d = doc.data();
+          d.uid = doc.id;
+          // Client-side text filter if typed
+          if (searchVal) {
+            var n = (d.name || '').toLowerCase();
+            var em = (d.email || '').toLowerCase();
+            if (!n.includes(searchVal) && !em.includes(searchVal)) return;
+          }
+          pageItems.push(d);
+        });
+
+        if (isReset) {
+          currentUsers = pageItems;
+        } else {
+          currentUsers = currentUsers.concat(pageItems);
+        }
+
+        lastUserDoc = snap.docs.length > 0 ? snap.docs[snap.docs.length - 1] : null;
+        var hasMore = snap.docs.length === 50;
+
+        if (hasMore) loadMoreBtn.classList.remove('hidden');
+        else loadMoreBtn.classList.add('hidden');
+
+        document.getElementById('users-count-notice').textContent = 'Showing ' + currentUsers.length + ' active personnel.';
+        renderUsersTable();
+
+      } catch (err) {
+        console.error('Fetch users error:', err);
+        tbody.innerHTML = '<tr><td colspan="10" class="text-center py-12 text-red-500">Query error: ' + err.message + '</td></tr>';
+      }
+    }
+
+    function resetUserFilters() {
+      document.getElementById('filter-user-search').value = '';
+      document.getElementById('filter-user-role').value = '';
+      document.getElementById('filter-user-ro').value = '';
+      document.getElementById('filter-user-bgv').value = '';
+      document.getElementById('filter-user-active').value = 'true';
+      fetchUsers(true);
+    }
+
+    function renderUsersTable() {
+      var tbody = document.getElementById('users-tbody');
+      if (currentUsers.length === 0) return;
+
+      var rowsHtml = currentUsers.map(function (u) {
+        var bgvBadgeClass = 'bg-slate-100 text-slate-700';
+        if (u.bgvStatus === 'Cleared') bgvBadgeClass = 'bg-emerald-100 text-emerald-800 border border-emerald-300';
+        else if (u.bgvStatus === 'In Progress') bgvBadgeClass = 'bg-amber-100 text-amber-800 border border-amber-300';
+        else if (u.bgvStatus === 'Failed') bgvBadgeClass = 'bg-red-100 text-red-800 border border-red-300';
+
+        var activeBadge = u.isActive !== false
+          ? '<span class="bg-emerald-50 text-emerald-700 font-bold px-2 py-0.5 rounded text-[10px]">ACTIVE</span>'
+          : '<span class="bg-red-50 text-red-700 font-bold px-2 py-0.5 rounded text-[10px]">DEACTIVATED</span>';
+
+        var roleBadge = '<span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-indigo-50 text-indigo-700">' + (u.role || 'user') + '</span>';
+
+        var jsonU = JSON.stringify(u).replace(/"/g, '&quot;');
+
+        return (
+          '<tr class="hover:bg-slate-50 transition">' +
+            '<td class="px-3 py-2.5">' +
+              '<div class="font-bold text-slate-900">' + (u.name || 'Unnamed') + '</div>' +
+              '<div class="text-[11px] text-slate-400 font-mono">' + (u.email || '--') + ' &bull; ' + (u.employeeId || 'No ID') + '</div>' +
+            '</td>' +
+            '<td class="px-3 py-2.5 whitespace-nowrap">' + roleBadge + '</td>' +
+            '<td class="px-3 py-2.5 font-mono text-slate-700 whitespace-nowrap">' + (u.phone || '--') + '</td>' +
+            '<td class="px-3 py-2.5 text-slate-600 whitespace-nowrap">' + (u.vendorPartner || 'HPY') + '</td>' +
+            '<td class="px-3 py-2.5 text-slate-600 whitespace-nowrap">' + (u.ro || '--') + ' / ' + (u.state || '--') + '</td>' +
+            '<td class="px-3 py-2.5 text-[11px] text-slate-500 max-w-[150px] truncate">' + (u.reportsTo || u.regionalManager || '--') + '</td>' +
+            '<td class="px-3 py-2.5 whitespace-nowrap"><span class="px-2 py-0.5 rounded text-[10px] font-bold ' + bgvBadgeClass + '">' + (u.bgvStatus || 'Not Started') + '</span></td>' +
+            '<td class="px-3 py-2.5 text-slate-500 whitespace-nowrap">' + (u.platform || 'Not Set') + '</td>' +
+            '<td class="px-3 py-2.5 whitespace-nowrap">' + activeBadge + '</td>' +
+            '<td class="px-3 py-2.5 text-center whitespace-nowrap space-x-1.5">' +
+              '<button onclick="openUserModal(' + jsonU + ')" class="text-xs bg-slate-100 hover:bg-slate-200 text-slate-800 px-2.5 py-1 rounded border border-slate-300 font-medium transition">Edit</button>' +
+              '<button onclick="toggleUserActive(\'' + u.uid + '\', ' + (u.isActive !== false) + ')" class="text-xs px-2 py-1 rounded font-medium ' + (u.isActive !== false ? 'text-red-700 hover:bg-red-50' : 'text-emerald-700 hover:bg-emerald-50') + '">' +
+                (u.isActive !== false ? 'Deactivate' : 'Activate') +
+              '</button>' +
+            '</td>' +
+          '</tr>'
+        );
+      }).join('');
+
+      tbody.innerHTML = rowsHtml;
+    }
+
+    async function toggleUserActive(uid, currentActive) {
+      var confirmMsg = currentActive 
+        ? 'Are you sure you want to DEACTIVATE this user? They will not be deleted, but access will be revoked.' 
+        : 'Reactivate this user account?';
+
+      if (!confirm(confirmMsg)) return;
+
+      try {
+        await db.collection('users').doc(uid).update({
+          isActive: !currentActive,
+          updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+        toast('User status updated', 'success');
+        fetchUsers(false);
+      } catch (e) {
+        toast('Error updating user state: ' + e.message, 'error');
+      }
+    }
+
+    // ========================================================================
+    // 2. ADD / EDIT USER MODAL WITH SECONDARY AUTH & BGV LOGIC
+    // ========================================================================
+    function handleRoleChange() {
+      var role = document.getElementById('modal-user-role').value;
+      var clientBankRow = document.getElementById('row-client-bank');
+      if (role === 'client') {
+        clientBankRow.classList.remove('hidden');
+      } else {
+        clientBankRow.classList.add('hidden');
+      }
+    }
+
+    function openUserModal(userData) {
+      var modal = document.getElementById('user-modal');
+      var form = document.getElementById('user-form');
+      form.reset();
+
+      if (userData) {
+        document.getElementById('user-modal-title').textContent = 'Edit User — ' + (userData.name || userData.email);
+        document.getElementById('modal-is-edit').value = 'true';
+        document.getElementById('modal-uid').value = userData.uid;
+        document.getElementById('modal-user-email').readOnly = true;
+        document.getElementById('modal-user-email').classList.add('bg-slate-100', 'cursor-not-allowed');
+
+        document.getElementById('modal-user-name').value = userData.name || '';
+        document.getElementById('modal-user-email').value = userData.email || '';
+        document.getElementById('modal-user-phone').value = userData.phone || '';
+        document.getElementById('modal-user-role').value = userData.role || 'engineer';
+        document.getElementById('modal-user-empid').value = userData.employeeId || '';
+        document.getElementById('modal-user-vendor').value = userData.vendorPartner || 'HPY';
+        document.getElementById('modal-user-ro').value = userData.ro || 'NORTH';
+        document.getElementById('modal-user-state').value = userData.state || '';
+        document.getElementById('modal-user-reportsto').value = userData.reportsTo || '';
+        document.getElementById('modal-user-rm').value = userData.regionalManager || '';
+        document.getElementById('modal-user-reghead').value = userData.regionalHead || '';
+        document.getElementById('modal-user-unithead').value = userData.unitHead || '';
+        document.getElementById('modal-user-shift-start').value = userData.shiftStartTime || '09:00';
+        document.getElementById('modal-user-shift-end').value = userData.shiftEndTime || '18:00';
+        document.getElementById('modal-user-platform').value = userData.platform || 'Not Set';
+        document.getElementById('modal-user-isactive').checked = userData.isActive !== false;
+
+        if (userData.role === 'client') {
+          document.getElementById('modal-user-clientbank').value = userData.clientBank || '';
+        }
+
+        // BGV Checklist
+        var bgv = userData.bgv || {};
+        for (var i = 1; i <= 7; i++) {
+          document.getElementById('bgv-chk-' + i).checked = !!(bgv['check' + i]);
+          document.getElementById('bgv-date-' + i).value = bgv['date' + i] || '';
+        }
+        document.getElementById('modal-user-bgvstatus').value = userData.bgvStatus || 'Not Started';
+        document.getElementById('modal-user-bgvclearedon').value = userData.bgvClearedOn || '';
+        document.getElementById('modal-user-bgvpdf-url').value = userData.bgvPdfUrl || '';
+        updateBgvBadge(userData.bgvStatus || 'Not Started');
+
+      } else {
+        document.getElementById('user-modal-title').textContent = 'Add New User / Engineer';
+        document.getElementById('modal-is-edit').value = 'false';
+        document.getElementById('modal-uid').value = '';
+        document.getElementById('modal-user-email').readOnly = false;
+        document.getElementById('modal-user-email').classList.remove('bg-slate-100', 'cursor-not-allowed');
+        document.getElementById('modal-user-bgvstatus').value = 'Not Started';
+        updateBgvBadge('Not Started');
+      }
+
+      handleRoleChange();
+      modal.classList.remove('hidden');
+    }
+
+    function closeUserModal() {
+      document.getElementById('user-modal').classList.add('hidden');
+    }
+
+    function evaluateBgvCheckboxes() {
+      var allChecked = true;
+      for (var i = 1; i <= 7; i++) {
+        var chk = document.getElementById('bgv-chk-' + i).checked;
+        var dt = document.getElementById('bgv-date-' + i).value;
+        if (!chk || !dt) {
+          allChecked = false;
+          break;
+        }
+      }
+
+      var statusSelect = document.getElementById('modal-user-bgvstatus');
+      var clearedOn = document.getElementById('modal-user-bgvclearedon');
+
+      if (allChecked) {
+        statusSelect.value = 'Cleared';
+        if (!clearedOn.value) {
+          clearedOn.value = new Date().toISOString().split('T')[0];
+        }
+      } else {
+        // If it was Cleared and one got unchecked, flip to In Progress
+        if (statusSelect.value === 'Cleared') {
+          statusSelect.value = 'In Progress';
+        }
+      }
+      updateBgvBadge(statusSelect.value);
+    }
+
+    function updateBgvBadge(val) {
+      var b = document.getElementById('bgv-badge-indicator');
+      b.textContent = (val || 'NOT STARTED').toUpperCase();
+      if (val === 'Cleared') {
+        b.className = 'text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 border border-emerald-300';
+      } else if (val === 'In Progress') {
+        b.className = 'text-[10px] font-bold px-2 py-0.5 rounded bg-amber-100 text-amber-800 border border-amber-300';
+      } else if (val === 'Failed') {
+        b.className = 'text-[10px] font-bold px-2 py-0.5 rounded bg-red-100 text-red-800 border border-red-300';
+      } else {
+        b.className = 'text-[10px] font-bold px-2 py-0.5 rounded bg-slate-200 text-slate-700';
+      }
+    }
+
+    async function handleSaveUser(event) {
+      event.preventDefault();
+      var btn = document.getElementById('btn-save-user');
+      var isEdit = document.getElementById('modal-is-edit').value === 'true';
+      var uid = document.getElementById('modal-uid').value;
+
+      var email = document.getElementById('modal-user-email').value.trim().toLowerCase();
+      var phone = document.getElementById('modal-user-phone').value.trim();
+      var name = document.getElementById('modal-user-name').value.trim();
+      var role = document.getElementById('modal-user-role').value;
+
+      if (!/^\d{10}$/.test(phone)) {
+        toast('Phone number must be exactly 10 digits', 'error');
+        return;
+      }
+
+      showLoader(btn, 'Saving...');
+
+      try {
+        var bgvData = {};
+        for (var i = 1; i <= 7; i++) {
+          bgvData['check' + i] = document.getElementById('bgv-chk-' + i).checked;
+          bgvData['date' + i] = document.getElementById('bgv-date-' + i).value;
+        }
+
+        var bgvStatus = document.getElementById('modal-user-bgvstatus').value;
+        var bgvClearedOn = document.getElementById('modal-user-bgvclearedon').value;
+        var bgvPdfUrl = document.getElementById('modal-user-bgvpdf-url').value;
+
+        // Handle BGV PDF upload if new file provided
+        var fileInput = document.getElementById('modal-user-bgvpdf');
+        if (fileInput.files.length > 0 && typeof firebase.storage === 'function') {
+          var file = fileInput.files[0];
+          var storageRef = firebase.storage().ref('bgv_reports/' + Date.now() + '_' + file.name);
+          var snap = await storageRef.put(file);
+          bgvPdfUrl = await snap.ref.getDownloadURL();
+        }
+
+        var docData = {
+          name: name,
+          email: email,
+          phone: phone,
+          role: role,
+          employeeId: document.getElementById('modal-user-empid').value.trim(),
+          vendorPartner: document.getElementById('modal-user-vendor').value,
+          ro: document.getElementById('modal-user-ro').value,
+          state: document.getElementById('modal-user-state').value,
+          reportsTo: document.getElementById('modal-user-reportsto').value,
+          regionalManager: document.getElementById('modal-user-rm').value,
+          regionalHead: document.getElementById('modal-user-reghead').value,
+          unitHead: document.getElementById('modal-user-unithead').value,
+          shiftStartTime: document.getElementById('modal-user-shift-start').value,
+          shiftEndTime: document.getElementById('modal-user-shift-end').value,
+          platform: document.getElementById('modal-user-platform').value,
+          isActive: document.getElementById('modal-user-isactive').checked,
+          bgv: bgvData,
+          bgvStatus: bgvStatus,
+          bgvClearedOn: bgvClearedOn,
+          bgvPdfUrl: bgvPdfUrl,
+          clientBank: role === 'client' ? document.getElementById('modal-user-clientbank').value : null,
+          updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+        };
+
+        if (isEdit && uid) {
+          await db.collection('users').doc(uid).set(docData, { merge: true });
+          toast('User details updated successfully', 'success');
+        } else {
+          // ===================================================================
+          // CREATING LOGIN WITHOUT SIGNING ADMIN OUT:
+          // We initialize a separate secondary Firebase App instance.
+          // This keeps the primary Admin session intact while the secondary
+          // app creates the Auth credential, saves the Firestore doc with the UID,
+          // and signs out cleanly.
+          // ===================================================================
+          var secondaryApp = firebase.initializeApp(firebaseConfig, "SecondaryCreationApp_" + Date.now());
+          var tempPassword = "TSPL@" + phone.slice(-4);
+
+          var cred = await secondaryApp.auth().createUserWithEmailAndPassword(email, tempPassword);
+          var newUid = cred.user.uid;
+
+          docData.mustChangePassword = true;
+          docData.createdAt = firebase.firestore.FieldValue.serverTimestamp();
+
+          // Write Firestore document using root db instance
+          await db.collection('users').doc(newUid).set(docData);
+
+          // Sign out secondary instance and delete it
+          await secondaryApp.auth().signOut();
+          await secondaryApp.delete();
+
+          toast('User created with Temp PIN: ' + tempPassword, 'success');
+        }
+
+        closeUserModal();
+        fetchUsers(true);
+
+      } catch (err) {
+        console.error('Save user error:', err);
+        toast('Error creating/updating user: ' + err.message, 'error');
+      } finally {
+        hideLoader(btn);
+      }
+    }
+
+    // ========================================================================
+    // 3. BULK CSV IMPORT OF USERS (Sequential with 300ms pause)
+    // ========================================================================
+    function openBulkUserModal() {
+      document.getElementById('bulk-user-modal').classList.remove('hidden');
+      document.getElementById('user-csv-file').value = '';
+      document.getElementById('user-import-progress-box').classList.add('hidden');
+      document.getElementById('user-passwords-result').classList.add('hidden');
+      document.getElementById('btn-start-user-import').disabled = true;
+      parsedUserRows = [];
+      generatedCredentials = [];
+    }
+
+    function closeBulkUserModal() {
+      document.getElementById('bulk-user-modal').classList.add('hidden');
+    }
+
+    function handleUserCsvSelected(event) {
+      var file = event.target.files[0];
+      if (!file) return;
+
+      var reader = new FileReader();
+      reader.onload = function (e) {
+        parseUserCsv(e.target.result);
+      };
+      reader.readAsText(file);
+    }
+
+    function parseUserCsv(text) {
+      var lines = text.split(/\r\n|\n/).filter(function (l) { return l.trim().length > 0; });
+      if (lines.length < 2) {
+        toast('CSV file is empty or missing rows', 'error');
+        return;
+      }
+
+      parsedUserRows = [];
+      for (var i = 1; i < lines.length; i++) {
+        var cols = parseCsvLine(lines[i]);
+        if (cols.length < 4) continue;
+
+        var phoneClean = (cols[2] || '').replace(/\D/g, '');
+        parsedUserRows.push({
+          name: (cols[0] || '').trim(),
+          email: (cols[1] || '').trim().toLowerCase(),
+          phone: phoneClean,
+          role: (cols[3] || 'engineer').trim().toLowerCase(),
+          employeeId: (cols[4] || '').trim(),
+          vendorPartner: (cols[5] || 'HPY').trim(),
+          ro: (cols[6] || 'NORTH').trim().toUpperCase(),
+          state: (cols[7] || '').trim(),
+          platform: (cols[8] || 'Not Set').trim(),
+          unitHead: (cols[9] || '').trim(),
+          regionalHead: (cols[10] || '').trim(),
+          regionalManager: (cols[11] || '').trim()
+        });
+      }
+
+      if (parsedUserRows.length > 0) {
+        document.getElementById('btn-start-user-import').disabled = false;
+        toast('Loaded ' + parsedUserRows.length + ' users from CSV ready for import.', 'info');
+      }
+    }
+
+    function parseCsvLine(line) {
+      var arr = [];
+      var insideQuote = false;
+      var cur = '';
+      for (var i = 0; i < line.length; i++) {
+        var ch = line[i];
+        if (ch === '"') {
+          insideQuote = !insideQuote;
+        } else if (ch === ',' && !insideQuote) {
+          arr.push(cur);
+          cur = '';
+        } else {
+          cur += ch;
+        }
+      }
+      arr.push(cur);
+      return arr;
+    }
+
+    async function executeUserBulkImport() {
+      var btn = document.getElementById('btn-start-user-import');
+      var pBox = document.getElementById('user-import-progress-box');
+      var pStatus = document.getElementById('user-import-status-text');
+      var pPct = document.getElementById('user-import-pct');
+      var pFill = document.getElementById('user-import-fill');
+
+      btn.disabled = true;
+      pBox.classList.remove('hidden');
+      generatedCredentials = [];
+
+      var total = parsedUserRows.length;
+
+      for (var i = 0; i < total; i++) {
+        var u = parsedUserRows[i];
+        var pct = Math.round(((i + 1) / total) * 100);
+        pPct.textContent = pct + '%';
+        pFill.style.width = pct + '%';
+        pStatus.textContent = 'Creating ' + (i + 1) + ' / ' + total + ' (' + u.email + ')...';
+
+        var tempPassword = "TSPL@" + (u.phone.length >= 4 ? u.phone.slice(-4) : "1234");
+
+        try {
+          // Secondary Firebase instance creation to keep admin logged in
+          var secondaryApp = firebase.initializeApp(firebaseConfig, "SecondaryBulk_" + i + "_" + Date.now());
+          var cred = await secondaryApp.auth().createUserWithEmailAndPassword(u.email, tempPassword);
+          var uid = cred.user.uid;
+
+          await db.collection('users').doc(uid).set({
+            name: u.name,
+            email: u.email,
+            phone: u.phone,
+            role: u.role,
+            employeeId: u.employeeId,
+            vendorPartner: u.vendorPartner,
+            ro: u.ro,
+            state: u.state,
+            platform: u.platform,
+            unitHead: u.unitHead,
+            regionalHead: u.regionalHead,
+            regionalManager: u.regionalManager,
+            shiftStartTime: "09:00",
+            shiftEndTime: "18:00",
+            isActive: true,
+            bgvStatus: "Not Started", // Default Schedule IV lock for imported field staff
+            mustChangePassword: true,
+            createdAt: firebase.firestore.FieldValue.serverTimestamp()
+          });
+
+          generatedCredentials.push({
+            name: u.name,
+            email: u.email,
+            phone: u.phone,
+            role: u.role,
+            tempPassword: tempPassword
+          });
+
+          await secondaryApp.auth().signOut();
+          await secondaryApp.delete();
+
+        } catch (userErr) {
+          // Skip "email already in use" gracefully without stopping
+          console.warn('Skipping user ' + u.email + ' due to:', userErr.code || userErr.message);
+        }
+
+        // 300ms pause to ensure stable sequential execution and prevent quota lock
+        await new Promise(function (res) { return setTimeout(res, 300); });
+      }
+
+      pStatus.textContent = 'Import finished successfully!';
+      document.getElementById('user-passwords-result').classList.remove('hidden');
+      toast('Import process complete. Download credentials list.', 'success');
+      fetchUsers(true);
+    }
+
+    function downloadTempPasswordCsv() {
+      if (generatedCredentials.length === 0) {
+        toast('No new credentials to export', 'info');
+        return;
+      }
+
+      var csvContent = "data:text/csv;charset=utf-8,Name,Email,Phone,Role,TemporaryPassword\n";
+      generatedCredentials.forEach(function (c) {
+        csvContent += '"' + c.name + '","' + c.email + '","' + c.phone + '","' + c.role + '","' + c.tempPassword + '"\n';
+      });
+
+      var encodedUri = encodeURI(csvContent);
+      var link = document.createElement("a");
+      link.setAttribute("href", encodedUri);
+      link.setAttribute("download", "TSPL_Temporary_Passwords_" + Date.now() + ".csv");
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
+  </script>
+</body>
+</html>

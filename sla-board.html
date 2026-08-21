@@ -1,0 +1,581 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SLA War Room — TSPL ServiceDesk</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Firebase Compat 10.7.1 -->
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-storage-compat.js"></script>
+  <script src="firebase-config.js"></script>
+  <script src="auth-guard.js"></script>
+  <style>
+    @keyframes pulse-border {
+      0%, 100% { border-color: rgba(220, 38, 38, 1); box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.7); }
+      50% { border-color: rgba(239, 68, 68, 0.4); box-shadow: 0 0 12px 2px rgba(220, 38, 38, 0.5); }
+    }
+    .urgent-pulse {
+      animation: pulse-border 1.5s infinite;
+    }
+    .kanban-col {
+      max-height: calc(100vh - 270px);
+    }
+    @media (max-width: 1023px) {
+      .kanban-col {
+        max-height: none;
+      }
+    }
+  </style>
+</head>
+<body class="bg-slate-100 min-h-screen flex flex-col font-sans antialiased text-slate-800">
+
+  <!-- Main Navigation injected by auth-guard.js -->
+  <div id="main-nav"></div>
+
+  <!-- Main War Room Container -->
+  <main class="flex-grow flex flex-col max-w-[1600px] w-full mx-auto p-3 sm:p-4 lg:p-6 space-y-4">
+
+    <!-- Top War Room Header & Purpose -->
+    <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4 sm:p-5 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+      <div>
+        <div class="flex items-center gap-3">
+          <span class="inline-block h-3 w-3 rounded-full bg-red-600 animate-ping"></span>
+          <h1 class="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
+            SLA War Room & Live Dispatch Matrix
+          </h1>
+        </div>
+        <p class="text-xs sm:text-sm text-slate-600 font-medium mt-1">
+          HPY contract: 2 hours response, 2 hours resolution, from the time of call logging. 24x7 including public holidays.
+        </p>
+      </div>
+
+      <!-- Controls & Mute Toggle -->
+      <div class="flex flex-wrap items-center gap-3">
+        <!-- Live Ticker / Sync Indicator -->
+        <div class="flex items-center gap-2 bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-lg text-xs font-mono text-slate-600">
+          <span id="sync-dot" class="h-2 w-2 rounded-full bg-emerald-500"></span>
+          <span id="sync-text">Auto-sync in 60s</span>
+        </div>
+
+        <!-- Mute / Sound Toggle -->
+        <button 
+          id="btn-sound-toggle" 
+          onclick="toggleSound()" 
+          class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-slate-300 bg-white hover:bg-slate-50 transition shadow-sm"
+        >
+          <span id="sound-icon">🔊</span>
+          <span id="sound-label">Audio Alerts: ON</span>
+        </button>
+
+        <!-- Manual Refresh Button -->
+        <button 
+          id="btn-manual-refresh" 
+          onclick="fetchWarRoomDockets(true)" 
+          class="bg-[#4F46E5] hover:bg-indigo-700 text-white px-3.5 py-1.5 rounded-lg text-xs font-semibold shadow transition flex items-center gap-1.5"
+        >
+          <svg class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+          </svg>
+          Refresh Now
+        </button>
+      </div>
+    </div>
+
+    <!-- Filter & Aggregated Metric Bar -->
+    <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4 space-y-3">
+      <!-- 4 Column Counts & Today Compliance -->
+      <div class="grid grid-cols-2 sm:grid-cols-5 gap-3">
+        <div class="p-2.5 rounded-lg bg-red-50 border border-red-200">
+          <div class="text-[10px] font-bold uppercase tracking-wider text-red-700">Breaching Soon (&lt;30m)</div>
+          <div id="count-breaching-soon" class="text-2xl font-extrabold text-[#DC2626]">0</div>
+        </div>
+        <div class="p-2.5 rounded-lg bg-amber-50 border border-amber-200">
+          <div class="text-[10px] font-bold uppercase tracking-wider text-amber-700">At Risk (30-60m)</div>
+          <div id="count-at-risk" class="text-2xl font-extrabold text-[#D97706]">0</div>
+        </div>
+        <div class="p-2.5 rounded-lg bg-emerald-50 border border-emerald-200">
+          <div class="text-[10px] font-bold uppercase tracking-wider text-emerald-700">On Track (&gt;60m)</div>
+          <div id="count-on-track" class="text-2xl font-extrabold text-[#16A34A]">0</div>
+        </div>
+        <div class="p-2.5 rounded-lg bg-red-100 border border-red-300">
+          <div class="text-[10px] font-bold uppercase tracking-wider text-red-900">Breached</div>
+          <div id="count-breached" class="text-2xl font-extrabold text-red-900">0</div>
+        </div>
+        <div class="p-2.5 rounded-lg bg-indigo-50 border border-indigo-200 col-span-2 sm:col-span-1">
+          <div class="text-[10px] font-bold uppercase tracking-wider text-indigo-700">Today Compliance</div>
+          <div id="sla-compliance-badge" class="text-2xl font-extrabold text-indigo-900">--%</div>
+        </div>
+      </div>
+
+      <!-- Filters Row -->
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-2 border-t border-slate-100">
+        <div>
+          <label class="block text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1">Filter by Bank</label>
+          <select id="filter-bank" onchange="applyFiltersAndRender()" class="w-full text-xs border border-slate-300 rounded-md p-1.5 bg-white focus:ring-1 focus:ring-indigo-500">
+            <option value="">All Banks</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1">Filter by RO</label>
+          <select id="filter-ro" onchange="applyFiltersAndRender()" class="w-full text-xs border border-slate-300 rounded-md p-1.5 bg-white focus:ring-1 focus:ring-indigo-500">
+            <option value="">All Regional Offices</option>
+            <option value="NORTH">NORTH</option>
+            <option value="SOUTH">SOUTH</option>
+            <option value="EAST">EAST</option>
+            <option value="WEST">WEST</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1">Location Category (RBI)</label>
+          <select id="filter-category" onchange="applyFiltersAndRender()" class="w-full text-xs border border-slate-300 rounded-md p-1.5 bg-white focus:ring-1 focus:ring-indigo-500">
+            <option value="">All Categories</option>
+            <option value="Metro">Metro</option>
+            <option value="Urban">Urban</option>
+            <option value="Semi-Urban">Semi-Urban</option>
+            <option value="Rural">Rural</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1">Engineer Assignment</label>
+          <select id="filter-assignment" onchange="applyFiltersAndRender()" class="w-full text-xs border border-slate-300 rounded-md p-1.5 bg-white focus:ring-1 focus:ring-indigo-500">
+            <option value="">All (Assigned & Unassigned)</option>
+            <option value="unassigned">UNASSIGNED ONLY</option>
+            <option value="assigned">Assigned Only</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <!-- SECTION: 4 KANBAN COLUMNS -->
+    <!-- 
+      PERFORMANCE ARCHITECTURE:
+      This design maintains real-time per-second countdown fidelity in browser memory 
+      using a single client-side setInterval, while querying Firestore ONLY once every 60 seconds.
+      This minimizes Firestore read operations across 100+ office staff while guaranteeing zero lag.
+    -->
+    <div class="grid grid-cols-1 lg:grid-cols-4 gap-4 flex-grow items-start">
+
+      <!-- COLUMN 1: BREACHING SOON (<30m) -->
+      <div class="bg-red-50/50 rounded-xl border border-red-200 overflow-hidden flex flex-col shadow-sm">
+        <div class="bg-[#DC2626] text-white px-4 py-3 flex items-center justify-between shadow">
+          <div class="flex items-center gap-2">
+            <span class="h-2.5 w-2.5 rounded-full bg-white animate-ping"></span>
+            <h2 class="text-xs sm:text-sm font-bold uppercase tracking-wider">Breaching Soon</h2>
+          </div>
+          <span id="badge-col1" class="text-xs bg-red-800 text-white font-mono px-2 py-0.5 rounded-full font-bold">0</span>
+        </div>
+        <div class="text-[11px] bg-red-100/70 text-red-900 px-4 py-1.5 border-b border-red-200 font-medium">
+          &lt; 30 Minutes Remaining
+        </div>
+        <div id="col-breaching-soon" class="kanban-col p-3 space-y-3 overflow-y-auto min-h-[140px]">
+          <div class="text-xs text-slate-400 text-center py-6">No dockets breaching soon.</div>
+        </div>
+      </div>
+
+      <!-- COLUMN 2: AT RISK (30-60m) -->
+      <div class="bg-amber-50/50 rounded-xl border border-amber-200 overflow-hidden flex flex-col shadow-sm">
+        <div class="bg-[#D97706] text-white px-4 py-3 flex items-center justify-between shadow">
+          <div class="flex items-center gap-2">
+            <h2 class="text-xs sm:text-sm font-bold uppercase tracking-wider">At Risk</h2>
+          </div>
+          <span id="badge-col2" class="text-xs bg-amber-800 text-white font-mono px-2 py-0.5 rounded-full font-bold">0</span>
+        </div>
+        <div class="text-[11px] bg-amber-100/70 text-amber-900 px-4 py-1.5 border-b border-amber-200 font-medium">
+          30 to 60 Minutes Remaining
+        </div>
+        <div id="col-at-risk" class="kanban-col p-3 space-y-3 overflow-y-auto min-h-[140px]">
+          <div class="text-xs text-slate-400 text-center py-6">No dockets in risk window.</div>
+        </div>
+      </div>
+
+      <!-- COLUMN 3: ON TRACK (>60m) -->
+      <div class="bg-emerald-50/50 rounded-xl border border-emerald-200 overflow-hidden flex flex-col shadow-sm">
+        <div class="bg-[#16A34A] text-white px-4 py-3 flex items-center justify-between shadow">
+          <div class="flex items-center gap-2">
+            <h2 class="text-xs sm:text-sm font-bold uppercase tracking-wider">On Track</h2>
+          </div>
+          <span id="badge-col3" class="text-xs bg-emerald-800 text-white font-mono px-2 py-0.5 rounded-full font-bold">0</span>
+        </div>
+        <div class="text-[11px] bg-emerald-100/70 text-emerald-900 px-4 py-1.5 border-b border-emerald-200 font-medium">
+          &gt; 60 Minutes Remaining
+        </div>
+        <div id="col-on-track" class="kanban-col p-3 space-y-3 overflow-y-auto min-h-[140px]">
+          <div class="text-xs text-slate-400 text-center py-6">No dockets on track.</div>
+        </div>
+      </div>
+
+      <!-- COLUMN 4: BREACHED -->
+      <div class="bg-red-950/5 rounded-xl border border-red-300 overflow-hidden flex flex-col shadow-sm">
+        <div class="bg-red-900 text-white px-4 py-3 flex items-center justify-between shadow">
+          <div class="flex items-center gap-2">
+            <h2 class="text-xs sm:text-sm font-bold uppercase tracking-wider">Target Breached</h2>
+          </div>
+          <span id="badge-col4" class="text-xs bg-red-950 text-white font-mono px-2 py-0.5 rounded-full font-bold">0</span>
+        </div>
+        <div class="text-[11px] bg-red-200/80 text-red-950 px-4 py-1.5 border-b border-red-300 font-medium">
+          2-Hour SLA Target Exceeded
+        </div>
+        <div id="col-breached" class="kanban-col p-3 space-y-3 overflow-y-auto min-h-[140px]">
+          <div class="text-xs text-slate-400 text-center py-6">No breached dockets.</div>
+        </div>
+      </div>
+
+    </div>
+
+  </main>
+
+  <script>
+    // State management
+    var rawDockets = [];
+    var activeContract = null;
+    var audioCtx = null;
+    var isAudioMuted = localStorage.getItem('tspl_warroom_muted') === 'true';
+    var notifiedBreaches = new Set();
+    var syncCountdown = 60;
+    var syncTimer = null;
+    var clockTimer = null;
+
+    document.addEventListener('DOMContentLoaded', async function () {
+      if (typeof checkAuth === 'function') {
+        checkAuth(['admin', 'callcentre', 'rm', 'regionalhead']);
+      }
+      if (typeof buildNav === 'function') {
+        buildNav('sla-board.html');
+      }
+
+      updateSoundUI();
+      populateBankDropdown();
+
+      try {
+        activeContract = await getActiveContract();
+      } catch (e) {
+        console.warn('Could not cache active contract:', e);
+      }
+
+      // Initial Fetch
+      await fetchWarRoomDockets();
+
+      // Start 1-second live countdown ticker
+      clockTimer = setInterval(tickCountdowns, 1000);
+
+      // Start 60-second database sync loop
+      syncTimer = setInterval(function () {
+        syncCountdown--;
+        var syncEl = document.getElementById('sync-text');
+        if (syncCountdown <= 0) {
+          syncCountdown = 60;
+          fetchWarRoomDockets(false);
+        } else {
+          if (syncEl) syncEl.textContent = 'Auto-sync in ' + syncCountdown + 's';
+        }
+      }, 1000);
+    });
+
+    async function populateBankDropdown() {
+      var bankSelect = document.getElementById('filter-bank');
+      try {
+        var banks = await getMasters('bank');
+        banks.forEach(function (b) {
+          var opt = document.createElement('option');
+          opt.value = b;
+          opt.textContent = b;
+          bankSelect.appendChild(opt);
+        });
+      } catch (e) {
+        console.warn('Failed to populate bank filter:', e);
+      }
+    }
+
+    // ========================================================================
+    // SOUND & AUDIO ALERTS (Web Audio API)
+    // ========================================================================
+    function toggleSound() {
+      isAudioMuted = !isAudioMuted;
+      localStorage.setItem('tspl_warroom_muted', isAudioMuted ? 'true' : 'false');
+      updateSoundUI();
+      if (!isAudioMuted) {
+        playBeep(880, 0.15); // Test tone
+      }
+    }
+
+    function updateSoundUI() {
+      var icon = document.getElementById('sound-icon');
+      var label = document.getElementById('sound-label');
+      var btn = document.getElementById('btn-sound-toggle');
+      if (isAudioMuted) {
+        icon.textContent = '🔇';
+        label.textContent = 'Audio Alerts: MUTED';
+        btn.classList.remove('bg-white', 'text-slate-700');
+        btn.classList.add('bg-amber-50', 'text-amber-800', 'border-amber-300');
+      } else {
+        icon.textContent = '🔊';
+        label.textContent = 'Audio Alerts: ON';
+        btn.classList.remove('bg-amber-50', 'text-amber-800', 'border-amber-300');
+        btn.classList.add('bg-white', 'text-slate-700');
+      }
+    }
+
+    function playBeep(freq, durationSec) {
+      if (isAudioMuted) return;
+      try {
+        if (!audioCtx) {
+          audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        }
+        if (audioCtx.state === 'suspended') {
+          audioCtx.resume();
+        }
+        var osc = audioCtx.createOscillator();
+        var gain = audioCtx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(freq || 750, audioCtx.currentTime);
+        gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + (durationSec || 0.3));
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.start();
+        osc.stop(audioCtx.currentTime + (durationSec || 0.3));
+      } catch (err) {
+        console.warn('Audio alert error:', err);
+      }
+    }
+
+    // ========================================================================
+    // DATA FETCH (Firestore Capped Query: limit 200, status Open)
+    // ========================================================================
+    async function fetchWarRoomDockets(showToast) {
+      var syncDot = document.getElementById('sync-dot');
+      var refreshBtn = document.getElementById('btn-manual-refresh');
+      if (syncDot) syncDot.className = 'h-2 w-2 rounded-full bg-amber-500 animate-ping';
+      if (refreshBtn && showToast) showLoader(refreshBtn, 'Syncing...');
+
+      try {
+        var baseQuery = scopedDocketQuery()
+          .where('isClosed', '==', false)
+          .orderBy('callDateTime', 'asc')
+          .limit(200);
+
+        var snap = await baseQuery.get();
+        rawDockets = [];
+        snap.forEach(function (doc) {
+          var d = doc.data();
+          d.id = doc.id;
+          rawDockets.push(d);
+        });
+
+        // Also fetch live stats doc for today's compliance percentage
+        try {
+          var statsSnap = await db.collection('stats').doc(statsDocId()).get();
+          if (statsSnap.exists) {
+            var s = statsSnap.data();
+            var closedToday = s.closedToday || 0;
+            var breachedToday = s.slaBreachedToday || 0;
+            var metToday = Math.max(0, closedToday - breachedToday);
+            var total = metToday + breachedToday;
+            var pct = total > 0 ? Math.round((metToday / total) * 100) : 100;
+            var badgeEl = document.getElementById('sla-compliance-badge');
+            if (badgeEl) badgeEl.textContent = pct + '%';
+          }
+        } catch (errStats) {
+          console.warn('Stats doc fetch:', errStats);
+        }
+
+        syncCountdown = 60;
+        applyFiltersAndRender();
+        if (showToast) toast('SLA Matrix synchronized', 'success');
+
+      } catch (err) {
+        console.error('War room fetch failed:', err);
+        toast('Fetch failed: ' + err.message, 'error');
+      } finally {
+        if (syncDot) syncDot.className = 'h-2 w-2 rounded-full bg-emerald-500';
+        if (refreshBtn && showToast) hideLoader(refreshBtn);
+      }
+    }
+
+    // ========================================================================
+    // SLA CLASSIFICATION & KANBAN RENDERING
+    // ========================================================================
+    function applyFiltersAndRender() {
+      var bankVal = document.getElementById('filter-bank').value;
+      var roVal = document.getElementById('filter-ro').value;
+      var catVal = document.getElementById('filter-category').value;
+      var assignVal = document.getElementById('filter-assignment').value;
+
+      var filtered = rawDockets.filter(function (d) {
+        if (bankVal && d.bank !== bankVal) return false;
+        if (roVal && d.ro !== roVal) return false;
+        if (catVal && (d.locationCategory || 'Metro') !== catVal) return false;
+        if (assignVal === 'unassigned' && d.assignedEngineerId) return false;
+        if (assignVal === 'assigned' && !d.assignedEngineerId) return false;
+        return true;
+      });
+
+      var col1 = []; // Breaching soon (<30m)
+      var col2 = []; // At risk (30-60m)
+      var col3 = []; // On track (>60m)
+      var col4 = []; // Breached
+
+      filtered.forEach(function (d) {
+        var sla = slaStatus(d);
+        d._sla = sla;
+
+        // Sound Notification Trigger on first entrance to < 30 min window
+        if (sla.minsRemaining <= 30 && sla.minsRemaining > 0 && !notifiedBreaches.has(d.id)) {
+          notifiedBreaches.add(d.id);
+          playBeep(920, 0.4);
+        }
+
+        if (sla.breached || sla.minsRemaining <= 0) {
+          col4.push(d);
+        } else if (sla.minsRemaining <= 30) {
+          col1.push(d);
+        } else if (sla.minsRemaining <= 60) {
+          col2.push(d);
+        } else {
+          col3.push(d);
+        }
+      });
+
+      // Escalation Sorting for Column 1:
+      // Dockets breaching in under 15 minutes with no engineer assigned jump to the very top.
+      col1.sort(function (a, b) {
+        var aUrgentUnassigned = (!a.assignedEngineerId && a._sla.minsRemaining <= 15) ? 1 : 0;
+        var bUrgentUnassigned = (!b.assignedEngineerId && b._sla.minsRemaining <= 15) ? 1 : 0;
+        if (aUrgentUnassigned !== bUrgentUnassigned) {
+          return bUrgentUnassigned - aUrgentUnassigned;
+        }
+        return a._sla.minsRemaining - b._sla.minsRemaining;
+      });
+
+      // Update Column Count Badges
+      document.getElementById('count-breaching-soon').textContent = col1.length;
+      document.getElementById('count-at-risk').textContent = col2.length;
+      document.getElementById('count-on-track').textContent = col3.length;
+      document.getElementById('count-breached').textContent = col4.length;
+
+      document.getElementById('badge-col1').textContent = col1.length;
+      document.getElementById('badge-col2').textContent = col2.length;
+      document.getElementById('badge-col3').textContent = col3.length;
+      document.getElementById('badge-col4').textContent = col4.length;
+
+      renderColumnCards('col-breaching-soon', col1, 'No dockets breaching soon.');
+      renderColumnCards('col-at-risk', col2, 'No dockets in risk window.');
+      renderColumnCards('col-on-track', col3, 'No dockets on track.');
+      renderColumnCards('col-breached', col4, 'No breached dockets.');
+    }
+
+    function renderColumnCards(containerId, items, emptyText) {
+      var container = document.getElementById(containerId);
+      if (!container) return;
+
+      if (items.length === 0) {
+        container.innerHTML = '<div class="text-xs text-slate-400 text-center py-6">' + emptyText + '</div>';
+        return;
+      }
+
+      var cardsHtml = items.map(function (d) {
+        var sla = d._sla;
+        var isUrgentUnassigned = !d.assignedEngineerId && sla.minsRemaining <= 15 && !sla.breached;
+        var borderPulseClass = isUrgentUnassigned ? 'border-2 border-red-600 urgent-pulse shadow-md' : 'border border-slate-200';
+
+        var runningClockLabel = d.reachedAt ? 'Resolution Clock' : 'Response Clock';
+        var runningClockBg = d.reachedAt ? 'bg-indigo-50 text-indigo-700' : 'bg-amber-50 text-amber-700';
+
+        var depBg = (d.currentDependency === 'Engineer Dependency' || d.currentDependency === 'WIP')
+          ? 'bg-red-100 text-red-800 font-semibold'
+          : 'bg-amber-100 text-amber-800';
+
+        var engDisplay = d.assignedEngineerName
+          ? '<span class="text-slate-800 font-semibold">' + d.assignedEngineerName + '</span>'
+          : '<span class="text-white bg-red-600 px-1.5 py-0.5 rounded text-[10px] font-bold tracking-wider">UNASSIGNED</span>';
+
+        var phoneLink = d.engineerPhone
+          ? '<a href="tel:' + d.engineerPhone + '" class="text-[11px] bg-slate-100 hover:bg-slate-200 text-slate-700 px-2 py-1 rounded border border-slate-300 font-medium transition flex items-center gap-1">📞 Call</a>'
+          : '';
+
+        var repeatBadge = d.isRepeat === true
+          ? '<span class="bg-red-600 text-white text-[9px] font-bold px-1.5 py-0.5 rounded ml-1 tracking-wider uppercase">REPEAT</span>'
+          : '';
+
+        var tickerText = slaCountdownText(sla.minsRemaining);
+        var countdownColor = sla.breached ? 'text-[#DC2626]' : (sla.minsRemaining <= 30 ? 'text-[#DC2626]' : (sla.minsRemaining <= 60 ? 'text-[#D97706]' : 'text-[#16A34A]'));
+
+        return (
+          '<div class="bg-white rounded-lg p-3.5 ' + borderPulseClass + ' shadow-sm hover:shadow transition space-y-2.5">' +
+            '<!-- Header: Docket & Repeat -->' +
+            '<div class="flex items-center justify-between">' +
+              '<div class="flex items-center">' +
+                '<span class="font-mono font-bold text-sm text-[#4F46E5]">' + (d.docketNo || d.id) + '</span>' +
+                repeatBadge +
+              '</div>' +
+              '<span class="text-[10px] px-2 py-0.5 rounded font-mono font-medium ' + runningClockBg + '">' +
+                runningClockLabel +
+              '</span>' +
+            '</div>' +
+
+            '<!-- Live Countdown -->' +
+            '<div class="py-1 border-y border-slate-100 flex items-center justify-between">' +
+              '<span class="text-[10px] uppercase font-bold text-slate-400">Target Time</span>' +
+              '<span class="font-mono font-extrabold text-base tracking-tight ' + countdownColor + '" data-countdown-id="' + d.id + '">' +
+                tickerText +
+              '</span>' +
+            '</div>' +
+
+            '<!-- ATM, Bank, Category -->' +
+            '<div class="text-xs space-y-0.5">' +
+              '<div class="flex items-center justify-between">' +
+                '<span class="font-bold text-slate-800">' + (d.atmId || '--') + '</span>' +
+                '<span class="text-[10px] text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded">' + (d.locationCategory || 'Metro') + '</span>' +
+              '</div>' +
+              '<div class="text-slate-600 truncate">' + (d.bank || '--') + ' &bull; ' + (d.city || d.state || '--') + '</div>' +
+            '</div>' +
+
+            '<!-- Engineer Assignment & Dependency -->' +
+            '<div class="text-xs pt-1 flex items-center justify-between gap-1">' +
+              '<div class="truncate text-[11px]">' + engDisplay + '</div>' +
+              '<span class="text-[10px] px-2 py-0.5 rounded truncate max-w-[120px] ' + depBg + '">' +
+                (d.currentDependency || 'Engineer Dependency') +
+              '</span>' +
+            '</div>' +
+
+            '<!-- Action Buttons -->' +
+            '<div class="pt-2 flex items-center justify-between border-t border-slate-100">' +
+              phoneLink +
+              '<a href="docket-detail.html?id=' + d.id + '" class="ml-auto text-xs bg-[#4F46E5] hover:bg-indigo-700 text-white px-3 py-1 rounded font-medium transition shadow-sm">' +
+                'Open Docket &rarr;' +
+              '</a>' +
+            '</div>' +
+          '</div>'
+        );
+      }).join('');
+
+      container.innerHTML = cardsHtml;
+    }
+
+    // ========================================================================
+    // PER-SECOND COUNTDOWN TICKER (Runs strictly in client memory)
+    // ========================================================================
+    function tickCountdowns() {
+      var countdownEls = document.querySelectorAll('[data-countdown-id]');
+      var now = Date.now();
+
+      countdownEls.forEach(function (el) {
+        var docId = el.getAttribute('data-countdown-id');
+        var docket = rawDockets.find(function (x) { return x.id === docId; });
+        if (!docket) return;
+
+        var callTime = docket.callDateTime instanceof Date ? docket.callDateTime : (docket.callDateTime ? (docket.callDateTime.toDate ? docket.callDateTime.toDate() : new Date(docket.callDateTime)) : new Date());
+        var targetMins = docket.resolutionTargetMins || 120;
+        var elapsedMins = Math.max(0, Math.floor((now - callTime.getTime()) / 60000));
+        var remainingMins = targetMins - elapsedMins;
+
+        el.textContent = slaCountdownText(remainingMins);
+      });
+    }
+  </script>
+</body>
+</html>
