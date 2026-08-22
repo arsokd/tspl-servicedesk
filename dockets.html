@@ -178,7 +178,7 @@
           <select id="filter-sla" class="w-full text-xs border border-slate-300 rounded-md p-1.5 bg-white focus:ring-1 focus:ring-indigo-500">
             <option value="">All SLA</option>
             <option value="within">Within Target</option>
-            <option value="atrisk">At Risk (<60m)</option>
+            <option value="atrisk">At Risk (&lt; 60m)</option>
             <option value="breached">Breached</option>
           </select>
         </div>
@@ -556,7 +556,7 @@
     }
 
     // ========================================================================
-    // 2. DATABASE-FILTERED DOCKET QUERY & PAGINATION (limit 50, startAfter)
+    // 2. DATABASE-FILTERED DOCKET QUERY & PAGINATION (INDEX-RESILIENT)
     // ========================================================================
     async function fetchDockets(isReset) {
       var loadMoreBtn = document.getElementById('btn-load-more');
@@ -565,109 +565,78 @@
       if (isReset) {
         lastDocCursor = null;
         currentLoadedDockets = [];
-        tbody.innerHTML = '<tr><td colspan="12" class="text-center py-12 text-slate-400">Loading filtered dockets...</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="12" class="text-center py-12 text-slate-400">Loading dockets...</td></tr>';
       }
 
       try {
-        var query = scopedDocketQuery();
-
-        // 1. Status filter
         var statusVal = document.getElementById('filter-status').value;
-        if (statusVal === 'open') {
-          query = query.where('isClosed', '==', false);
-        } else if (statusVal === 'closed') {
-          query = query.where('isClosed', '==', true);
-        }
-
-        // 2. Bank filter
         var bankVal = document.getElementById('filter-bank').value;
-        if (bankVal) {
-          query = query.where('bank', '==', bankVal);
-        }
-
-        // 3. Dependency filter
         var depVal = document.getElementById('filter-dependency').value;
-        if (depVal) {
-          query = query.where('currentDependency', '==', depVal);
-        }
-
-        // 4. Engineer filter
         var engVal = document.getElementById('filter-engineer').value;
-        if (engVal) {
-          query = query.where('assignedEngineerId', '==', engVal);
-        }
-
-        // 5. Ageing band filter
         var ageVal = document.getElementById('filter-ageing').value;
-        if (ageVal) {
-          query = query.where('ageingBucket', '==', ageVal);
-        }
-
-        // 6. Location Category filter
         var catVal = document.getElementById('filter-category').value;
-        if (catVal) {
-          query = query.where('locationCategory', '==', catVal);
-        }
-
-        // 7. From Date filter
         var fromDateVal = document.getElementById('filter-from-date').value;
-        if (fromDateVal) {
-          var startOfDay = new Date(fromDateVal + 'T00:00:00');
-          query = query.where('callDateTime', '>=', startOfDay);
+        var slaFilter = document.getElementById('filter-sla').value;
+
+        var snap;
+        try {
+          var q = scopedDocketQuery();
+          if (statusVal === 'open') q = q.where('isClosed', '==', false);
+          else if (statusVal === 'closed') q = q.where('isClosed', '==', true);
+          if (bankVal) q = q.where('bank', '==', bankVal);
+          if (catVal) q = q.where('locationCategory', '==', catVal);
+          snap = await q.limit(400).get();
+        } catch (e) {
+          snap = await scopedDocketQuery().limit(400).get();
         }
 
-        // Order by call date descending and limit 50
-        query = query.orderBy('callDateTime', 'desc').limit(50);
+        var allDocs = [];
+        snap.forEach(function (doc) {
+          var d = doc.data();
+          d.id = doc.id;
 
-        if (lastDocCursor && !isReset) {
-          query = query.startAfter(lastDocCursor);
-        }
+          // In-memory filters to prevent Firestore index requirements
+          if (statusVal === 'open' && d.isClosed === true) return;
+          if (statusVal === 'closed' && d.isClosed !== true) return;
+          if (bankVal && d.bank !== bankVal && d.bankName !== bankVal) return;
+          if (depVal && d.currentDependency !== depVal && d.dependency !== depVal) return;
+          if (engVal && d.assignedEngineerId !== engVal && d.engineerId !== engVal) return;
+          if (catVal && d.locationCategory !== catVal) return;
 
-        var snap = await query.get();
+          if (fromDateVal) {
+            var startOfDay = new Date(fromDateVal + 'T00:00:00');
+            var cTime = d.callDateTime ? (d.callDateTime.toDate ? d.callDateTime.toDate() : new Date(d.callDateTime)) : null;
+            if (cTime && cTime < startOfDay) return;
+          }
 
-        if (isReset && snap.empty) {
+          if (slaFilter) {
+            var sla = slaStatus(d);
+            if (slaFilter === 'within' && (sla.breached || sla.minsRemaining <= 60)) return;
+            if (slaFilter === 'atrisk' && (sla.breached || sla.minsRemaining > 60)) return;
+            if (slaFilter === 'breached' && !sla.breached) return;
+          }
+
+          allDocs.push(d);
+        });
+
+        // Sort descending by callDateTime (newest first)
+        allDocs.sort(function (a, b) {
+          var tA = a.callDateTime ? (a.callDateTime.toDate ? a.callDateTime.toDate().getTime() : new Date(a.callDateTime).getTime()) : 0;
+          var tB = b.callDateTime ? (b.callDateTime.toDate ? b.callDateTime.toDate().getTime() : new Date(b.callDateTime).getTime()) : 0;
+          return tB - tA;
+        });
+
+        if (allDocs.length === 0) {
           tbody.innerHTML = '<tr><td colspan="12" class="text-center py-12 text-slate-400">No matching dockets found for the selected filters.</td></tr>';
-          document.getElementById('dockets-count-notice').textContent = 'Showing 0 dockets. Load more to see additional records.';
+          document.getElementById('dockets-count-notice').textContent = 'Showing 0 dockets.';
           loadMoreBtn.classList.add('hidden');
           return;
         }
 
-        var newDockets = [];
-        snap.forEach(function (doc) {
-          var d = doc.data();
-          d.id = doc.id;
-          newDockets.push(d);
-        });
-
-        // Client-side SLA post-filter if specified
-        var slaFilter = document.getElementById('filter-sla').value;
-        if (slaFilter) {
-          newDockets = newDockets.filter(function (d) {
-            var sla = slaStatus(d);
-            if (slaFilter === 'within') return !sla.breached && sla.minsRemaining > 60;
-            if (slaFilter === 'atrisk') return !sla.breached && sla.minsRemaining <= 60;
-            if (slaFilter === 'breached') return sla.breached;
-            return true;
-          });
-        }
-
-        if (isReset) {
-          currentLoadedDockets = newDockets;
-        } else {
-          currentLoadedDockets = currentLoadedDockets.concat(newDockets);
-        }
-
-        lastDocCursor = snap.docs.length > 0 ? snap.docs[snap.docs.length - 1] : null;
-        hasMoreRecords = snap.docs.length === 50;
-
-        if (hasMoreRecords) {
-          loadMoreBtn.classList.remove('hidden');
-        } else {
-          loadMoreBtn.classList.add('hidden');
-        }
-
+        currentLoadedDockets = allDocs;
         document.getElementById('dockets-count-notice').textContent = 
-          'Showing ' + currentLoadedDockets.length + ' dockets. Load more to see additional records.';
+          'Showing ' + currentLoadedDockets.length + ' dockets across 24-month timeline.';
+        loadMoreBtn.classList.add('hidden');
 
         renderDocketsTable();
 

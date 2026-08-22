@@ -168,8 +168,8 @@ function buildNav(activePage) {
     { name: 'Reports', file: 'reports.html', roles: ['admin', 'rm', 'regionalhead', 'unithead'] },
     { name: 'Billing', file: 'billing.html', roles: ['admin'] },
     { name: 'Compliance', file: 'compliance.html', roles: ['admin'] },
-    { name: 'Archive', file: 'archive-job.html', roles: ['admin'] },
-    { name: 'Masters', file: 'masters-atm.html', roles: ['admin'] }
+    { name: 'Masters', file: 'masters-atm.html', roles: ['admin'] },
+    { name: 'Setup', file: 'setup-data.html', roles: ['admin'] }
   ];
 
   var filtered = navItems.filter(function (item) {
@@ -182,8 +182,8 @@ function buildNav(activePage) {
   var desktopLinks = filtered.map(function (item) {
     var isActive = item.file === activePage;
     var classes = isActive
-      ? 'border-b-2 border-white text-white font-medium px-3 py-2 text-sm tracking-wide'
-      : 'text-indigo-100 hover:text-white hover:bg-indigo-700 px-3 py-2 rounded-md text-sm font-normal transition';
+      ? 'border-b-2 border-white text-white font-semibold px-2.5 py-1.5 text-xs tracking-wide whitespace-nowrap'
+      : 'text-indigo-100 hover:text-white hover:bg-indigo-700 px-2.5 py-1.5 rounded text-xs font-normal transition whitespace-nowrap';
     return '<a href="' + item.file + '" class="' + classes + '">' + item.name + '</a>';
   }).join('');
 
@@ -197,32 +197,32 @@ function buildNav(activePage) {
 
   navContainer.innerHTML = 
     '<nav class="bg-[#4F46E5] text-white shadow-md">' +
-      '<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">' +
-        '<div class="flex items-center justify-between h-16">' +
-          '<div class="flex items-center gap-6">' +
-            '<div class="flex-shrink-0 flex items-center gap-2.5">' +
-              '<img src="assets/tspl-logo.svg" alt="TSPL Logo" class="h-9 w-auto object-contain rounded bg-white/10 p-0.5 border border-white/20" />' +
-              '<span class="font-bold text-base sm:text-lg tracking-wider text-white">TSPL ServiceDesk</span>' +
-            '</div>' +
-            '<div class="hidden md:flex items-center space-x-1">' +
+      '<div class="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8">' +
+        '<div class="flex items-center justify-between h-14">' +
+          '<div class="flex items-center gap-4 min-w-0">' +
+            '<a href="dashboard.html" class="flex-shrink-0 flex items-center gap-2">' +
+              '<img src="assets/tspl-logo.svg" alt="TSPL Logo" class="h-8 w-auto object-contain rounded bg-white/10 p-0.5 border border-white/20" />' +
+              '<span class="font-bold text-sm sm:text-base tracking-wider text-white whitespace-nowrap">TSPL ServiceDesk</span>' +
+            '</a>' +
+            '<div class="hidden lg:flex items-center space-x-0.5 overflow-x-auto py-1">' +
               desktopLinks +
             '</div>' +
           '</div>' +
-          '<div class="hidden md:flex items-center space-x-4">' +
-            '<div id="display-username" class="text-sm"></div>' +
-            '<button id="logout-btn" onclick="handleLogout()" class="bg-indigo-700 hover:bg-indigo-800 text-xs px-3 py-1.5 rounded transition font-medium border border-indigo-500">Sign Out</button>' +
+          '<div class="hidden md:flex items-center space-x-3 shrink-0">' +
+            '<div id="display-username" class="text-xs"></div>' +
+            '<button id="logout-btn" onclick="handleLogout()" class="bg-indigo-700 hover:bg-indigo-800 text-xs px-2.5 py-1.5 rounded transition font-medium border border-indigo-500 whitespace-nowrap">Sign Out</button>' +
           '</div>' +
-          '<div class="flex md:hidden">' +
-            '<button id="mobile-menu-btn" type="button" class="p-2 rounded-md text-indigo-200 hover:text-white hover:bg-indigo-700 focus:outline-none">' +
+          '<div class="flex lg:hidden">' +
+            '<button id="mobile-menu-btn" type="button" class="p-1.5 rounded-md text-indigo-200 hover:text-white hover:bg-indigo-700 focus:outline-none">' +
               '<svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>' +
             '</button>' +
           '</div>' +
         '</div>' +
       '</div>' +
-      '<div id="mobile-menu" class="hidden md:hidden px-2 pt-2 pb-3 space-y-1 bg-indigo-900 border-t border-indigo-700">' +
+      '<div id="mobile-menu" class="hidden lg:hidden px-2 pt-2 pb-3 space-y-1 bg-indigo-900 border-t border-indigo-700">' +
         mobileLinks +
         '<div class="pt-4 pb-2 border-t border-indigo-800">' +
-          '<div class="px-3 py-1 text-sm text-indigo-200 font-medium" id="mobile-display-username"></div>' +
+          '<div class="px-3 py-1 text-xs text-indigo-200 font-medium" id="mobile-display-username"></div>' +
           '<button onclick="handleLogout()" class="mt-2 w-full text-left bg-indigo-800 text-white px-3 py-2 rounded-md text-sm font-medium">Sign Out</button>' +
         '</div>' +
       '</div>' +

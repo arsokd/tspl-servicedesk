@@ -353,17 +353,30 @@
       if (refreshBtn && showToast) showLoader(refreshBtn, 'Syncing...');
 
       try {
-        var baseQuery = scopedDocketQuery()
-          .where('isClosed', '==', false)
-          .orderBy('callDateTime', 'asc')
-          .limit(200);
+        var snap;
+        try {
+          snap = await scopedDocketQuery()
+            .where('isClosed', '==', false)
+            .limit(200)
+            .get();
+        } catch (e) {
+          snap = await scopedDocketQuery().limit(200).get();
+        }
 
-        var snap = await baseQuery.get();
         rawDockets = [];
         snap.forEach(function (doc) {
           var d = doc.data();
           d.id = doc.id;
-          rawDockets.push(d);
+          if (d.isClosed !== true) {
+            rawDockets.push(d);
+          }
+        });
+
+        // Sort in-memory by callDateTime asc
+        rawDockets.sort(function (a, b) {
+          var tA = a.callDateTime ? (a.callDateTime.toDate ? a.callDateTime.toDate().getTime() : new Date(a.callDateTime).getTime()) : 0;
+          var tB = b.callDateTime ? (b.callDateTime.toDate ? b.callDateTime.toDate().getTime() : new Date(b.callDateTime).getTime()) : 0;
+          return tA - tB;
         });
 
         // Also fetch live stats doc for today's compliance percentage

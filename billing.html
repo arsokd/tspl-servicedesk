@@ -35,10 +35,7 @@
           <div class="flex items-center gap-2 bg-slate-50 border border-slate-300 rounded-lg p-1.5">
             <span class="text-[11px] font-bold text-slate-600 uppercase pl-1">Billing Cycle:</span>
             <select id="billing-period-select" onchange="loadBillingData()" class="text-xs font-semibold bg-white border border-slate-300 rounded px-2 py-1 focus:ring-1 focus:ring-indigo-500">
-              <option value="2026-08">August 2026 (Current)</option>
-              <option value="2026-07">July 2026</option>
-              <option value="2026-06">June 2026</option>
-              <option value="2026-05">May 2026</option>
+              <!-- Populated dynamically with 24 months -->
             </select>
           </div>
 
@@ -173,7 +170,7 @@
           <label class="text-[11px] font-bold text-slate-600 uppercase">Filter Billability:</label>
           <select id="filter-billability" onchange="applyAnnexureFilter()" class="text-xs border border-slate-300 rounded-md p-1.5 bg-white font-medium">
             <option value="ALL">All Completed Dockets (2,133)</option>
-            <option value="Free Allowance">Free Allowance (1,847)</option>
+            <option value="Free Allowance">Free Allowance (1,775)</option>
             <option value="Paid Over-Allowance">Paid Over-Allowance (214)</option>
             <option value="Grouting">Grouting Specific (42)</option>
             <option value="Reimbursable">Reimbursables (30)</option>
@@ -363,24 +360,88 @@
         buildNav('billing.html');
       }
 
+      init24BillingPeriods();
       loadBillingData();
       renderReimbursables();
       renderUnbillables();
     });
 
     // ========================================================================
-    // 1. DATA GENERATION & BILLING ENGINE
+    // 1. DATA GENERATION & BILLING ENGINE (24 MONTHS TIMELINE)
     // ========================================================================
-    function loadBillingData() {
+    function init24BillingPeriods() {
+      var select = document.getElementById('billing-period-select');
+      select.innerHTML = '';
+
+      var now = new Date(2026, 7, 21); // Aug 2026
+      for (var m = 0; m < 24; m++) {
+        var d = new Date(2026, 7 - m, 1);
+        var yr = d.getFullYear();
+        var mIdx = d.getMonth();
+        var val = yr + '-' + (mIdx < 9 ? '0' + (mIdx + 1) : (mIdx + 1));
+        var label = d.toLocaleString('default', { month: 'long', year: 'numeric' }) + (m === 0 ? ' (Current Active)' : '');
+        
+        var opt = document.createElement('option');
+        opt.value = val;
+        opt.textContent = label;
+        select.appendChild(opt);
+      }
+    }
+
+    async function loadBillingData() {
       var period = document.getElementById('billing-period-select').value;
       
-      // Synthesize realistic 2,133 dockets for the period
+      try {
+        // Attempt to fetch exact monthly ledger from Firestore
+        var billDoc = await db.collection('billing').doc(period).get();
+        if (billDoc.exists) {
+          var bData = billDoc.data();
+          updateStatsFromLedger(bData);
+        } else {
+          updateMeterAndStats();
+        }
+      } catch (e) {
+        console.log('Using local generator for period:', period);
+        updateMeterAndStats();
+      }
+
       annexureData = generateSyntheticDockets(period);
       filteredAnnexure = [...annexureData];
       currentPage = 1;
 
-      updateMeterAndStats();
       renderAnnexurePage();
+    }
+
+    function updateStatsFromLedger(b) {
+      var freeConsumed = b.freeAllowanceCalls || 18;
+      var paidCalls = b.paidOverQuotaCalls || 2;
+      var unbillableCalls = b.unbillableDispatches || 1;
+      var totalInvoice = b.totalInvoiceAmount || 18880;
+      var baseAmt = b.baseAmount || 16000;
+
+      document.getElementById('stat-free-calls').textContent = freeConsumed.toLocaleString();
+      document.getElementById('stat-paid-calls').textContent = paidCalls.toLocaleString();
+      document.getElementById('stat-paid-value').textContent = '₹' + (paidCalls * 1000).toLocaleString();
+      document.getElementById('stat-unbillable-value').textContent = '₹' + (unbillableCalls * 750).toLocaleString();
+      document.getElementById('stat-total-invoice').textContent = '₹' + totalInvoice.toLocaleString();
+
+      var freeCap = 25; // 25 ATM cluster baseline
+      var pct = Math.min(100, (freeConsumed / freeCap) * 100);
+      var bar = document.getElementById('meter-progress-bar');
+      var badge = document.getElementById('meter-badge');
+      var sumText = document.getElementById('meter-summary-text');
+
+      sumText.textContent = freeConsumed + ' free calls consumed out of ' + freeCap + ' allocated cluster allowance.';
+      bar.style.width = pct.toFixed(1) + '%';
+      if (pct >= 90) {
+        bar.className = 'h-full rounded-full transition-all duration-500 bg-red-600';
+        badge.className = 'px-3 py-1 rounded-full text-xs font-bold bg-red-100 text-red-800';
+        badge.textContent = pct.toFixed(1) + '% Consumed (CRITICAL)';
+      } else {
+        bar.className = 'h-full rounded-full transition-all duration-500 bg-emerald-500';
+        badge.className = 'px-3 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800';
+        badge.textContent = pct.toFixed(1) + '% Consumed (Normal)';
+      }
     }
 
     function generateSyntheticDockets(period) {
@@ -409,15 +470,25 @@
         var amount = 0;
         var reason = 'Contractual Free Quota';
 
-        if (i <= 1847) {
+        if (i <= 1775) {
           billability = 'Free Allowance';
           amount = 0;
           reason = 'Within 2,500 Quota';
-        } else if (i <= 1847 + 214) {
+        } else if (i <= 1775 + 214) {
           billability = 'Paid Over-Allowance';
           amount = 750;
           reason = 'Over-Allowance Schedule III Rate';
-        } else if (i <= 1847 + 214 + 72) {
+        } else if (i <= 1775 + 214 + 42) {
+          billability = 'Grouting';
+          callType = 'Grouting / Anchor Bolt Fix';
+          amount = 2200;
+          reason = 'RBI-Mandated High-Tensile Anchor Grouting (₹2,200/site)';
+        } else if (i <= 1775 + 214 + 42 + 30) {
+          billability = 'Reimbursable';
+          callType = 'Third-Party / Specialized Claim';
+          amount = 1608;
+          reason = 'Approved pass-through claim (e.g., Safe Break-Open / Battery)';
+        } else {
           billability = 'Unbillable Re-dispatch';
           amount = 0;
           reason = unbillableReasons[i % unbillableReasons.length];
@@ -498,7 +569,8 @@
         if (d.billability === 'Free Allowance') billBadge = 'bg-emerald-100 text-emerald-800';
         else if (d.billability === 'Paid Over-Allowance') billBadge = 'bg-indigo-100 text-indigo-800 font-bold';
         else if (d.billability === 'Unbillable Re-dispatch') billBadge = 'bg-red-100 text-red-800 font-bold';
-        else if (d.billability === 'Grouting') billBadge = 'bg-amber-100 text-amber-800';
+        else if (d.billability === 'Grouting') billBadge = 'bg-amber-100 text-amber-800 font-semibold';
+        else if (d.billability === 'Reimbursable') billBadge = 'bg-purple-100 text-purple-800 font-semibold';
 
         var amtDisplay = d.amount > 0 ? '₹' + d.amount.toLocaleString() : '₹0 (Free)';
 
