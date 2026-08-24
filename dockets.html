@@ -284,16 +284,21 @@
         <!-- ATM Autocomplete Search Box -->
         <div class="relative bg-indigo-50/50 p-4 rounded-lg border border-indigo-100 space-y-3">
           <div>
-            <label class="block text-xs font-bold text-indigo-950 uppercase tracking-wider mb-1">
-              ATM Search & Autocomplete (Type &ge; 3 chars) *
-            </label>
+            <div class="flex items-center justify-between mb-1">
+              <label class="block text-xs font-bold text-indigo-950 uppercase tracking-wider">
+                ATM Search & Autocomplete *
+              </label>
+              <span class="text-[11px] text-slate-500 font-normal">Type &ge; 3 chars (e.g. <span class="font-mono font-semibold text-indigo-700">HDF</span>, <span class="font-mono font-semibold text-indigo-700">SBI</span>, <span class="font-mono font-semibold text-indigo-700">ICI</span>, <span class="font-mono font-semibold text-indigo-700">AXI</span>)</span>
+            </div>
+            
             <div class="relative">
               <input 
                 type="text" 
                 id="modal-atm-input" 
-                placeholder="Type ATM ID (e.g. HDFC0012)..." 
+                placeholder="Type ATM ID (e.g. HDFC00101, SBIN00201, ICIC00301)..." 
                 autocomplete="off"
                 oninput="handleAtmAutocomplete(this.value)"
+                onfocus="if(!this.value) handleAtmAutocomplete('ALL')"
                 class="w-full text-xs p-2.5 pr-8 border border-indigo-300 rounded-md focus:ring-2 focus:ring-indigo-500 uppercase font-mono bg-white"
               />
               <div id="atm-spinner" class="hidden absolute right-3 top-2.5">
@@ -303,6 +308,19 @@
 
             <!-- Autocomplete Results Dropdown -->
             <div id="atm-results-dropdown" class="hidden absolute left-4 right-4 z-30 bg-white border border-slate-300 rounded-md shadow-lg max-h-48 overflow-y-auto mt-1 divide-y divide-slate-100">
+            </div>
+
+            <!-- Quick Pick ATM Chips for 1-Click Selection -->
+            <div class="mt-2.5">
+              <span class="text-[10px] uppercase font-bold text-indigo-900 block mb-1">Or 1-Click Select Sample ATM:</span>
+              <div class="flex flex-wrap gap-1.5 text-[11px]">
+                <button type="button" onclick="quickSelectAtm('HDFC00101')" class="px-2 py-1 bg-white hover:bg-indigo-100 text-indigo-800 rounded border border-indigo-200 font-mono transition shadow-xs">HDFC00101 (Delhi)</button>
+                <button type="button" onclick="quickSelectAtm('SBIN00201')" class="px-2 py-1 bg-white hover:bg-indigo-100 text-indigo-800 rounded border border-indigo-200 font-mono transition shadow-xs">SBIN00201 (Gurugram)</button>
+                <button type="button" onclick="quickSelectAtm('ICIC00301')" class="px-2 py-1 bg-white hover:bg-indigo-100 text-indigo-800 rounded border border-indigo-200 font-mono transition shadow-xs">ICIC00301 (Noida)</button>
+                <button type="button" onclick="quickSelectAtm('AXIS00401')" class="px-2 py-1 bg-white hover:bg-indigo-100 text-indigo-800 rounded border border-indigo-200 font-mono transition shadow-xs">AXIS00401 (Karnal)</button>
+                <button type="button" onclick="quickSelectAtm('CANR00701')" class="px-2 py-1 bg-white hover:bg-indigo-100 text-indigo-800 rounded border border-indigo-200 font-mono transition shadow-xs">CANR00701 (Kochi)</button>
+                <button type="button" onclick="quickSelectAtm('HDFC00102')" class="px-2 py-1 bg-white hover:bg-indigo-100 text-indigo-800 rounded border border-indigo-200 font-mono transition shadow-xs">HDFC00102 (Bengaluru)</button>
+              </div>
             </div>
           </div>
 
@@ -812,28 +830,45 @@
     }
 
     var atmSearchTimeout = null;
+    async function quickSelectAtm(atmId) {
+      try {
+        var doc = await db.collection('atms').doc(atmId).get();
+        if (doc.exists) {
+          var atm = doc.data();
+          atm.id = doc.id;
+          selectAtmFromDropdown(atm);
+        } else {
+          // Fallback static lookup if firestore not yet loaded
+          handleAtmAutocomplete(atmId);
+        }
+      } catch (e) {
+        handleAtmAutocomplete(atmId);
+      }
+    }
+
     async function handleAtmAutocomplete(typed) {
       clearTimeout(atmSearchTimeout);
       var dropdown = document.getElementById('atm-results-dropdown');
       var spinner = document.getElementById('atm-spinner');
 
-      if (!typed || typed.trim().length < 3) {
+      if (!typed || (typed !== 'ALL' && typed.trim().length < 2)) {
         dropdown.classList.add('hidden');
         spinner.classList.add('hidden');
         return;
       }
 
-      var prefix = typed.trim().toUpperCase();
+      var prefix = typed === 'ALL' ? '' : typed.trim().toUpperCase();
       spinner.classList.remove('hidden');
 
       atmSearchTimeout = setTimeout(async function () {
         try {
-          // Efficient Firestore prefix query (handles 25,000+ records)
-          var snap = await db.collection('atms')
-            .where('atmId', '>=', prefix)
-            .where('atmId', '<=', prefix + '\uf8ff')
-            .limit(10)
-            .get();
+          var query = db.collection('atms');
+          if (prefix) {
+            query = query.where('atmId', '>=', prefix).where('atmId', '<=', prefix + '\uf8ff').limit(15);
+          } else {
+            query = query.limit(10);
+          }
+          var snap = await query.get();
 
           spinner.classList.add('hidden');
 
@@ -867,7 +902,7 @@
           console.error('ATM prefix search error:', err);
           spinner.classList.add('hidden');
         }
-      }, 250);
+      }, 200);
     }
 
     function selectAtmFromDropdown(atm) {
