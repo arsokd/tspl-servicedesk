@@ -42,10 +42,16 @@ export const CONTRACT_METADATA: ContractMetadata = {
     business: "Establishing, owning and operating network of Bunch Note Acceptors/Cash Recycler Machines (BNAs/CRMs), ATMs, POS terminals across India."
   },
   partyB: {
-    name: "SECURETRANS SERVICES INDIA PVT. LTD.",
-    shortName: "Service Provider",
+    // Confirmed against the actual TSPL/HPY master template (SERVICES_AGREEMENT_TEMPLATE_2026):
+    // the template itself leaves "Service Provider" as a blank to be filled from Schedule I
+    // (CIN, PAN, GSTIN, directors etc. are all blank fields in the template) — TSPL's real
+    // corporate name, from the company profile, is Tech ServiSphere Private Limited.
+    name: "TECH SERVISPHERE PRIVATE LIMITED",
+    shortName: "TSPL",
     scheduleRef: "Schedule 1"
   },
+  // effectiveDate below is a placeholder — the template leaves the commencement date blank
+  // ("___ day of _____ 2026"). Replace once the actual signed date is known.
   effectiveDate: "2026-08-01",
   version: "v2026.1-PROD",
   governingLaw: "Laws of India",

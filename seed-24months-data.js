@@ -371,7 +371,7 @@ async function run() {
 
             partsOps.push({
               type: 'set',
-              ref: doc(db, 'parts_indents', indentNo),
+              ref: doc(db, 'partsIndent', indentNo),
               data: {
                 indentNo: indentNo,
                 docketNo: docketNo,
@@ -427,7 +427,7 @@ async function run() {
             const liveIndentNo = `IND-26${String(globalIndentSeq).padStart(4, '0')}`;
             partsOps.push({
               type: 'set',
-              ref: doc(db, 'parts_indents', liveIndentNo),
+              ref: doc(db, 'partsIndent', liveIndentNo),
               data: {
                 indentNo: liveIndentNo,
                 docketNo: docketNo,

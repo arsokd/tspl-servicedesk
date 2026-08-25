@@ -14,6 +14,19 @@
   <!-- SheetJS CDN for HPY Open Call XLSX export -->
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script src="firebase-config.js"></script>
+  <!-- PWA: installable app shell -->
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#0f233d">
+  <link rel="apple-touch-icon" href="assets/icon-180.png">
+  <script>
+    if ("serviceWorker" in navigator) {
+      window.addEventListener("load", function () {
+        navigator.serviceWorker.register("sw.js").catch(function (err) {
+          console.warn("[PWA] Service worker registration failed:", err);
+        });
+      });
+    }
+  </script>
   <script src="auth-guard.js"></script>
 </head>
 <body class="bg-slate-100 min-h-screen flex flex-col font-sans antialiased text-slate-800">
@@ -1179,9 +1192,14 @@
         };
         statsIncrement[depKey] = firebase.firestore.FieldValue.increment(1);
 
-        batch.update(db.collection('stats').doc('live'), statsIncrement);
+        // NOTE: .set(..., {merge:true}) instead of .update() — .update() throws
+        // "No document to update" and fails this ENTIRE batch (the docket would
+        // never get created) if the stats/live or stats/ro_<region> doc doesn't
+        // already exist yet, e.g. on a fresh Firebase project before setup-data.html
+        // has been run once, or the very first docket ever logged for a brand new RO.
+        batch.set(db.collection('stats').doc('live'), statsIncrement, { merge: true });
         if (selectedAtmObject.ro) {
-          batch.update(db.collection('stats').doc('ro_' + selectedAtmObject.ro.toLowerCase()), statsIncrement);
+          batch.set(db.collection('stats').doc('ro_' + selectedAtmObject.ro.toLowerCase()), statsIncrement, { merge: true });
         }
 
         await batch.commit();
