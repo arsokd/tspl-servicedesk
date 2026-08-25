@@ -12,6 +12,19 @@
   <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-storage-compat.js"></script>
   <script src="firebase-config.js"></script>
+  <!-- PWA: installable app shell -->
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#0f233d">
+  <link rel="apple-touch-icon" href="assets/icon-180.png">
+  <script>
+    if ("serviceWorker" in navigator) {
+      window.addEventListener("load", function () {
+        navigator.serviceWorker.register("sw.js").catch(function (err) {
+          console.warn("[PWA] Service worker registration failed:", err);
+        });
+      });
+    }
+  </script>
   <script src="auth-guard.js"></script>
 </head>
 <body class="bg-slate-100 min-h-screen flex flex-col font-sans antialiased text-slate-800">
@@ -344,23 +357,40 @@
     });
 
     // ========================================================================
-    // 1. PRIMARY METRICS LOAD (ONE DOC: stats/{statsDocId()})
+    // 1. PRIMARY METRICS LOAD — computed LIVE from the dockets/slaBreaches
+    // collections, not from the old stats/{docId} pre-aggregate doc.
+    //
+    // WHY: stats/{docId} was written inconsistently (three different, mutually
+    // incompatible increment schemes across dockets.html/docket-work.html — see
+    // the TSPL ServiceDesk audit report), never decremented on docket close,
+    // and never wrote the three fields this screen actually needs
+    // (closedToday / slaBreachedToday / slaAtRisk) at all. Rather than patch a
+    // fourth inconsistent increment scheme on top, this computes every number
+    // directly from the source-of-truth collections, the same way dockets.html
+    // and reports.html already do for their own listings (ageingBucketDays(),
+    // slaStatus() — both from firebase-config.js — are reused here so the
+    // numbers here always agree with what those screens show).
+    //
+    // KNOWN SIMPLIFICATION: closedToday and slaBreachedToday are intentionally
+    // NOT scoped to the viewer's region (ro) below. Scoping them would require
+    // a Firestore composite index (equality-on-ro + range-on-closedAt/loggedAt)
+    // that isn't deployed yet — see firestore.indexes.json (new file) and the
+    // roadmap doc. Until those indexes are deployed, a Regional Manager will
+    // see the NATIONAL closed-today/breach count in the compliance-% strip,
+    // while the open-dockets breakdown below it IS correctly scoped to their
+    // region (that only needs a plain equality filter, no composite index).
+    // Firestore security rules already permit rm/regionalhead/unithead to read
+    // nationwide docket data, so this is a display simplification, not a
+    // security gap.
     // ========================================================================
     async function loadDashboardData() {
       var btn = document.getElementById('btn-refresh');
       showLoader(btn, 'Syncing...');
 
-      var docId = statsDocId ? statsDocId() : 'live';
-
       try {
-        var snap = await db.collection('stats').doc(docId).get();
-        if (!snap.exists) {
-          document.getElementById('stats-missing-alert').classList.remove('hidden');
-        } else {
-          document.getElementById('stats-missing-alert').classList.add('hidden');
-          var s = snap.data();
-          renderStatsData(s);
-        }
+        var s = await computeLiveStats();
+        document.getElementById('stats-missing-alert').classList.add('hidden');
+        renderStatsData(s);
 
         // Parallel small capped queries
         await Promise.all([
@@ -371,10 +401,73 @@
 
       } catch (err) {
         console.error('Failed to load dashboard metrics:', err);
+        document.getElementById('stats-missing-alert').classList.remove('hidden');
         toast('Error loading dashboard: ' + err.message, 'error');
       } finally {
         hideLoader(btn);
       }
+    }
+
+    async function computeLiveStats() {
+      var s = {
+        open: 0,
+        age_a: 0, age_b: 0, age_c: 0, age_d: 0, age_e: 0, age_f: 0, age_g: 0,
+        slaAtRisk: 0
+      };
+
+      // 1. Open dockets, scoped to the viewer (bandwidth optimization only —
+      // a single extra equality filter on top of scopedDocketQuery()'s own
+      // scoping needs no composite index).
+      var openSnap;
+      try {
+        openSnap = await scopedDocketQuery().where('isClosed', '==', false).get();
+      } catch (e) {
+        console.warn('Scoped open-docket query failed, falling back to unscoped:', e);
+        openSnap = await db.collection('dockets').where('isClosed', '==', false).get();
+      }
+
+      openSnap.forEach(function (doc) {
+        var d = doc.data();
+        s.open++;
+
+        var depLabel = d.currentDependency || 'Engineer Dependency';
+        var depKey = 'dep_' + depLabel.replace(/\s+/g, '_');
+        s[depKey] = (s[depKey] || 0) + 1;
+
+        var hrs = ageingHours(d.callDateTime);
+        var ageBand = ageingBucketDays(hrs); // e.g. "a) 0-2days" — always computed live, never from a possibly-stale stored field
+        var ageKey = 'age_' + ageBand.charAt(0);
+        s[ageKey] = (s[ageKey] || 0) + 1;
+
+        var sla = slaStatus(d);
+        if (sla.ragColour === 'red' || sla.ragColour === 'breach') {
+          s.slaAtRisk++;
+        }
+      });
+
+      // 2. Today's closures and breaches — see KNOWN SIMPLIFICATION note above.
+      var startOfToday = new Date();
+      startOfToday.setHours(0, 0, 0, 0);
+      var startTs = firebase.firestore.Timestamp.fromDate(startOfToday);
+
+      try {
+        var closedTodaySnap = await db.collection('dockets').where('closedAt', '>=', startTs).get();
+        s.closedToday = closedTodaySnap.size;
+      } catch (e) {
+        console.warn('closedToday query failed:', e);
+        s.closedToday = 0;
+      }
+
+      try {
+        var breachSnap = await db.collection('slaBreaches').where('loggedAt', '>=', startTs).get();
+        s.slaBreachedToday = breachSnap.size;
+      } catch (e) {
+        console.warn('slaBreachedToday query failed:', e);
+        s.slaBreachedToday = 0;
+      }
+
+      s.lastRebuiltAt = new Date();
+      return s;
     }
 
     async function load24MDashboardSummary() {

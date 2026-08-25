@@ -1,0 +1,62 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "dockets",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "bank", "order": "ASCENDING" },
+        { "fieldPath": "callDateTime", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "dockets",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "bank", "order": "ASCENDING" },
+        { "fieldPath": "isClosed", "order": "ASCENDING" },
+        { "fieldPath": "callDateTime", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "dockets",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "atmId", "order": "ASCENDING" },
+        { "fieldPath": "callDateTime", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "partsIndent",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "partsIndent",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "ro", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "dockets",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "ro", "order": "ASCENDING" },
+        { "fieldPath": "callDateTime", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "dockets",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "bank", "order": "ASCENDING" },
+        { "fieldPath": "callDateTime", "order": "ASCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}

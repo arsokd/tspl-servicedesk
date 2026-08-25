@@ -42,13 +42,25 @@ service cloud.firestore {
     }
 
     match /counters/{counterId} {
-      // Plain English: Authenticated staff can increment docket counters during atomic creation transactions.
-      allow read, write: if isAuthenticated();
+      // Plain English: Docket/indent sequence counters can be read by all staff, but only incremented by
+      // roles that actually create dockets/indents (transactions) — NOT bank clients.
+      // [USES get() LOOKUP]
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() && (
+        isAdmin() ||
+        getUserProfile().role in ['callcentre', 'techsupport', 'rm', 'regionalhead', 'unithead', 'engineer']
+      );
     }
 
     match /stats/{statId} {
-      // Plain English: Dashboard aggregates can be read by all authenticated staff and updated via FieldValue.increment().
-      allow read, write: if isAuthenticated();
+      // Plain English: Dashboard aggregates can be read by all authenticated staff. Only operational roles
+      // (not bank clients) can bump the pre-aggregated counters via FieldValue.increment().
+      // [USES get() LOOKUP]
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() && (
+        isAdmin() ||
+        getUserProfile().role in ['callcentre', 'techsupport', 'rm', 'regionalhead', 'unithead', 'engineer']
+      );
     }
 
     // --------------------------------------------------------------------------
@@ -113,8 +125,21 @@ service cloud.firestore {
       allow delete: if isAdmin();
 
       match /activity/{actId} {
+        // Plain English: Activity log entries are part of the docket's audit trail — only
+        // whoever is allowed to touch the parent docket (staff roles, or the engineer
+        // assigned to it) may append entries. Bank clients and unrelated engineers, who can
+        // read the parent docket, must NOT be able to write into its audit trail.
+        // [USES get() LOOKUP]: Evaluates the PARENT docket doc, not this subcollection doc.
         allow read: if isAuthenticated();
-        allow create, write: if isAuthenticated();
+        allow create, update: if isAuthenticated() && (
+          isAdmin() ||
+          getUserProfile().role in ['callcentre', 'techsupport', 'rm', 'regionalhead', 'unithead'] ||
+          (getUserProfile().role == 'engineer' && (
+            get(/databases/$(database)/documents/dockets/$(docketId)).data.assignedEngineerId == request.auth.uid ||
+            get(/databases/$(database)/documents/dockets/$(docketId)).data.engineerId == request.auth.uid
+          ))
+        );
+        allow delete: if isAdmin();
       }
     }
 
@@ -156,9 +181,16 @@ service cloud.firestore {
     // Records can be CREATED, but CAN NEVER BE MODIFIED OR DELETED by anyone.
     // --------------------------------------------------------------------------
     match /docketActivity/{activityId} {
-      // Plain English: Immutable audit log. Anyone authenticated can read or create log items; UPDATE AND DELETE ARE PERMANENTLY FORBIDDEN.
+      // Plain English: Immutable audit log written by staff/engineers as they work a docket
+      // (dispatch, docket-work, parts, live-map). Bank clients never write here — the portal
+      // is read-only — so client accounts are excluded to stop a client forging entries
+      // against a docket that isn't theirs. UPDATE AND DELETE ARE PERMANENTLY FORBIDDEN.
+      // [USES get() LOOKUP]
       allow read: if isAuthenticated();
-      allow create: if isAuthenticated();
+      allow create: if isAuthenticated() && (
+        isAdmin() ||
+        getUserProfile().role in ['callcentre', 'techsupport', 'rm', 'regionalhead', 'unithead', 'engineer']
+      );
       allow update, delete: if false; // [IMMUTABLE AUDIT TRAIL — NO OVERWRITES / DELETIONS ALLOWED]
     }
 
@@ -240,6 +272,29 @@ service cloud.firestore {
       // Plain English: Licences and Insurance policies are readable by authenticated staff; writable ONLY by Admins.
       allow read: if isAuthenticated();
       allow write: if isAdmin();
+    }
+
+    // --------------------------------------------------------------------------
+    // 6B. COMPLIANCE MODULE (compliance.html)
+    // Was previously UNCOVERED by these rules — every read/write from compliance.html
+    // would have been silently denied in production (Firestore denies anything not
+    // explicitly matched). Added to mirror the governance rules above.
+    // --------------------------------------------------------------------------
+    match /compliance/{document=**} {
+      // Plain English: Security incidents, CAPA items and statutory document summaries surfaced on the
+      // Compliance module are readable by Admins and senior management; writable only by Admins.
+      // [USES get() LOOKUP]
+      allow read: if isAuthenticated() && (isAdmin() || getUserProfile().role in ['regionalhead', 'unithead']);
+      allow write: if isAdmin();
+    }
+
+    // --------------------------------------------------------------------------
+    // 7. DEFAULT DENY
+    // Firestore denies anything not explicitly matched above by default, but this
+    // explicit rule documents that intent and blocks any accidental top-level access.
+    // --------------------------------------------------------------------------
+    match /{document=**} {
+      allow read, write: if false;
     }
   }
 }

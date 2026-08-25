@@ -12,6 +12,19 @@
   <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-storage-compat.js"></script>
   <script src="firebase-config.js"></script>
+  <!-- PWA: installable app shell -->
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#0f233d">
+  <link rel="apple-touch-icon" href="assets/icon-180.png">
+  <script>
+    if ("serviceWorker" in navigator) {
+      window.addEventListener("load", function () {
+        navigator.serviceWorker.register("sw.js").catch(function (err) {
+          console.warn("[PWA] Service worker registration failed:", err);
+        });
+      });
+    }
+  </script>
   <script src="auth-guard.js"></script>
 </head>
 <body class="bg-slate-100 min-h-screen flex flex-col font-sans antialiased text-slate-800">
@@ -833,7 +846,7 @@
                 var indNo = 'IND-' + yr.toString().slice(2) + globalIndentSeq;
                 partsOps.push({
                   type: 'set',
-                  ref: db.collection('parts_indents').doc(indNo),
+                  ref: db.collection('partsIndent').doc(indNo),
                   data: {
                     indentNo: indNo, docketNo: docketNo, atmId: atm.atmId, bank: atm.bank, ro: atm.ro,
                     partName: pObj.name, partCode: pObj.code, unitCost: pObj.cost, qty: 1, priority: 'High', status: 'Installed',
@@ -862,7 +875,7 @@
                 var liveIndNo = 'IND-26' + globalIndentSeq;
                 partsOps.push({
                   type: 'set',
-                  ref: db.collection('parts_indents').doc(liveIndNo),
+                  ref: db.collection('partsIndent').doc(liveIndNo),
                   data: {
                     indentNo: liveIndNo, docketNo: docketNo, atmId: atm.atmId, bank: atm.bank, ro: atm.ro,
                     partName: pObj.name, partCode: pObj.code, unitCost: pObj.cost, qty: 1, priority: 'High', status: 'Dispatched',

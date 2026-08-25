@@ -1,0 +1,66 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    // --------------------------------------------------------------------------
+    // TSPL ServiceDesk — Firebase Storage Security Rules
+    // NOTE: This file did not exist in the AI Studio export. Today only the BGV
+    // report upload (masters-users.html -> bgv_reports/...) actually uses
+    // Firebase Storage — every other photo capture in the app (arrival photo,
+    // resolution photo, reimbursement bill photo, customer signature in
+    // docket-work.html) is currently base64-encoded and written straight into
+    // the Firestore document instead. See the accompanying assessment report,
+    // section "Photos stored as base64 in Firestore", for why that should move
+    // to Storage (path conventions below) before the 500-engineer rollout.
+    // Until that migration happens, these extra path rules are simply ready
+    // and waiting; they do nothing to the current base64 flow.
+    // Deploy with `firebase deploy --only storage` or paste into
+    // Firebase Console > Storage > Rules.
+    // --------------------------------------------------------------------------
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isImageOrPdf() {
+      return request.resource.contentType.matches('image/.*') ||
+             request.resource.contentType == 'application/pdf';
+    }
+
+    // Docket work photos: before/after site photos, part photos, OTP proof shots.
+    // Path convention used by docket-work.html: docket_photos/{docketId}/{fileName}
+    match /docket_photos/{docketId}/{fileName} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() && isImageOrPdf() && request.resource.size < 8 * 1024 * 1024;
+    }
+
+    // Engineer attendance / on-duty selfies.
+    match /selfies/{uid}/{fileName} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() && request.auth.uid == uid && isImageOrPdf() && request.resource.size < 3 * 1024 * 1024;
+    }
+
+    // Schedule IV Background Verification reports — sensitive, admin-managed only.
+    match /bgv_reports/{fileName} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() && isImageOrPdf() && request.resource.size < 10 * 1024 * 1024;
+    }
+
+    // Compliance module: incident evidence, licences, insurance certificates.
+    match /compliance_docs/{fileName} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() && isImageOrPdf() && request.resource.size < 10 * 1024 * 1024;
+    }
+
+    // Billing module: penalty dispute claims, invoice backup.
+    match /billing_claims/{fileName} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() && isImageOrPdf() && request.resource.size < 10 * 1024 * 1024;
+    }
+
+    // Default deny for anything not explicitly matched above.
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}
