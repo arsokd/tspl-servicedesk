@@ -659,6 +659,99 @@ function isNativeApp() {
   return typeof window !== 'undefined' && Boolean(window.TSPLTracker);
 }
 
+// ============================================================================
+// SECTION 13B: AUTOMATIC ARRIVAL / SITE-EXIT GEOFENCE
+// Lets docket-work.html arm a "tell me the moment the engineer crosses N
+// metres of this ATM" watch on top of the existing live GPS stream, instead of
+// requiring the engineer to notice they've arrived and tap a button. Every
+// position handlePosition() receives while a target is armed is checked
+// against it. Two directions:
+//   'enter' — fires the moment distance drops to <= radius (site arrival).
+//   'exit'  — fires the moment distance rises past radius + EXIT_HYSTERESIS_M
+//             (engineer has left the site before the docket was closed).
+// A fired watch disarms itself immediately, so it can't fire twice; whoever
+// registered it re-arms the opposite direction if it wants continuous
+// presence tracking (docket-work.html toggles enter/exit so ops keeps
+// visibility on "on site" vs "left site" until the docket is closed).
+//
+// Known limits, not silently hidden: this only runs while the tab/PWA is open
+// in the foreground (the shared _trackingState above has the same limit) — a
+// backgrounded browser tab on a phone can be suspended by the OS. The Method
+// A (manual GPS) and Method B (photo) confirmations in docket-work.html stay
+// in place precisely as the fallback for arrival, and for indoor GPS drift
+// that never resolves to inside the radius. Reliable always-on background
+// capture needs a native wrapper around this PWA (window.TSPLTracker already
+// exists as that integration point) — not something this can promise today.
+// ============================================================================
+
+var _geofenceTarget = null;
+var GEOFENCE_EXIT_HYSTERESIS_M = 20; // extra margin on exit so GPS jitter right at the boundary can't flap enter/exit repeatedly
+
+function registerGeofenceWatch(config) {
+  if (!config || typeof config.onTrigger !== 'function' || !config.atmLat || !config.atmLng) {
+    console.warn('[Geofence] registerGeofenceWatch called with incomplete config; ignored.');
+    return;
+  }
+  _geofenceTarget = {
+    docketId: config.docketId || null,
+    atmLat: config.atmLat,
+    atmLng: config.atmLng,
+    radiusMeters: config.radiusMeters || 50,
+    direction: config.direction === 'exit' ? 'exit' : 'enter',
+    onTrigger: config.onTrigger
+  };
+}
+
+// Back-compat alias for the arrival-only API this replaced.
+function registerArrivalGeofence(config) {
+  registerGeofenceWatch({
+    docketId: config.docketId,
+    atmLat: config.atmLat,
+    atmLng: config.atmLng,
+    radiusMeters: config.radiusMeters,
+    direction: 'enter',
+    onTrigger: config.onArrival
+  });
+}
+
+function clearArrivalGeofence() {
+  _geofenceTarget = null;
+}
+var clearGeofenceWatch = clearArrivalGeofence;
+
+/**
+ * Checks one GPS fix against the currently armed geofence target, if any.
+ * Fires at most once per registerGeofenceWatch() call (disarms itself
+ * immediately, before the async onTrigger callback even runs, so a second
+ * fix arriving while onTrigger's Firestore write is still in flight can't
+ * trigger it again).
+ */
+function checkArrivalGeofence(lat, lng, accuracy) {
+  if (!_geofenceTarget) return;
+
+  // Accuracy sanity gate: a very poor fix (e.g. >100m, common right after GPS
+  // cold-start or deep indoors) could sit "inside" a 50m radius by coincidence
+  // of error rather than by actually being there. Let a fix that imprecise
+  // fall through to the manual/photo confirmation instead of auto-firing.
+  if (accuracy && accuracy > 100) return;
+
+  var distMeters = haversine(lat, lng, _geofenceTarget.atmLat, _geofenceTarget.atmLng);
+  var exitThreshold = _geofenceTarget.radiusMeters + GEOFENCE_EXIT_HYSTERESIS_M;
+  var triggered = _geofenceTarget.direction === 'exit'
+    ? distMeters > exitThreshold
+    : distMeters <= _geofenceTarget.radiusMeters;
+
+  if (triggered) {
+    var target = _geofenceTarget;
+    _geofenceTarget = null; // disarm before calling out, so this can't double-fire
+    try {
+      target.onTrigger({ lat: lat, lng: lng, accuracy: Math.round(accuracy || 0) }, Math.round(distMeters));
+    } catch (err) {
+      console.error('[Geofence] onTrigger callback threw:', err);
+    }
+  }
+}
+
 async function requestWakeLock() {
   if ('wakeLock' in navigator) {
     try {
@@ -741,6 +834,10 @@ async function handlePosition(pos) {
   var accuracy = coords.accuracy || 0;
   var speed = coords.speed || 0;
   var now = Date.now();
+
+  // Runs on every fix, independent of the send-throttling below — arrival needs to be
+  // caught the moment it happens, not whenever the next RTDB broadcast happens to fire.
+  checkArrivalGeofence(lat, lng, accuracy);
 
   var distanceThreshold = _trackingState.activeMode === 'travelling' ? 30 : 100;
   var timeThreshold = 30 * 1000; // 30 seconds
@@ -847,6 +944,7 @@ function setTrackingMode(mode) {
 
 function stopTracking() {
   _trackingState.activeMode = 'off';
+  _geofenceTarget = null; // e.g. an engineer punching out mid-travel shouldn't leave a stale watch armed
 
   if (isNativeApp()) {
     window.TSPLTracker.stop();
