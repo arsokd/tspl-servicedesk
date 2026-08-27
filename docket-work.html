@@ -971,6 +971,29 @@
               setTrackingMode('travelling');
             }
 
+            // Arm automatic arrival detection: while travelling, every GPS fix is checked
+            // against this ATM's geofence in firebase-config.js's handlePosition(). The
+            // moment the engineer's live position lands inside the radius, arrival is
+            // recorded on its own — no tap needed. This only runs while this page (or the
+            // native wrapper, once one exists) stays open in the foreground; see the
+            // "Method A" GPS button and "Method B" photo option below as the fallback for
+            // when the engineer's screen is off or GPS is too weak indoors to trigger it.
+            if (typeof registerArrivalGeofence === 'function') {
+              var geofenceAtmLat = (currentAtm && currentAtm.lat) || (currentDocket.atmCoords && currentDocket.atmCoords.lat);
+              var geofenceAtmLng = (currentAtm && currentAtm.lng) || (currentDocket.atmCoords && currentDocket.atmCoords.lng);
+              if (geofenceAtmLat && geofenceAtmLng) {
+                registerArrivalGeofence({
+                  docketId: currentDocketId,
+                  atmLat: geofenceAtmLat,
+                  atmLng: geofenceAtmLng,
+                  radiusMeters: (currentAtm && currentAtm.geofenceRadius) || 50,
+                  onArrival: function (autoCoords, autoDistMeters) {
+                    recordArrival(autoCoords, autoDistMeters, 'auto-gps');
+                  }
+                });
+              }
+            }
+
             currentDocket.travelStartedAt = new Date();
             currentDocket.status = 'Dispatched Engineer';
             determineActiveStep();
@@ -994,7 +1017,9 @@
     // STEP 3: REACH SITE (Method A GPS & Method B Photo)
     // ------------------------------------------------------------------------
     function initStep3Geofence() {
-      var targetRadius = (currentAtm && currentAtm.geofenceRadius) || 150;
+      // Default matches the 50m default new ATM sites get in masters-atm.html; only ATMs
+      // added before that field existed fall back to this.
+      var targetRadius = (currentAtm && currentAtm.geofenceRadius) || 50;
       document.getElementById('step3-geofence-radius').textContent = targetRadius + ' metres';
 
       var atmLat = (currentAtm && currentAtm.lat) || (currentDocket.atmCoords && currentDocket.atmCoords.lat);
@@ -1008,7 +1033,11 @@
 
       navigator.geolocation.getCurrentPosition(
         function (pos) {
-          var distMeters = Math.round(haversineDistance(pos.coords.latitude, pos.coords.longitude, atmLat, atmLng));
+          // NOTE: this used to call a non-existent haversineDistance() and threw a
+          // ReferenceError every time — the on-screen distance readout never worked.
+          // haversine() (lat1,lng1,lat2,lng2 -> metres) is the one actually defined,
+          // in firebase-config.js.
+          var distMeters = Math.round(haversine(pos.coords.latitude, pos.coords.longitude, atmLat, atmLng));
           document.getElementById('step3-current-distance').textContent = distMeters + ' metres';
 
           if (distMeters > targetRadius && distMeters <= 500) {
@@ -1032,11 +1061,11 @@
         async function (pos) {
           var atmLat = (currentAtm && currentAtm.lat) || (currentDocket.atmCoords && currentDocket.atmCoords.lat);
           var atmLng = (currentAtm && currentAtm.lng) || (currentDocket.atmCoords && currentDocket.atmCoords.lng);
-          var targetRadius = (currentAtm && currentAtm.geofenceRadius) || 150;
+          var targetRadius = (currentAtm && currentAtm.geofenceRadius) || 50;
 
           var distMeters = 0;
           if (atmLat && atmLng) {
-            distMeters = Math.round(haversineDistance(pos.coords.latitude, pos.coords.longitude, atmLat, atmLng));
+            distMeters = Math.round(haversine(pos.coords.latitude, pos.coords.longitude, atmLat, atmLng));
           }
 
           var coords = {
@@ -1077,6 +1106,16 @@
     }
 
     async function recordArrival(coords, distMeters, method, photoBase64) {
+      // Guard against double-recording: the automatic geofence trigger and a manual tap
+      // could both fire close together (e.g. the engineer taps "Confirm Arrival" right as
+      // the auto-detect callback is already mid-flight). Whichever gets here first wins;
+      // the second call is a no-op instead of overwriting reachedAt or double-logging.
+      if (currentDocket && currentDocket.reachedAt) {
+        if (typeof clearArrivalGeofence === 'function') clearArrivalGeofence();
+        return;
+      }
+      if (typeof clearArrivalGeofence === 'function') clearArrivalGeofence();
+
       try {
         var now = new Date();
         var batch = db.batch();
