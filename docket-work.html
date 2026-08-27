@@ -1106,15 +1106,33 @@
     }
 
     async function recordArrival(coords, distMeters, method, photoBase64) {
-      // Guard against double-recording: the automatic geofence trigger and a manual tap
-      // could both fire close together (e.g. the engineer taps "Confirm Arrival" right as
-      // the auto-detect callback is already mid-flight). Whichever gets here first wins;
-      // the second call is a no-op instead of overwriting reachedAt or double-logging.
+      // If arrival is already recorded (the automatic geofence got there first), a
+      // subsequent manual tap here is TSPL's required manual confirmation, not a
+      // second recording. Policy: the auto-detect locks in the SLA-stopping timestamp
+      // instantly, but the engineer must still manually acknowledge before the
+      // workflow moves on — so log a lightweight confirmation note and advance the
+      // wizard, without touching reachedAt, the SLA breach record, or the stats
+      // counters a second time.
       if (currentDocket && currentDocket.reachedAt) {
         if (typeof clearArrivalGeofence === 'function') clearArrivalGeofence();
+        if (method !== 'auto-gps') {
+          try {
+            await db.collection('docketActivity').add({
+              docketId: currentDocketId,
+              timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+              action: 'Arrival Manually Confirmed',
+              performedBy: localStorage.getItem('userName') || 'Field Engineer',
+              role: 'engineer',
+              notes: 'Engineer manually confirmed arrival (site entry was already auto-detected by GPS).'
+            });
+          } catch (e) {
+            console.warn('Manual arrival acknowledgement log failed:', e);
+          }
+          determineActiveStep();
+          toast('Arrival confirmed. Proceeding.', 'success');
+        }
         return;
       }
-      if (typeof clearArrivalGeofence === 'function') clearArrivalGeofence();
 
       try {
         var now = new Date();
@@ -1182,7 +1200,20 @@
 
         currentDocket.reachedAt = now;
         currentDocket.status = 'Engineer Reached';
-        determineActiveStep();
+        currentDocket.currentlyOnSite = true;
+
+        // From here, watch for the engineer leaving the ATM premises before the
+        // docket is resolved — ops gets told either way (left / returned).
+        armSiteExitWatch();
+
+        if (method === 'auto-gps') {
+          // Per policy: auto-detection locks in the timestamp, but the engineer must
+          // still manually tap Confirm below before the workflow proceeds — so leave
+          // Step 3 visible/active instead of silently jumping to Step 4.
+          toast('Arrival auto-detected via GPS at ' + fmtDateTime(now) + '. Tap "Confirm Arrival" below to continue.', 'success');
+        } else {
+          determineActiveStep();
+        }
 
         if (responseMet) {
           toast('Response MET with ' + deltaMins + ' minutes to spare!', 'success');
@@ -1193,6 +1224,100 @@
         console.error('Record arrival error:', err);
         toast('Failed to record arrival: ' + err.message, 'error');
       }
+    }
+
+    // ------------------------------------------------------------------------
+    // SITE PRESENCE WATCH: tells ops (via the immutable activity log) if an
+    // engineer moves off the ATM premises before the docket is marked Resolved.
+    // Toggles enter/exit so it keeps reporting "left" / "returned" for as long as
+    // the docket stays open; cleared once the docket is Resolved (see
+    // executeMarkAsResolved) since leaving site at that point is expected.
+    // Same foreground-only limitation as the arrival geofence above.
+    // ------------------------------------------------------------------------
+    function siteGeofenceCoords() {
+      var atmLat = (currentAtm && currentAtm.lat) || (currentDocket.atmCoords && currentDocket.atmCoords.lat);
+      var atmLng = (currentAtm && currentAtm.lng) || (currentDocket.atmCoords && currentDocket.atmCoords.lng);
+      var radius = (currentAtm && currentAtm.geofenceRadius) || 50;
+      if (!atmLat || !atmLng) return null;
+      return { atmLat: atmLat, atmLng: atmLng, radius: radius };
+    }
+
+    function armSiteExitWatch() {
+      if (typeof registerGeofenceWatch !== 'function') return;
+      var geo = siteGeofenceCoords();
+      if (!geo) return;
+      registerGeofenceWatch({
+        docketId: currentDocketId,
+        atmLat: geo.atmLat,
+        atmLng: geo.atmLng,
+        radiusMeters: geo.radius,
+        direction: 'exit',
+        onTrigger: handleSiteExit
+      });
+    }
+
+    function armSiteReturnWatch() {
+      if (typeof registerGeofenceWatch !== 'function') return;
+      var geo = siteGeofenceCoords();
+      if (!geo) return;
+      registerGeofenceWatch({
+        docketId: currentDocketId,
+        atmLat: geo.atmLat,
+        atmLng: geo.atmLng,
+        radiusMeters: geo.radius,
+        direction: 'enter',
+        onTrigger: handleSiteReturn
+      });
+    }
+
+    async function handleSiteExit(coords, distMeters) {
+      if (!currentDocket || currentDocket.status === 'Resolved' || currentDocket.status === 'Closed') return;
+      try {
+        var batch = db.batch();
+        batch.update(db.collection('dockets').doc(currentDocketId), {
+          currentlyOnSite: false,
+          leftSiteAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+        batch.set(db.collection('docketActivity').doc(), {
+          docketId: currentDocketId,
+          timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+          action: 'Engineer Left Site',
+          performedBy: localStorage.getItem('userName') || 'Field Engineer',
+          role: 'engineer',
+          notes: 'GPS shows the engineer moved ' + distMeters + 'm from the ATM before the docket was closed.'
+        });
+        await batch.commit();
+        currentDocket.currentlyOnSite = false;
+        toast('You have moved away from the ATM. If the job is not complete, please return to site.', 'warning');
+      } catch (e) {
+        console.warn('Site-exit logging failed:', e);
+      }
+      armSiteReturnWatch();
+    }
+
+    async function handleSiteReturn(coords, distMeters) {
+      if (!currentDocket || currentDocket.status === 'Resolved' || currentDocket.status === 'Closed') return;
+      try {
+        var batch = db.batch();
+        batch.update(db.collection('dockets').doc(currentDocketId), {
+          currentlyOnSite: true,
+          leftSiteAt: firebase.firestore.FieldValue.delete()
+        });
+        batch.set(db.collection('docketActivity').doc(), {
+          docketId: currentDocketId,
+          timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+          action: 'Engineer Returned To Site',
+          performedBy: localStorage.getItem('userName') || 'Field Engineer',
+          role: 'engineer',
+          notes: 'GPS shows the engineer back within ' + distMeters + 'm of the ATM.'
+        });
+        await batch.commit();
+        currentDocket.currentlyOnSite = true;
+        toast('Welcome back — you are within the ATM site radius again.', 'success');
+      } catch (e) {
+        console.warn('Site-return logging failed:', e);
+      }
+      armSiteExitWatch();
     }
 
     async function captureAtmMissingCoords() {
@@ -1627,6 +1752,10 @@
         batch.set(statsRef, { resolvedCalls: firebase.firestore.FieldValue.increment(1) }, { merge: true });
 
         await batch.commit();
+
+        // Work is done — the engineer leaving site from here on is expected, not a
+        // "left before finishing" event, so stop watching for site exit/return.
+        if (typeof clearGeofenceWatch === 'function') clearGeofenceWatch();
 
         currentDocket.resolvedAt = now;
         currentDocket.workDoneSummary = workSummary;

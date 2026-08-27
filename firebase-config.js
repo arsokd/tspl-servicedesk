@@ -660,29 +660,36 @@ function isNativeApp() {
 }
 
 // ============================================================================
-// SECTION 13B: AUTOMATIC ARRIVAL GEOFENCE
-// Lets docket-work.html arm a "tell me the moment the engineer is within N
+// SECTION 13B: AUTOMATIC ARRIVAL / SITE-EXIT GEOFENCE
+// Lets docket-work.html arm a "tell me the moment the engineer crosses N
 // metres of this ATM" watch on top of the existing live GPS stream, instead of
 // requiring the engineer to notice they've arrived and tap a button. Every
 // position handlePosition() receives while a target is armed is checked
-// against it; the first fix that lands inside the radius fires onArrival and
-// disarms itself so it can't fire twice.
+// against it. Two directions:
+//   'enter' — fires the moment distance drops to <= radius (site arrival).
+//   'exit'  — fires the moment distance rises past radius + EXIT_HYSTERESIS_M
+//             (engineer has left the site before the docket was closed).
+// A fired watch disarms itself immediately, so it can't fire twice; whoever
+// registered it re-arms the opposite direction if it wants continuous
+// presence tracking (docket-work.html toggles enter/exit so ops keeps
+// visibility on "on site" vs "left site" until the docket is closed).
 //
 // Known limits, not silently hidden: this only runs while the tab/PWA is open
 // in the foreground (the shared _trackingState above has the same limit) — a
 // backgrounded browser tab on a phone can be suspended by the OS. The Method
 // A (manual GPS) and Method B (photo) confirmations in docket-work.html stay
-// in place precisely as the fallback for that case, and for indoor GPS drift
+// in place precisely as the fallback for arrival, and for indoor GPS drift
 // that never resolves to inside the radius. Reliable always-on background
 // capture needs a native wrapper around this PWA (window.TSPLTracker already
 // exists as that integration point) — not something this can promise today.
 // ============================================================================
 
 var _geofenceTarget = null;
+var GEOFENCE_EXIT_HYSTERESIS_M = 20; // extra margin on exit so GPS jitter right at the boundary can't flap enter/exit repeatedly
 
-function registerArrivalGeofence(config) {
-  if (!config || typeof config.onArrival !== 'function' || !config.atmLat || !config.atmLng) {
-    console.warn('[Geofence] registerArrivalGeofence called with incomplete config; ignored.');
+function registerGeofenceWatch(config) {
+  if (!config || typeof config.onTrigger !== 'function' || !config.atmLat || !config.atmLng) {
+    console.warn('[Geofence] registerGeofenceWatch called with incomplete config; ignored.');
     return;
   }
   _geofenceTarget = {
@@ -690,19 +697,33 @@ function registerArrivalGeofence(config) {
     atmLat: config.atmLat,
     atmLng: config.atmLng,
     radiusMeters: config.radiusMeters || 50,
-    onArrival: config.onArrival
+    direction: config.direction === 'exit' ? 'exit' : 'enter',
+    onTrigger: config.onTrigger
   };
+}
+
+// Back-compat alias for the arrival-only API this replaced.
+function registerArrivalGeofence(config) {
+  registerGeofenceWatch({
+    docketId: config.docketId,
+    atmLat: config.atmLat,
+    atmLng: config.atmLng,
+    radiusMeters: config.radiusMeters,
+    direction: 'enter',
+    onTrigger: config.onArrival
+  });
 }
 
 function clearArrivalGeofence() {
   _geofenceTarget = null;
 }
+var clearGeofenceWatch = clearArrivalGeofence;
 
 /**
  * Checks one GPS fix against the currently armed geofence target, if any.
- * Fires at most once per registerArrivalGeofence() call (disarms itself
- * immediately, before the async onArrival callback even runs, so a second
- * fix arriving while onArrival's Firestore write is still in flight can't
+ * Fires at most once per registerGeofenceWatch() call (disarms itself
+ * immediately, before the async onTrigger callback even runs, so a second
+ * fix arriving while onTrigger's Firestore write is still in flight can't
  * trigger it again).
  */
 function checkArrivalGeofence(lat, lng, accuracy) {
@@ -715,13 +736,18 @@ function checkArrivalGeofence(lat, lng, accuracy) {
   if (accuracy && accuracy > 100) return;
 
   var distMeters = haversine(lat, lng, _geofenceTarget.atmLat, _geofenceTarget.atmLng);
-  if (distMeters <= _geofenceTarget.radiusMeters) {
+  var exitThreshold = _geofenceTarget.radiusMeters + GEOFENCE_EXIT_HYSTERESIS_M;
+  var triggered = _geofenceTarget.direction === 'exit'
+    ? distMeters > exitThreshold
+    : distMeters <= _geofenceTarget.radiusMeters;
+
+  if (triggered) {
     var target = _geofenceTarget;
     _geofenceTarget = null; // disarm before calling out, so this can't double-fire
     try {
-      target.onArrival({ lat: lat, lng: lng, accuracy: Math.round(accuracy || 0) }, Math.round(distMeters));
+      target.onTrigger({ lat: lat, lng: lng, accuracy: Math.round(accuracy || 0) }, Math.round(distMeters));
     } catch (err) {
-      console.error('[Geofence] onArrival callback threw:', err);
+      console.error('[Geofence] onTrigger callback threw:', err);
     }
   }
 }
