@@ -163,7 +163,12 @@ function fsValueToJs_(v) {
   if ('integerValue' in v) return Number(v.integerValue);
   if ('doubleValue' in v) return v.doubleValue;
   if ('booleanValue' in v) return v.booleanValue;
-  if ('timestampValue' in v) return v.timestampValue;
+  // Firestore returns timestamps as UTC ISO strings (e.g. "...T07:19:52Z").
+  // TSPL operates only within India, so every timestamp column in the Sheet
+  // -- and everything Looker Studio builds on top of it -- should read in
+  // IST, not raw UTC. India Standard Time has a fixed UTC+5:30 offset with
+  // no daylight-saving shifts, so Apps Script's own IST formatting is exact.
+  if ('timestampValue' in v) return Utilities.formatDate(new Date(v.timestampValue), 'Asia/Kolkata', 'dd/MM/yyyy HH:mm:ss');
   if ('nullValue' in v) return '';
   if ('geoPointValue' in v) return v.geoPointValue.latitude + ',' + v.geoPointValue.longitude;
   if ('referenceValue' in v) return v.referenceValue;

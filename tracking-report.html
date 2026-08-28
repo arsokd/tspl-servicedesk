@@ -555,8 +555,8 @@
                       date: dateKey,
                       engineerName: engStats.name,
                       employeeId: engStats.employeeId,
-                      gapStart: new Date(p1.timestamp).toLocaleTimeString('en-IN'),
-                      gapEnd: new Date(p2.timestamp).toLocaleTimeString('en-IN'),
+                      gapStart: new Date(p1.timestamp).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' }),
+                      gapEnd: new Date(p2.timestamp).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' }),
                       durationMin: Math.round(stepMin),
                       coords: '(' + p1.lat.toFixed(4) + ', ' + p1.lng.toFixed(4) + ')'
                     });

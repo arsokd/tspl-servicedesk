@@ -875,7 +875,7 @@
     // ------------------------------------------------------------------------
     function initStep1Details() {
       var callTime = currentDocket.callDateTime ? (currentDocket.callDateTime.toDate ? currentDocket.callDateTime.toDate() : new Date(currentDocket.callDateTime)) : new Date();
-      document.getElementById('step1-logged-time').textContent = callTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      document.getElementById('step1-logged-time').textContent = callTime.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' });
       document.getElementById('step1-priority').textContent = currentDocket.priority || 'P1 - Critical';
       document.getElementById('step1-fault').textContent = currentDocket.subCallType || currentDocket.faultDescription || 'ATM Hardware Fault';
     }

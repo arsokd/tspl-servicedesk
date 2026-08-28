@@ -209,7 +209,7 @@
     function log(msg, type) {
       var logEl = document.getElementById('setup-log');
       var line = document.createElement('div');
-      var time = new Date().toLocaleTimeString();
+      var time = new Date().toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' });
       var colorClass = 'text-emerald-400';
       if (type === 'warn') colorClass = 'text-[#D97706]';
       if (type === 'error') colorClass = 'text-[#DC2626]';
