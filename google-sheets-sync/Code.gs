@@ -20,7 +20,10 @@
  * run, and only re-fetches the specific dockets that actually had activity.
  * SLA breaches and attendance are read incrementally by their own timestamp
  * fields. A modest-sized operation should use a small fraction of the daily
- * free quota even running this every 15 minutes.
+ * free quota even running this every minute (Apps Script's own free daily
+ * quotas -- ~90 min of runtime and 20,000 external requests -- are the
+ * tighter limit at that frequency, but a few lightweight calls a minute
+ * still leaves comfortable headroom under both).
  *
  * SETUP: see google-sheets-sync/SETUP.md in this same repo folder for the
  * full no-coder walkthrough (creating the Sheet, pasting this file in,
@@ -388,5 +391,5 @@ function armTimeTrigger() {
   ScriptApp.getProjectTriggers().forEach(function (t) {
     if (t.getHandlerFunction() === 'syncAll') ScriptApp.deleteTrigger(t);
   });
-  ScriptApp.newTrigger('syncAll').timeBased().everyMinutes(15).create();
+  ScriptApp.newTrigger('syncAll').timeBased().everyMinutes(1).create();
 }
