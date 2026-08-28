@@ -487,7 +487,7 @@
         // Milestone Summary Step Pill
         var milestoneStep = getMilestoneProgressPill(d);
 
-        var dateFmt = new Date(callTimeMs).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+        var dateFmt = new Date(callTimeMs).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' });
 
         return (
           '<tr class="hover:bg-slate-50/80 transition cursor-pointer" onclick="openDetailModal(\'' + d.id + '\')">' +
@@ -645,7 +645,10 @@
     function fmtDateTime(val) {
       if (!val) return '--';
       var d = val.toDate ? val.toDate() : new Date(val);
-      return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+      // Always render in IST regardless of the viewing device's own timezone
+      // (bank clients may open this portal from anywhere) -- explicit
+      // timeZone here, not left to the browser's local setting.
+      return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' });
     }
 
     // ------------------------------------------------------------------------

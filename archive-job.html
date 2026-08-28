@@ -318,7 +318,7 @@
     function fmtDate(val) {
       if (!val) return 'Never';
       var d = val.toDate ? val.toDate() : new Date(val);
-      return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+      return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' });
     }
 
     // ------------------------------------------------------------------------
@@ -366,7 +366,7 @@
     function termLog(msg, type) {
       var term = document.getElementById('execution-terminal');
       var line = document.createElement('div');
-      var time = new Date().toLocaleTimeString();
+      var time = new Date().toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' });
       var cls = 'text-emerald-400';
       if (type === 'warn') cls = 'text-amber-400';
       if (type === 'error') cls = 'text-rose-400 font-bold';

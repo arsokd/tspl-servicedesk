@@ -471,7 +471,7 @@
       connectedRef.on('value', function (snap) {
         if (snap.val() === true) {
           reconnectingBar.classList.add('hidden');
-          var timeStr = new Date().toLocaleTimeString('en-IN', { hour12: false });
+          var timeStr = new Date().toLocaleTimeString('en-IN', { hour12: false, timeZone: 'Asia/Kolkata' });
           liveLabel.textContent = 'Live — ' + timeStr;
           liveLabel.className = 'font-mono text-emerald-300 font-bold';
         } else {
@@ -498,7 +498,7 @@
         updateSummaryCounts();
 
         // Update top-right live label timestamp
-        var timeStr = new Date().toLocaleTimeString('en-IN', { hour12: false });
+        var timeStr = new Date().toLocaleTimeString('en-IN', { hour12: false, timeZone: 'Asia/Kolkata' });
         var liveLabel = document.getElementById('live-update-label');
         if (liveLabel) {
           liveLabel.textContent = 'Live — ' + timeStr;
@@ -588,7 +588,7 @@
         var marker = L.marker([eng.lat, eng.lng], { icon: icon });
 
         // Popup Content
-        var updatedStr = eng.updatedAt ? new Date(eng.updatedAt).toLocaleTimeString('en-IN') : 'Unknown';
+        var updatedStr = eng.updatedAt ? new Date(eng.updatedAt).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' }) : 'Unknown';
         var phoneLink = eng.phone ? '<a href="tel:' + eng.phone + '" class="text-indigo-400 underline font-bold">' + eng.phone + '</a>' : 'No Phone';
         
         var docketHtml = '<div class="text-slate-400">No call assigned</div>';
@@ -908,7 +908,7 @@
       }
 
       var html = trackingAlertsList.map(function (alert) {
-        var timeStr = alert.timestamp ? (alert.timestamp.toDate ? alert.timestamp.toDate().toLocaleTimeString('en-IN') : new Date(alert.timestamp).toLocaleTimeString('en-IN')) : '--';
+        var timeStr = alert.timestamp ? (alert.timestamp.toDate ? alert.timestamp.toDate().toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' }) : new Date(alert.timestamp).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' })) : '--';
 
         return (
           '<div class="bg-slate-950 p-3 rounded-xl border ' + (alert.acknowledged ? 'border-slate-800' : 'border-rose-900/60 bg-rose-950/20') + ' space-y-2 text-xs">' +

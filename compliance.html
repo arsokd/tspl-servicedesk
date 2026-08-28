@@ -768,7 +768,7 @@
       currentActiveBreachId = activeBreach.id;
       banner.classList.remove('hidden');
       document.getElementById('breach-banner-details').innerHTML = 
-        'Incident: <strong class="underline">' + activeBreach.id + '</strong> (' + activeBreach.type + ') &bull; Awareness logged: <strong>' + new Date(activeBreach.awareTime).toLocaleTimeString() + '</strong>';
+        'Incident: <strong class="underline">' + activeBreach.id + '</strong> (' + activeBreach.type + ') &bull; Awareness logged: <strong>' + new Date(activeBreach.awareTime).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' }) + '</strong>';
 
       function updateClock() {
         var awareMs = new Date(activeBreach.awareTime).getTime();
@@ -831,8 +831,8 @@
 
         var sevBadge = inc.severity.startsWith('P1') ? 'bg-red-100 text-red-800 font-extrabold' : 'bg-amber-50 text-amber-800';
 
-        var notifyDisplay = inc.notifiedTime 
-          ? new Date(inc.notifiedTime).toLocaleString() 
+        var notifyDisplay = inc.notifiedTime
+          ? new Date(inc.notifiedTime).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })
           : '<span class="text-red-600 font-bold">NOT YET NOTIFIED</span>';
 
         var methodDisplay = inc.method 
@@ -844,7 +844,7 @@
             '<td class="px-3 py-2.5 font-mono font-bold text-slate-900">' + inc.id + '</td>' +
             '<td class="px-3 py-2.5 font-semibold ' + (isBreach ? 'text-red-700' : 'text-slate-800') + '">' + inc.type + '</td>' +
             '<td class="px-3 py-2.5 whitespace-nowrap"><span class="px-2 py-0.5 rounded text-[10px] ' + sevBadge + '">' + inc.severity + '</span></td>' +
-            '<td class="px-3 py-2.5 font-mono text-slate-600 whitespace-nowrap">' + new Date(inc.awareTime).toLocaleString() + '</td>' +
+            '<td class="px-3 py-2.5 font-mono text-slate-600 whitespace-nowrap">' + new Date(inc.awareTime).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }) + '</td>' +
             '<td class="px-3 py-2.5 font-mono whitespace-nowrap">' + notifyDisplay + '</td>' +
             '<td class="px-3 py-2.5 text-[11px] text-slate-700 max-w-[200px] truncate">' + methodDisplay + '</td>' +
             '<td class="px-3 py-2.5 whitespace-nowrap">' + slaBadge + '</td>' +
@@ -996,7 +996,7 @@
       var rows = [
         ['TSPL SERVICES PVT LTD — SCHEDULE IV BGV CLEARANCE REGISTER'],
         ['HPY Agreement Schedule IV Audit Compliance'],
-        ['Audit Date:', new Date().toLocaleDateString()],
+        ['Audit Date:', new Date().toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata' })],
         [],
         ['Engineer Name', 'Employee ID', 'Academic', 'Prev Employment', 'Criminal Record', 'Financial Check', 'References', 'Address', 'Work Eligibility', 'BGV Status', 'Cleared Date']
       ];

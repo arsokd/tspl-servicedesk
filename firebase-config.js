@@ -53,45 +53,63 @@ function padZero(n) {
   return n < 10 ? '0' + n : '' + n;
 }
 
+// TSPL operates only within India, and every SLA clock in this app (response/
+// resolution targets, penalty exposure) is measured against that one clock.
+// India Standard Time has a fixed UTC+5:30 offset with no daylight-saving
+// shifts, so rather than trust the viewing device's own OS timezone (a field
+// engineer's phone with a misconfigured region, or anyone opening the admin
+// panel while travelling abroad, would otherwise silently show the wrong
+// time), every display helper below converts explicitly to IST first.
+var IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
+function toIST_(date) {
+  return new Date(date.getTime() + IST_OFFSET_MS);
+}
+
 /**
- * Formats a Date object or ISO string to DD/MM/YYYY HH:MM:SS
+ * Formats a Date object or ISO string to DD/MM/YYYY HH:MM:SS, always in IST
+ * regardless of the viewing device's own timezone setting.
  */
 function fmtDateTime(d) {
   if (!d) return '--';
   var date = d instanceof Date ? d : (d.toDate ? d.toDate() : new Date(d));
   if (isNaN(date.getTime())) return '--';
+  var ist = toIST_(date);
   return (
-    padZero(date.getDate()) + '/' +
-    padZero(date.getMonth() + 1) + '/' +
-    date.getFullYear() + ' ' +
-    padZero(date.getHours()) + ':' +
-    padZero(date.getMinutes()) + ':' +
-    padZero(date.getSeconds())
+    padZero(ist.getUTCDate()) + '/' +
+    padZero(ist.getUTCMonth() + 1) + '/' +
+    ist.getUTCFullYear() + ' ' +
+    padZero(ist.getUTCHours()) + ':' +
+    padZero(ist.getUTCMinutes()) + ':' +
+    padZero(ist.getUTCSeconds())
   );
 }
 
 /**
- * Formats a Date object or ISO string to DD/MM/YYYY
+ * Formats a Date object or ISO string to DD/MM/YYYY, always in IST regardless
+ * of the viewing device's own timezone setting.
  */
 function fmtDate(d) {
   if (!d) return '--';
   var date = d instanceof Date ? d : (d.toDate ? d.toDate() : new Date(d));
   if (isNaN(date.getTime())) return '--';
+  var ist = toIST_(date);
   return (
-    padZero(date.getDate()) + '/' +
-    padZero(date.getMonth() + 1) + '/' +
-    date.getFullYear()
+    padZero(ist.getUTCDate()) + '/' +
+    padZero(ist.getUTCMonth() + 1) + '/' +
+    ist.getUTCFullYear()
   );
 }
 
 /**
- * Returns date stamp formatted as DDMMYY for counter & GPS trail doc IDs
+ * Returns date stamp formatted as DDMMYY for counter & GPS trail doc IDs,
+ * always bucketed by the IST calendar day regardless of the device's own
+ * timezone setting (see IST_OFFSET_MS above).
  */
 function fmtDDMMYY(d) {
-  var date = d || new Date();
-  var dd = padZero(date.getDate());
-  var mm = padZero(date.getMonth() + 1);
-  var yy = String(date.getFullYear()).slice(-2);
+  var ist = toIST_(d || new Date());
+  var dd = padZero(ist.getUTCDate());
+  var mm = padZero(ist.getUTCMonth() + 1);
+  var yy = String(ist.getUTCFullYear()).slice(-2);
   return dd + mm + yy;
 }
 

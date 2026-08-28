@@ -517,14 +517,14 @@
       // 1. Green Punch-In Marker
       var first = gpsPoints[0];
       var startIcon = L.divIcon({ html: '<div class="punchin-pin">&bull;</div>', className: 'custom-pin', iconSize: [24, 24], iconAnchor: [12, 12] });
-      var startMarker = L.marker([first.lat, first.lng], { icon: startIcon }).bindPopup('<strong>Punch In</strong><br>' + new Date(first.timestamp).toLocaleTimeString('en-IN'));
+      var startMarker = L.marker([first.lat, first.lng], { icon: startIcon }).bindPopup('<strong>Punch In</strong><br>' + new Date(first.timestamp).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' }));
       markersLayerGroup.addLayer(startMarker);
 
       // 2. Red Punch-Out Marker (if finished)
       if (gpsPoints.length > 1) {
         var last = gpsPoints[gpsPoints.length - 1];
         var endIcon = L.divIcon({ html: '<div class="punchout-pin">&bull;</div>', className: 'custom-pin', iconSize: [24, 24], iconAnchor: [12, 12] });
-        var endMarker = L.marker([last.lat, last.lng], { icon: endIcon }).bindPopup('<strong>Latest Point / Punch Out</strong><br>' + new Date(last.timestamp).toLocaleTimeString('en-IN'));
+        var endMarker = L.marker([last.lat, last.lng], { icon: endIcon }).bindPopup('<strong>Latest Point / Punch Out</strong><br>' + new Date(last.timestamp).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' }));
         markersLayerGroup.addLayer(endMarker);
       }
 
@@ -535,7 +535,7 @@
       gpsPoints.forEach(function (p) {
         if (p.isSuspicious) {
           var suspIcon = L.divIcon({ html: '<div class="suspicious-ring-pin"></div>', className: 'custom-pin', iconSize: [14, 14], iconAnchor: [7, 7] });
-          var suspMarker = L.marker([p.lat, p.lng], { icon: suspIcon }).bindPopup('<strong>Suspicious GPS Signal</strong><br>Speed: ' + (p.speed || 0) + ' km/h<br>' + new Date(p.timestamp).toLocaleTimeString('en-IN'));
+          var suspMarker = L.marker([p.lat, p.lng], { icon: suspIcon }).bindPopup('<strong>Suspicious GPS Signal</strong><br>Speed: ' + (p.speed || 0) + ' km/h<br>' + new Date(p.timestamp).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' }));
           markersLayerGroup.addLayer(suspMarker);
         }
       });
@@ -563,7 +563,7 @@
             if (durationMin >= 15) {
               var icon = L.divIcon({ html: '<div class="stopped-pin">' + durationMin + 'm</div>', className: 'custom-pin', iconSize: [24, 24], iconAnchor: [12, 12] });
               var marker = L.marker([stopStart.lat, stopStart.lng], { icon: icon })
-                .bindPopup('<strong>Stopped ' + durationMin + ' min</strong><br>Time: ' + new Date(stopStart.timestamp).toLocaleTimeString('en-IN'));
+                .bindPopup('<strong>Stopped ' + durationMin + ' min</strong><br>Time: ' + new Date(stopStart.timestamp).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' }));
               markersLayerGroup.addLayer(marker);
             }
             stopStart = null;
@@ -699,7 +699,7 @@
       }
 
       var html = mergedEvents.map(function (ev, idx) {
-        var timeStr = new Date(ev.timestamp).toLocaleTimeString('en-IN');
+        var timeStr = new Date(ev.timestamp).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' });
 
         if (ev.type === 'docket') {
           return (
@@ -797,7 +797,7 @@
       if (!p) return;
 
       document.getElementById('playback-slider').value = currentPointIndex;
-      document.getElementById('lbl-scrub-time').textContent = new Date(p.timestamp).toLocaleTimeString('en-IN');
+      document.getElementById('lbl-scrub-time').textContent = new Date(p.timestamp).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' });
       document.getElementById('lbl-point-index').textContent = 'Point ' + (currentPointIndex + 1) + ' of ' + gpsPoints.length;
       document.getElementById('lbl-scrub-speed').textContent = (p.speed ? Math.round(p.speed) + ' km/h' : '0 km/h');
 

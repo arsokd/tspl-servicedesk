@@ -659,7 +659,7 @@
 
       var html = currentIndents.map(function (ind) {
         var createdMs = ind.createdAt ? (ind.createdAt.toMillis ? ind.createdAt.toMillis() : new Date(ind.createdAt).getTime()) : now;
-        var dateStr = new Date(createdMs).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+        var dateStr = new Date(createdMs).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' });
         var ageingDays = Math.max(0, Math.floor((now - createdMs) / (1000 * 60 * 60 * 24)));
 
         // Ageing Red Above 7 Days
