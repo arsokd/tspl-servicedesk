@@ -1179,9 +1179,26 @@
           timestamp: firebase.firestore.FieldValue.serverTimestamp()
         };
 
+        // Also log to the top-level docketActivity audit trail (not just the
+        // per-docket subcollection above) — this is the shared change feed
+        // that the Google Sheets sync script watches to know which dockets
+        // to pull. Without this, a brand-new docket stays invisible to the
+        // sync until some later docket-work.html action (accept/travel/etc.)
+        // touches it.
+        var globalActivityRef = db.collection('docketActivity').doc();
+        var globalActivityPayload = {
+          docketId: docketDocRef.id,
+          timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+          action: 'Docket Created',
+          performedBy: localStorage.getItem('userName') || 'Call Centre Operator',
+          role: localStorage.getItem('userRole') || 'callcentre',
+          notes: remarks || 'Initial dispatch logging'
+        };
+
         // Atomic Batch Commit
         var batch = db.batch();
         batch.set(docketDocRef, docketPayload);
+        batch.set(globalActivityRef, globalActivityPayload);
         batch.set(activityRef, activityPayload);
 
         // Atomic Stats Bump
