@@ -63,9 +63,29 @@ var LOOKBACK_DAYS_ON_FIRST_RUN = 30; // how far back to seed the sheets the very
 // ---------------------------------------------------------------------------
 function syncAll() {
   var token = getFirebaseIdToken_();
+  // Create all three tabs (with header rows) up front, regardless of
+  // whether there's any data yet. Without this, a brand-new setup with no
+  // dockets/breaches/attendance in the lookback window yet would finish
+  // "successfully" while leaving the Sheet completely blank — confusing to
+  // verify, since nothing would look different from a broken run.
+  ensureSheetHeader_('Dockets', DOCKET_COLUMNS);
+  ensureSheetHeader_('SLA Breaches', BREACH_COLUMNS.concat(['_syncKey']));
+  ensureSheetHeader_('Attendance', ATTENDANCE_COLUMNS);
   syncDocketsViaActivityFeed_(token);
   syncSlaBreaches_(token);
   syncAttendance_(token);
+}
+
+// Creates the named tab with a frozen header row if it doesn't exist yet.
+// Safe to call every run — a no-op once the tab is already there.
+function ensureSheetHeader_(sheetName, columns) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName(sheetName);
+  if (!sheet) {
+    sheet = ss.insertSheet(sheetName);
+    sheet.appendRow(columns);
+    sheet.setFrozenRows(1);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -177,13 +197,8 @@ function docToRow_(doc, columns) {
 // ---------------------------------------------------------------------------
 function upsertRows_(sheetName, columns, keyColumnIndex, rows) {
   if (!rows.length) return;
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var sheet = ss.getSheetByName(sheetName);
-  if (!sheet) {
-    sheet = ss.insertSheet(sheetName);
-    sheet.appendRow(columns);
-    sheet.setFrozenRows(1);
-  }
+  ensureSheetHeader_(sheetName, columns);
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(sheetName);
 
   var lastRow = sheet.getLastRow();
   var existingKeys = {};
