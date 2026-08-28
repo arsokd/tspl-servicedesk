@@ -61,7 +61,7 @@ If you see an error instead, open **Executions** (left sidebar, clock icon) to r
 ## Step 6: Arm the automatic timer
 
 1. In the function dropdown, select **`armTimeTrigger`** this time, and click **Run**.
-2. This sets the sync to run automatically every 15 minutes, forever, with no further action from you. You can confirm it's active under **Triggers** (clock icon, left sidebar) — you should see one entry for `syncAll`.
+2. This sets the sync to run automatically every minute, forever, with no further action from you. You can confirm it's active under **Triggers** (clock icon, left sidebar) — you should see one entry for `syncAll`.
 
 That's it — the Sheet now updates itself. Leave both browser tabs; you never need to open Apps Script again unless something needs adjusting.
 
