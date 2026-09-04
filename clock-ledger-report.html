@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Clock Ownership Ledger — TSPL ServiceDesk</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Firebase Compat 10.7.1 -->
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-storage-compat.js"></script>
+  <!-- SheetJS CDN for Excel export -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="firebase-config.js"></script>
+  <script src="clock-ledger.js"></script>
+  <!-- PWA: installable app shell -->
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#0f233d">
+  <link rel="apple-touch-icon" href="assets/icon-180.png">
+  <script>
+    if ("serviceWorker" in navigator) {
+      window.addEventListener("load", function () {
+        navigator.serviceWorker.register("sw.js").catch(function (err) {
+          console.warn("[PWA] Service worker registration failed:", err);
+        });
+      });
+    }
+  </script>
+  <script src="auth-guard.js"></script>
+</head>
+<body class="bg-slate-100 min-h-screen flex flex-col font-sans antialiased text-slate-800">
+
+  <div id="main-nav"></div>
+
+  <main class="flex-grow max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 space-y-6">
+
+    <!-- Top Header -->
+    <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5 sm:p-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div>
+        <div class="flex items-center gap-2.5">
+          <div class="p-2 rounded-lg bg-indigo-50 border border-indigo-100 text-[#4F46E5]">
+            <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+          </div>
+          <h1 class="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight">Clock Ownership Ledger</h1>
+        </div>
+        <p class="text-xs sm:text-sm text-slate-500 mt-1">
+          Every docket's elapsed time, split by whose account it's charged to — TSPL or Client/CRA — with the reason for each segment. This is the evidence for SLA/penalty defense with HPY.
+        </p>
+      </div>
+      <button onclick="exportLedgerXlsx()" class="bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold py-2 px-3.5 rounded-lg border border-slate-300 shadow-sm transition flex items-center gap-2 shrink-0">
+        <svg class="h-4 w-4 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+        </svg>
+        Export to Excel
+      </button>
+    </div>
+
+    <!-- Filters -->
+    <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4 flex flex-wrap items-end gap-3">
+      <div>
+        <label class="block text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1">Bank</label>
+        <select id="filter-bank" class="text-xs border border-slate-300 rounded-md p-1.5 bg-white focus:ring-1 focus:ring-indigo-500">
+          <option value="">All Banks</option>
+        </select>
+      </div>
+      <div>
+        <label class="block text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1">Status</label>
+        <select id="filter-status" class="text-xs border border-slate-300 rounded-md p-1.5 bg-white focus:ring-1 focus:ring-indigo-500">
+          <option value="all">All Dockets</option>
+          <option value="open">Open Only</option>
+          <option value="closed" selected>Closed Only (final split)</option>
+        </select>
+      </div>
+      <div>
+        <label class="block text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1">From Date</label>
+        <input type="date" id="filter-from" class="text-xs border border-slate-300 rounded-md p-1.5" />
+      </div>
+      <div>
+        <label class="block text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1">To Date</label>
+        <input type="date" id="filter-to" class="text-xs border border-slate-300 rounded-md p-1.5" />
+      </div>
+      <button onclick="loadLedgerReport()" class="bg-[#4F46E5] hover:bg-indigo-700 text-white text-xs font-semibold px-4 py-2 rounded-md shadow-sm transition">Apply</button>
+      <span id="loading-note" class="text-[11px] text-slate-400"></span>
+    </div>
+
+    <!-- Portfolio Summary -->
+    <div id="portfolio-tiles" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-0 bg-slate-200 rounded-xl overflow-hidden border border-slate-200"></div>
+
+    <!-- Legend -->
+    <div class="flex flex-wrap gap-4 text-[11px] text-slate-500 px-1">
+      <span class="flex items-center gap-1.5"><i class="h-2.5 w-2.5 rounded-sm inline-block bg-[#4F46E5]"></i>TSPL active work</span>
+      <span class="flex items-center gap-1.5"><i class="h-2.5 w-2.5 rounded-sm inline-block bg-[#A5A0F0]"></i>Awaiting parts (TSPL source)</span>
+      <span class="flex items-center gap-1.5"><i class="h-2.5 w-2.5 rounded-sm inline-block bg-[#D97706]"></i>Awaiting CRA</span>
+      <span class="flex items-center gap-1.5"><i class="h-2.5 w-2.5 rounded-sm inline-block bg-[#F3C480]"></i>Awaiting parts (Client/OEM source)</span>
+    </div>
+
+    <!-- Per-docket bars -->
+    <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
+      <div id="empty-state" class="hidden text-center text-xs text-slate-400 py-10">No dockets match these filters yet.</div>
+      <div id="ledger-rows" class="divide-y divide-slate-100"></div>
+    </div>
+
+    <!-- Full table -->
+    <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-x-auto">
+      <table class="w-full text-left text-xs border-collapse min-w-[900px]">
+        <thead class="bg-slate-50 text-slate-500 uppercase text-[10px] tracking-wider">
+          <tr>
+            <th class="px-3 py-2.5">Docket</th><th class="px-3 py-2.5">ATM / Bank</th>
+            <th class="px-3 py-2.5 text-right">MTTR</th>
+            <th class="px-3 py-2.5 text-right">TSPL min</th><th class="px-3 py-2.5 text-right">TSPL %</th>
+            <th class="px-3 py-2.5 text-right">Client min</th><th class="px-3 py-2.5 text-right">Client %</th>
+            <th class="px-3 py-2.5">Net SLA</th>
+          </tr>
+        </thead>
+        <tbody id="ledger-table-body"></tbody>
+      </table>
+    </div>
+
+  </main>
+
+  <script>
+    var HEADING_COLOR = {
+      TSPL_ACTIVE: '#4F46E5', AWAITING_PARTS_TSPL: '#A5A0F0',
+      AWAITING_CRA: '#D97706', AWAITING_PARTS_CLIENT: '#F3C480'
+    };
+    var loadedRows = [];
+
+    document.addEventListener('DOMContentLoaded', async function () {
+      if (typeof checkAuth === 'function') {
+        checkAuth(['admin', 'techsupport', 'rm', 'regionalhead', 'unithead']);
+      }
+      if (typeof buildNav === 'function') {
+        buildNav('clock-ledger-report.html');
+      }
+      await populateBankFilter();
+      var toEl = document.getElementById('filter-to');
+      var fromEl = document.getElementById('filter-from');
+      var today = new Date();
+      var monthAgo = new Date(Date.now() - 30 * 24 * 3600 * 1000);
+      toEl.value = today.toISOString().slice(0, 10);
+      fromEl.value = monthAgo.toISOString().slice(0, 10);
+      loadLedgerReport();
+    });
+
+    async function populateBankFilter() {
+      try {
+        var snap = await db.collection('atms').limit(500).get();
+        var banks = {};
+        snap.forEach(function (doc) { var b = doc.data().bank; if (b) banks[b] = true; });
+        var sel = document.getElementById('filter-bank');
+        Object.keys(banks).sort().forEach(function (b) {
+          sel.appendChild(new Option(b, b));
+        });
+      } catch (err) { console.warn('Bank filter load failed:', err); }
+    }
+
+    async function loadLedgerReport() {
+      var loadingNote = document.getElementById('loading-note');
+      loadingNote.textContent = 'Loading…';
+
+      var bank = document.getElementById('filter-bank').value;
+      var status = document.getElementById('filter-status').value;
+      var fromDate = new Date(document.getElementById('filter-from').value + 'T00:00:00');
+      var toDate = new Date(document.getElementById('filter-to').value + 'T23:59:59');
+
+      try {
+        var query = db.collection('dockets')
+          .where('callDateTime', '>=', fromDate)
+          .where('callDateTime', '<=', toDate)
+          .orderBy('callDateTime', 'desc')
+          .limit(150);
+        var snap = await query.get();
+
+        var docs = [];
+        snap.forEach(function (doc) {
+          var d = { id: doc.id, ...doc.data() };
+          if (bank && d.bank !== bank) return;
+          if (status === 'open' && (d.status === 'Closed')) return;
+          if (status === 'closed' && d.status !== 'Closed') return;
+          docs.push(d);
+        });
+
+        // Compute the real clock-ledger breakdown per docket -- reads each
+        // docket's own clockSegments subcollection (clock-ledger.js), so this
+        // always reflects the actual segment history, never a stale cache.
+        var withTotals = await Promise.all(docs.map(async function (d) {
+          var totals;
+          try {
+            totals = await ledgerComputeTotals(d.id);
+          } catch (e) {
+            totals = { byHeading: {}, tsplMinutes: 0, clientMinutes: 0, mttrMinutes: 0, tsplPercent: 0, clientPercent: 0 };
+          }
+          return { docket: d, totals: totals };
+        }));
+
+        // Only show dockets that actually have some ledger time recorded.
+        loadedRows = withTotals.filter(function (r) { return r.totals.mttrMinutes > 0; });
+        loadingNote.textContent = loadedRows.length + ' docket(s) loaded.';
+        renderReport();
+      } catch (err) {
+        console.error('Ledger report load error:', err);
+        loadingNote.textContent = 'Error: ' + err.message;
+      }
+    }
+
+    function renderReport() {
+      var emptyState = document.getElementById('empty-state');
+      var rowsEl = document.getElementById('ledger-rows');
+      var tbody = document.getElementById('ledger-table-body');
+
+      if (!loadedRows.length) {
+        emptyState.classList.remove('hidden');
+        rowsEl.innerHTML = '';
+        tbody.innerHTML = '';
+        document.getElementById('portfolio-tiles').innerHTML = '';
+        return;
+      }
+      emptyState.classList.add('hidden');
+
+      // ---- portfolio rollup ----
+      var grand = { tspl: 0, client: 0, mttr: 0, netMet: 0, grossMet: 0 };
+      loadedRows.forEach(function (r) {
+        grand.tspl += r.totals.tsplMinutes; grand.client += r.totals.clientMinutes; grand.mttr += r.totals.mttrMinutes;
+        if (r.totals.tsplMinutes <= (r.docket.resolutionTargetMins || 120)) grand.netMet++;
+        if (r.totals.mttrMinutes <= (r.docket.resolutionTargetMins || 120)) grand.grossMet++;
+      });
+      var tsplPct = grand.mttr ? (grand.tspl / grand.mttr * 100).toFixed(1) : '0.0';
+      var clientPct = grand.mttr ? (grand.client / grand.mttr * 100).toFixed(1) : '0.0';
+      var netCompliance = (grand.netMet / loadedRows.length * 100).toFixed(1);
+      var grossCompliance = (grand.grossMet / loadedRows.length * 100).toFixed(1);
+
+      document.getElementById('portfolio-tiles').innerHTML =
+        '<div class="bg-white p-4"><div class="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Dockets Shown</div><div class="text-2xl font-extrabold text-slate-900">' + loadedRows.length + '</div></div>' +
+        '<div class="bg-white p-4"><div class="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">TSPL / Client Share</div><div class="text-xl font-extrabold"><span class="text-[#4F46E5]">' + tsplPct + '%</span> <span class="text-slate-300">/</span> <span class="text-amber-600">' + clientPct + '%</span></div></div>' +
+        '<div class="bg-white p-4"><div class="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Gross Compliance</div><div class="text-2xl font-extrabold text-red-600">' + grossCompliance + '%</div><div class="text-[10px] text-slate-400">raw call duration</div></div>' +
+        '<div class="bg-white p-4"><div class="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Net Compliance</div><div class="text-2xl font-extrabold text-emerald-600">' + netCompliance + '%</div><div class="text-[10px] text-slate-400">TSPL-controlled time only</div></div>';
+
+      // ---- per-docket bars, one shared scale ----
+      var maxMttr = Math.max.apply(null, loadedRows.map(function (r) { return r.totals.mttrMinutes; }));
+      rowsEl.innerHTML = loadedRows.map(function (r) {
+        var d = r.docket, t = r.totals;
+        var target = d.resolutionTargetMins || 120;
+        var netMet = t.tsplMinutes <= target;
+        var widthPct = (t.mttrMinutes / maxMttr * 100);
+        var segsHtml = '';
+        var cursor = 0;
+        Object.keys(t.byHeading).forEach(function (h) {
+          var mins = t.byHeading[h];
+          var segPct = (mins / t.mttrMinutes * 100);
+          segsHtml += '<div class="absolute top-0 bottom-0" style="left:' + (cursor / t.mttrMinutes * 100) + '%;width:' + segPct + '%;background:' + (HEADING_COLOR[h] || '#94a3b8') + '" title="' + clockHeadingLabel(h) + ': ' + Math.round(mins) + ' min"></div>';
+          cursor += mins;
+        });
+        return (
+          '<div class="grid grid-cols-1 sm:grid-cols-[170px_1fr_150px] gap-3 items-center py-3 cursor-pointer hover:bg-slate-50 rounded-lg px-2 -mx-2" onclick="window.location.href=\'dockets.html?search=' + (d.docketNo || d.id) + '\'">' +
+            '<div><div class="font-mono font-bold text-xs text-indigo-600">' + (d.docketNo || d.id) + '</div><div class="text-[10px] text-slate-400">' + (d.atmId || '--') + ' &middot; ' + (d.bank || '--') + '</div></div>' +
+            '<div class="relative h-6 bg-slate-100 rounded overflow-hidden" style="width:' + widthPct + '%">' + segsHtml + '</div>' +
+            '<div class="flex items-center justify-end gap-2 text-[11px]">' +
+              '<span class="font-mono text-slate-500">' + Math.round(t.mttrMinutes) + 'm</span>' +
+              '<span class="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full ' + (netMet ? 'bg-emerald-50 text-emerald-700 border border-emerald-300' : 'bg-red-50 text-red-700 border border-red-300') + '">' + (netMet ? 'Net Met' : 'Net Breach') + '</span>' +
+            '</div>' +
+          '</div>'
+        );
+      }).join('');
+
+      // ---- table ----
+      tbody.innerHTML = loadedRows.map(function (r) {
+        var d = r.docket, t = r.totals;
+        var target = d.resolutionTargetMins || 120;
+        var netMet = t.tsplMinutes <= target;
+        return (
+          '<tr class="border-t border-slate-100 hover:bg-slate-50">' +
+            '<td class="px-3 py-2 font-mono font-bold text-indigo-600">' + (d.docketNo || d.id) + '</td>' +
+            '<td class="px-3 py-2 text-slate-600">' + (d.atmId || '--') + ' &middot; ' + (d.bank || '--') + '</td>' +
+            '<td class="px-3 py-2 text-right font-mono">' + Math.round(t.mttrMinutes) + '</td>' +
+            '<td class="px-3 py-2 text-right font-mono text-[#4F46E5]">' + Math.round(t.tsplMinutes) + '</td>' +
+            '<td class="px-3 py-2 text-right font-mono">' + t.tsplPercent + '%</td>' +
+            '<td class="px-3 py-2 text-right font-mono text-amber-600">' + Math.round(t.clientMinutes) + '</td>' +
+            '<td class="px-3 py-2 text-right font-mono">' + t.clientPercent + '%</td>' +
+            '<td class="px-3 py-2"><span class="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full ' + (netMet ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700') + '">' + (netMet ? 'Met' : 'Breach') + '</span></td>' +
+          '</tr>'
+        );
+      }).join('');
+    }
+
+    function exportLedgerXlsx() {
+      if (!loadedRows.length) { alert('Nothing to export yet — apply filters first.'); return; }
+      var rows = loadedRows.map(function (r) {
+        var d = r.docket, t = r.totals;
+        var target = d.resolutionTargetMins || 120;
+        return {
+          'Docket No': d.docketNo || d.id, 'ATM ID': d.atmId || '', 'Bank': d.bank || '',
+          'MTTR (min)': Math.round(t.mttrMinutes),
+          'TSPL Minutes': Math.round(t.tsplMinutes), 'TSPL %': t.tsplPercent,
+          'Client Minutes': Math.round(t.clientMinutes), 'Client %': t.clientPercent,
+          'Net SLA Result': t.tsplMinutes <= target ? 'Met' : 'Breach'
+        };
+      });
+      var ws = XLSX.utils.json_to_sheet(rows);
+      var wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Clock Ledger');
+      XLSX.writeFile(wb, 'TSPL-Clock-Ledger-' + new Date().toISOString().slice(0, 10) + '.xlsx');
+    }
+  </script>
+</body>
+</html>

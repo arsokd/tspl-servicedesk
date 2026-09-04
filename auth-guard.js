@@ -166,6 +166,7 @@ function buildNav(activePage) {
     { name: 'Live Map', file: 'live-map.html', roles: ['admin', 'callcentre', 'rm', 'regionalhead'] },
     { name: 'Parts', file: 'parts.html', roles: ['admin', 'techsupport'] },
     { name: 'Reports', file: 'reports.html', roles: ['admin', 'rm', 'regionalhead', 'unithead'] },
+    { name: 'Clock Ledger', file: 'clock-ledger-report.html', roles: ['admin', 'techsupport', 'rm', 'regionalhead', 'unithead'] },
     { name: 'Billing', file: 'billing.html', roles: ['admin'] },
     { name: 'Compliance', file: 'compliance.html', roles: ['admin'] },
     { name: 'Masters', file: 'masters-atm.html', roles: ['admin'] },
