@@ -48,7 +48,7 @@ service cloud.firestore {
       allow read: if isAuthenticated();
       allow write: if isAuthenticated() && (
         isAdmin() ||
-        getUserProfile().role in ['callcentre', 'techsupport', 'rm', 'regionalhead', 'unithead', 'engineer']
+        getUserProfile().role in ['callcentre', 'techsupport', 'rm', 'regionalhead', 'unithead', 'engineer', 'scm']
       );
     }
 
@@ -59,7 +59,7 @@ service cloud.firestore {
       allow read: if isAuthenticated();
       allow write: if isAuthenticated() && (
         isAdmin() ||
-        getUserProfile().role in ['callcentre', 'techsupport', 'rm', 'regionalhead', 'unithead', 'engineer']
+        getUserProfile().role in ['callcentre', 'techsupport', 'rm', 'regionalhead', 'unithead', 'engineer', 'scm']
       );
     }
 
@@ -83,7 +83,7 @@ service cloud.firestore {
     match /users/{userId} {
       // Plain English: Users can read their own profile; Admins can read all profiles; ONLY Admins can create or update user permissions.
       // [USES get() LOOKUP in isAdmin()]
-      allow read: if isAuthenticated() && (request.auth.uid == userId || isAdmin() || getUserProfile().role in ['callcentre', 'rm', 'regionalhead', 'techsupport', 'unithead']);
+      allow read: if isAuthenticated() && (request.auth.uid == userId || isAdmin() || getUserProfile().role in ['callcentre', 'rm', 'regionalhead', 'techsupport', 'unithead', 'scm']);
       allow write: if isAdmin();
     }
 
@@ -101,7 +101,7 @@ service cloud.firestore {
       // [USES get() LOOKUP]: Evaluates getUserProfile() for role & bank matching.
       allow read: if isAuthenticated() && (
         isAdmin() ||
-        getUserProfile().role in ['callcentre', 'techsupport', 'rm', 'regionalhead', 'unithead'] ||
+        getUserProfile().role in ['callcentre', 'techsupport', 'rm', 'regionalhead', 'unithead', 'scm'] ||
         (getUserProfile().role == 'engineer' && (resource.data.assignedEngineerId == request.auth.uid || resource.data.engineerId == request.auth.uid)) ||
         (getUserProfile().role == 'client' && (resource.data.bank == getUserProfile().clientBank || resource.data.bankName == getUserProfile().clientBank))
       );
@@ -115,9 +115,12 @@ service cloud.firestore {
         getUserProfile().role in ['callcentre', 'techsupport', 'rm', 'regionalhead', 'unithead']
       );
 
+      // SCM can only update (e.g. set a parts ETA, close a parts-wait clock segment on
+      // correct receipt) -- never create a docket, which stays with Call Centre/Tech
+      // Support per the confirmed workflow.
       allow update: if isAuthenticated() && (
         isAdmin() ||
-        getUserProfile().role in ['callcentre', 'techsupport', 'rm', 'regionalhead', 'unithead'] ||
+        getUserProfile().role in ['callcentre', 'techsupport', 'rm', 'regionalhead', 'unithead', 'scm'] ||
         (getUserProfile().role == 'engineer' && (resource.data.assignedEngineerId == request.auth.uid || resource.data.engineerId == request.auth.uid))
       );
 
@@ -131,6 +134,38 @@ service cloud.firestore {
         // read the parent docket, must NOT be able to write into its audit trail.
         // [USES get() LOOKUP]: Evaluates the PARENT docket doc, not this subcollection doc.
         allow read: if isAuthenticated();
+        allow create, update: if isAuthenticated() && (
+          isAdmin() ||
+          getUserProfile().role in ['callcentre', 'techsupport', 'rm', 'regionalhead', 'unithead', 'scm'] ||
+          (getUserProfile().role == 'engineer' && (
+            get(/databases/$(database)/documents/dockets/$(docketId)).data.assignedEngineerId == request.auth.uid ||
+            get(/databases/$(database)/documents/dockets/$(docketId)).data.engineerId == request.auth.uid
+          ))
+        );
+        allow delete: if isAdmin();
+      }
+
+      match /clockSegments/{segId} {
+        // Plain English: The TSPL-vs-Client clock ownership ledger (Sep 2026 process
+        // review) — per-segment record of whose account elapsed time is charged to and
+        // why. Bank clients get READ access here (same audience as the parent docket)
+        // because "if client reviews any docket, they should know what was the total
+        // clocking for TSPL and their own" was stated as explicitly crucial — this is
+        // the underlying data behind that breakdown. Clients never write it; only staff
+        // and the assigned engineer open/close segments, same as the activity log above.
+        // [USES get() LOOKUP]: Evaluates the PARENT docket doc, not this subcollection doc.
+        allow read: if isAuthenticated() && (
+          isAdmin() ||
+          getUserProfile().role in ['callcentre', 'techsupport', 'rm', 'regionalhead', 'unithead', 'scm'] ||
+          (getUserProfile().role == 'engineer' && (
+            get(/databases/$(database)/documents/dockets/$(docketId)).data.assignedEngineerId == request.auth.uid ||
+            get(/databases/$(database)/documents/dockets/$(docketId)).data.engineerId == request.auth.uid
+          )) ||
+          (getUserProfile().role == 'client' && (
+            get(/databases/$(database)/documents/dockets/$(docketId)).data.bank == getUserProfile().clientBank ||
+            get(/databases/$(database)/documents/dockets/$(docketId)).data.bankName == getUserProfile().clientBank
+          ))
+        );
         allow create, update: if isAuthenticated() && (
           isAdmin() ||
           getUserProfile().role in ['callcentre', 'techsupport', 'rm', 'regionalhead', 'unithead'] ||
@@ -158,6 +193,9 @@ service cloud.firestore {
     // Tech Support & Admins manage parts; Engineers can view/request.
     // --------------------------------------------------------------------------
     match /partsIndent/{indentId} {
+      // Plain English: Engineers/Tech Support raise indents; Tech Support approves them;
+      // SCM (OEM or TSPL sourcing) sets the ETA and marks correct/wrong receipt -- 'scm'
+      // added for that last step per the Sep 2026 process review.
       allow read: if isAuthenticated();
       allow create: if isAuthenticated() && (
         isAdmin() ||
@@ -165,7 +203,7 @@ service cloud.firestore {
       );
       allow update: if isAuthenticated() && (
         isAdmin() ||
-        getUserProfile().role in ['techsupport', 'callcentre', 'rm', 'regionalhead', 'engineer']
+        getUserProfile().role in ['techsupport', 'callcentre', 'rm', 'regionalhead', 'engineer', 'scm']
       );
       allow delete: if isAdmin();
     }
@@ -189,7 +227,7 @@ service cloud.firestore {
       allow read: if isAuthenticated();
       allow create: if isAuthenticated() && (
         isAdmin() ||
-        getUserProfile().role in ['callcentre', 'techsupport', 'rm', 'regionalhead', 'unithead', 'engineer']
+        getUserProfile().role in ['callcentre', 'techsupport', 'rm', 'regionalhead', 'unithead', 'engineer', 'scm']
       );
       allow update, delete: if false; // [IMMUTABLE AUDIT TRAIL — NO OVERWRITES / DELETIONS ALLOWED]
     }

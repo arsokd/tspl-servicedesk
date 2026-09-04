@@ -14,6 +14,7 @@
   <!-- SheetJS CDN for HPY Open Call XLSX export -->
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script src="firebase-config.js"></script>
+  <script src="clock-ledger.js"></script>
   <!-- PWA: installable app shell -->
   <link rel="manifest" href="manifest.json">
   <meta name="theme-color" content="#0f233d">
@@ -1200,6 +1201,14 @@
         batch.set(docketDocRef, docketPayload);
         batch.set(globalActivityRef, globalActivityPayload);
         batch.set(activityRef, activityPayload);
+
+        // Clock ownership ledger: per the Sep 2026 process review, the SLA
+        // clock starts running on TSPL's account the instant the docket
+        // number reaches our system — this opens that first segment in the
+        // same atomic write, so there is never a gap before the clock exists.
+        if (typeof ledgerOpenFirstSegment === 'function') {
+          ledgerOpenFirstSegment(batch, docketDocRef, 'TSPL_ACTIVE');
+        }
 
         // Atomic Stats Bump
         var depKey = 'dep_' + currentDep.replace(/\s+/g, '_');

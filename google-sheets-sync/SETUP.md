@@ -80,3 +80,18 @@ That's it — the Sheet now updates itself. Leave both browser tabs; you never n
 - **Attendance** tab: punch-in/punch-out times and coordinates per engineer per day.
 - **Not included yet:** a dedicated Billing/invoice export — `billing.html` reads a monthly summary that isn't consistently written by the app today (it wasn't a real automated collection to sync from). The billing-relevant numbers (paid vs. free call classification, penalty amounts) are already present in the Dockets and SLA Breaches tabs above, so a Looker Studio dashboard can compute billing totals directly from those two tabs rather than needing a separate export.
 - **Read cost**: this stays well inside Firestore's free daily quota because it only re-reads what actually changed since the last run, not the whole database each time. If you ever see it stop updating, check **Executions** in the Apps Script editor first — that's where any error would show up.
+- **Clock ownership ledger** (Sep 2026 process review): the Dockets tab now also carries the TSPL-vs-Client/CRA time split per docket — `clockOwner`, `clockHeading`, `tsplClockMinutes`, `clientClockMinutes`, `tsplClockPercent`, `clientClockPercent`, plus a per-heading breakdown (`craWaitMinutes`, `partsWaitTsplMinutes`, `partsWaitClientMinutes`, `tsplActiveMinutes`). This is the same data a client sees when they review a docket — whose account the elapsed time was actually charged to, and why.
+
+---
+
+## Step 8 (optional): CRA SMS/WhatsApp notifications
+
+The app can send an automatic SMS/WhatsApp to the CRA whenever an engineer confirms their promised time slot, or logs "waiting for CRA past promised time" — this is the independent, timestamped proof that prevents "I said 12:30, not 11:30" disputes. It reuses this same Apps Script project rather than needing a separate setup:
+
+1. In this Apps Script project, go to **Deploy → New deployment → Web app**. Set "Execute as" to **Me** and "Who has access" to **Anyone**, then **Deploy**. Copy the resulting URL.
+2. Open `docket-work.html` in the repo and paste that URL into the `CRA_NOTIFY_WEBHOOK_URL` constant near the bottom of its `<script>` block.
+3. Pick an SMS/WhatsApp provider (Twilio, Gupshup, and the official WhatsApp Business API are the common choices in India) and get an API key + sender ID from them.
+4. Back in **Script Properties** (same place as Step 4 above), add three more properties: `SMS_PROVIDER_URL`, `SMS_PROVIDER_KEY`, `SMS_SENDER_ID`.
+5. Open `Code.gs`'s `sendViaProvider_()` function and adjust the request body to match your chosen provider's exact API format (check their docs — every provider's payload shape is slightly different).
+
+Until you do this, the app keeps working exactly as before — the CRA slot/no-show flow and the clock ledger are fully functional either way; only the actual SMS/WhatsApp send is skipped (logged to Executions instead, so you can verify what *would* have been sent).

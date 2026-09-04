@@ -44,7 +44,16 @@ var DOCKET_COLUMNS = [
   'responseTargetMins', 'resolutionTargetMins', 'arrivalMethod',
   'arrivalDistanceMeters', 'currentlyOnSite', 'leftSiteAt',
   'assignedEngineerId', 'assignedEngineerName', 'subStatus',
-  'tsplNetTATMinutes', 'penaltyPerInstance'
+  'tsplNetTATMinutes', 'penaltyPerInstance',
+  // Clock ownership ledger (Sep 2026 process review) — flat mirrors of
+  // dockets/{id}.clockTotals, written by clock-ledger.js's ledgerPersistTotals
+  // so Looker Studio can chart them without unpacking a nested map. This is
+  // the "what % of MTTR is TSPL's vs the Client's, on what headings" data
+  // the client explicitly needs to be able to review per docket.
+  'clockOwner', 'clockHeading', 'tsplClockMinutes', 'clientClockMinutes',
+  'mttrClockMinutes', 'tsplClockPercent', 'clientClockPercent',
+  'craWaitMinutes', 'partsWaitTsplMinutes', 'partsWaitClientMinutes',
+  'tsplActiveMinutes', 'clientNetTATMinutes'
 ];
 
 var BREACH_COLUMNS = [
@@ -397,4 +406,71 @@ function armTimeTrigger() {
     if (t.getHandlerFunction() === 'syncAll') ScriptApp.deleteTrigger(t);
   });
   ScriptApp.newTrigger('syncAll').timeBased().everyMinutes(1).create();
+}
+
+// ---------------------------------------------------------------------------
+// CRA SMS/WHATSAPP NOTIFICATION WEBHOOK (Sep 2026 process review)
+// ---------------------------------------------------------------------------
+// Receives a fire-and-forget POST from the app (docket-work.html's
+// sendCraNotification()) whenever an engineer confirms a CRA slot or logs
+// "waiting for CRA past promised time", and relays it as an SMS/WhatsApp to
+// the CRA's phone -- the independent, timestamped proof that removes any
+// "I said 12:30, not 11:30" dispute.
+//
+// SETUP (once TSPL has picked an SMS/WhatsApp provider -- Twilio, Gupshup,
+// or the official WhatsApp Business API are the common choices in India):
+//   1. Deploy this project as a Web App: Deploy -> New deployment -> Web app
+//      -> Execute as "Me", Who has access "Anyone" -> Deploy. Copy the URL.
+//   2. Paste that URL into docket-work.html's CRA_NOTIFY_WEBHOOK_URL constant.
+//   3. Add three Script Properties here (Project Settings -> Script Properties):
+//        SMS_PROVIDER_URL   — the provider's send-message REST endpoint
+//        SMS_PROVIDER_KEY   — your API key/token with that provider
+//        SMS_SENDER_ID      — the approved sender ID/number the provider gave you
+//      Then replace the body of sendViaProvider_() below with that provider's
+//      exact request format (every provider's payload shape differs slightly
+//      — check their API docs). Until these three properties are set, this
+//      handler logs the message to Executions and returns success without
+//      sending anything real, so the rest of the app keeps working exactly
+//      as today with no SMS/WhatsApp account required yet.
+// ---------------------------------------------------------------------------
+function doPost(e) {
+  try {
+    var body = JSON.parse(e.postData.contents);
+    var phone = body.phone;
+    var message = body.message;
+    if (!phone || !message) {
+      return ContentService.createTextOutput(JSON.stringify({ ok: false, error: 'Missing phone or message' })).setMimeType(ContentService.MimeType.JSON);
+    }
+    sendViaProvider_(phone, message);
+    return ContentService.createTextOutput(JSON.stringify({ ok: true })).setMimeType(ContentService.MimeType.JSON);
+  } catch (err) {
+    console.error('CRA notify webhook error:', err);
+    return ContentService.createTextOutput(JSON.stringify({ ok: false, error: String(err) })).setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
+function sendViaProvider_(phone, message) {
+  var props = PropertiesService.getScriptProperties();
+  var providerUrl = props.getProperty('SMS_PROVIDER_URL');
+  var providerKey = props.getProperty('SMS_PROVIDER_KEY');
+  var senderId = props.getProperty('SMS_SENDER_ID');
+
+  if (!providerUrl || !providerKey) {
+    // No provider configured yet -- log only, never throws. This keeps the
+    // CRA slot/no-show flow in the app fully functional (the clock-ledger
+    // logic never depends on the SMS actually sending) while TSPL sets up
+    // a real SMS/WhatsApp account at its own pace.
+    console.log('[CRA Notify] No SMS provider configured — would have sent to ' + phone + ': ' + message);
+    return;
+  }
+
+  // Example shape only -- replace with the real provider's documented
+  // request format once SMS_PROVIDER_URL/KEY/SENDER_ID are set above.
+  UrlFetchApp.fetch(providerUrl, {
+    method: 'post',
+    contentType: 'application/json',
+    headers: { Authorization: 'Bearer ' + providerKey },
+    payload: JSON.stringify({ to: phone, from: senderId, text: message }),
+    muteHttpExceptions: true
+  });
 }
