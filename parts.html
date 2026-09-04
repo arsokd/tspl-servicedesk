@@ -12,6 +12,7 @@
   <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
   <script src="firebase-config.js"></script>
+  <script src="clock-ledger.js"></script>
   <!-- PWA: installable app shell -->
   <link rel="manifest" href="manifest.json">
   <meta name="theme-color" content="#0f233d">
@@ -337,6 +338,11 @@
             <label class="block font-bold text-slate-700 uppercase text-[10px] mb-1">AWB / Consignment No</label>
             <input type="text" id="edit-awb" placeholder="e.g. BLU78912345" class="w-full border border-slate-300 rounded-lg p-2 font-mono uppercase bg-white" />
           </div>
+          <div class="col-span-2">
+            <label class="block font-bold text-slate-700 uppercase text-[10px] mb-1">SCM Estimated Arrival (ETA)</label>
+            <input type="datetime-local" id="edit-eta" class="w-full border border-slate-300 rounded-lg p-2 bg-white" />
+            <p class="text-[10px] text-slate-500 mt-1">Set by SCM once sourcing is confirmed -- visible on the linked docket so the engineer knows when to expect the part.</p>
+          </div>
         </div>
 
         <!-- Serial Numbers for Installed Status -->
@@ -465,6 +471,15 @@
               <option value="Engineer Handover">Engineer Handover</option>
             </select>
           </div>
+        </div>
+
+        <div>
+          <label class="block font-bold text-slate-700 uppercase text-[10px] mb-1">Parts Source *</label>
+          <select id="new-source" required class="w-full border border-slate-300 rounded-lg p-2 bg-white">
+            <option value="TSPL">TSPL Stock (our own supply chain)</option>
+            <option value="CLIENT_OEM">Client / OEM Arranged</option>
+          </select>
+          <p class="text-[10px] text-slate-500 mt-1">Determines whose account the waiting clock charges to while this part is pending.</p>
         </div>
 
         <div>
@@ -795,6 +810,7 @@
       document.getElementById('edit-status').value = ind.status || 'Requested';
       document.getElementById('edit-courier-name').value = ind.courierName || '';
       document.getElementById('edit-awb').value = ind.awbNumber || '';
+      document.getElementById('edit-eta').value = ind.eta ? new Date(ind.eta.toDate ? ind.eta.toDate() : ind.eta).toISOString().slice(0, 16) : '';
       document.getElementById('edit-new-serial').value = ind.newSerialNo || '';
       document.getElementById('edit-old-serial').value = ind.oldSerialNo || '';
       document.getElementById('edit-remarks').value = '';
@@ -846,10 +862,13 @@
       var newStatus = document.getElementById('edit-status').value;
       var courierName = document.getElementById('edit-courier-name').value.trim();
       var awb = document.getElementById('edit-awb').value.trim();
+      var etaInput = document.getElementById('edit-eta').value;
+      var eta = etaInput ? new Date(etaInput) : null;
       var newSerial = document.getElementById('edit-new-serial').value.trim();
       var oldSerial = document.getElementById('edit-old-serial').value.trim();
       var remarks = document.getElementById('edit-remarks').value.trim();
 
+      var priorIndent = currentIndents.find(function (x) { return x.id === indentId; }) || {};
       var userName = localStorage.getItem('userName') || 'Tech Support Specialist';
 
       try {
@@ -861,6 +880,7 @@
           status: newStatus,
           courierName: courierName || null,
           awbNumber: awb || null,
+          eta: eta,
           newSerialNo: newSerial || null,
           oldSerialNo: oldSerial || null,
           lastRemarks: remarks,
@@ -876,6 +896,13 @@
         }
         if (newStatus === 'Installed' && !indentPayload.installedAt) {
           indentPayload.installedAt = firebase.firestore.FieldValue.serverTimestamp();
+        }
+        // Capture who/when approved -- this is the "Technical Support Specialist
+        // approves" step in the confirmed workflow (engineer raises -> Tech
+        // Support approves -> SCM sets ETA).
+        if (newStatus === 'Approved' && priorIndent.status !== 'Approved') {
+          indentPayload.approvedBy = userName;
+          indentPayload.approvedAt = firebase.firestore.FieldValue.serverTimestamp();
         }
 
         batch.update(indentRef, indentPayload);
@@ -912,6 +939,26 @@
             currentDependency: newDep,
             updatedAt: firebase.firestore.FieldValue.serverTimestamp()
           };
+
+          // Clock ownership: the part has now physically reached the ATM --
+          // per the confirmed process, the clock resumes on TSPL's account the
+          // moment parts (and CRA, tracked separately in docket-work.html)
+          // are both present, regardless of which account was paying for the
+          // wait. Needs a fresh read since this screen doesn't keep the full
+          // docket object (with activeClockSegmentId) in memory.
+          if (newStatus === 'Delivered' && typeof ledgerSwitchSegment === 'function') {
+            try {
+              var docketSnapForClock = await docketRef.get();
+              if (docketSnapForClock.exists) {
+                var docketForClock = docketSnapForClock.data();
+                if (docketForClock.clockHeading === 'AWAITING_PARTS_TSPL' || docketForClock.clockHeading === 'AWAITING_PARTS_CLIENT') {
+                  ledgerSwitchSegment(batch, docketRef, docketForClock, 'TSPL_ACTIVE', 'Part delivered to site (Indent ' + (priorIndent.indentNo || indentId) + ')');
+                }
+              }
+            } catch (clockErr) {
+              console.warn('Clock ledger switch on delivery failed (non-blocking):', clockErr);
+            }
+          }
 
           if (newStatus === 'Installed') {
             docketUpdatePayload.partsReplaced = firebase.firestore.FieldValue.arrayUnion({
@@ -1055,6 +1102,7 @@
       var qty = parseInt(document.getElementById('new-quantity').value, 10) || 1;
       var priority = document.getElementById('new-priority').value;
       var destination = document.getElementById('new-destination').value;
+      var source = document.getElementById('new-source').value; // 'TSPL' | 'CLIENT_OEM'
       var reason = document.getElementById('new-reason').value.trim();
 
       var userName = localStorage.getItem('userName') || 'Tech Support';
@@ -1062,6 +1110,7 @@
       try {
         var indentDocRef = db.collection('partsIndent').doc();
         var indentNo = 'IND-' + new Date().getFullYear() + '-' + Math.floor(100000 + Math.random() * 900000);
+        var sourceLabel = source === 'CLIENT_OEM' ? 'Client/OEM Arranged' : 'TSPL Stock';
 
         var batch = db.batch();
 
@@ -1078,6 +1127,7 @@
           quantity: qty,
           priority: priority,
           destination: destination,
+          source: source,
           reason: reason,
           status: 'Requested',
           requestedBy: userName,
@@ -1095,15 +1145,37 @@
           updatedAt: firebase.firestore.FieldValue.serverTimestamp()
         });
 
-        // 3. Docket Activity Audit Trail
+        // Clock ownership: opens/switches the awaiting-parts segment for
+        // whichever account sources this part. Uses the already-loaded
+        // verifiedDocketData (has activeClockSegmentId from its own fetch).
+        if (typeof ledgerSwitchSegment === 'function') {
+          ledgerSwitchSegment(batch, docketRef, verifiedDocketData, source === 'CLIENT_OEM' ? 'AWAITING_PARTS_CLIENT' : 'AWAITING_PARTS_TSPL', 'Indent ' + indentNo + ' raised (' + sourceLabel + ')');
+        }
+
+        // 3. Docket Activity Audit Trail (per-docket subcollection)
         var actRef = docketRef.collection('activity').doc();
         batch.set(actRef, {
           action: 'Spares Indented: ' + indentNo,
           by: userName,
           subStatus: 'Spares Indented',
           dependency: 'SCM Dependency',
-          remarks: 'Indented ' + qty + 'x ' + partName + ' (' + partCode + '). Reason: ' + reason,
+          remarks: 'Indented ' + qty + 'x ' + partName + ' (' + partCode + '). Source: ' + sourceLabel + '. Reason: ' + reason,
           timestamp: firebase.firestore.FieldValue.serverTimestamp()
+        });
+
+        // 3b. Also log to the top-level docketActivity audit trail -- the
+        // shared change feed the Google Sheets sync watches. Without this, an
+        // indent raised directly from this screen (rather than via the
+        // engineer's docket-work.html request) stays invisible to the sync,
+        // same class of gap already fixed for docket creation.
+        var globalActRefCreate = db.collection('docketActivity').doc();
+        batch.set(globalActRefCreate, {
+          docketId: verifiedDocketData.id,
+          timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+          action: 'Spares Indented: ' + indentNo,
+          performedBy: userName,
+          role: localStorage.getItem('userRole') || 'techsupport',
+          notes: 'Indented ' + qty + 'x ' + partName + ' (' + partCode + '). Source: ' + sourceLabel + '. Reason: ' + reason
         });
 
         // 4. Bump Stats

@@ -12,6 +12,7 @@
   <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-storage-compat.js"></script>
   <script src="firebase-config.js"></script>
+  <script src="clock-ledger.js"></script>
   <!-- PWA: installable app shell -->
   <link rel="manifest" href="manifest.json">
   <meta name="theme-color" content="#0f233d">
@@ -254,7 +255,7 @@
         </div>
 
         <!-- =============================================================== -->
-        <!-- STEP 4: CUSTODIAN ARRIVAL & CONTACT RECORD                      -->
+        <!-- STEP 4: CRA (CUSTODIAN) COORDINATION & ARRIVAL                  -->
         <!-- =============================================================== -->
         <div id="step-4" class="step-card hidden bg-white rounded-2xl p-5 shadow-sm border border-slate-200 space-y-4">
           <div class="text-center space-y-1">
@@ -263,58 +264,86 @@
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
               </svg>
             </div>
-            <h2 class="text-sm font-bold text-slate-900 uppercase">Step 4: Custodian Verification</h2>
-            <p class="text-xs text-slate-500">Bank vault combination & security key handover.</p>
+            <h2 class="text-sm font-bold text-slate-900 uppercase">Step 4: CRA (Custodian) Coordination</h2>
+            <p class="text-xs text-slate-500">Cash Replenishment Agent — vault combination & security key handover.</p>
           </div>
 
-          <!-- SLA Protection Amber Notice -->
-          <div class="p-3.5 bg-amber-50 border border-amber-300 rounded-xl text-xs text-amber-900 space-y-1">
-            <div class="font-bold">Contractual SLA Protection Notice:</div>
-            <p class="text-[11px] leading-relaxed text-amber-800">
-              You cannot open the ATM until the custodian arrives. The waiting time from now is recorded against the bank, not against you, and is excluded from TSPL's SLA calculation.
-            </p>
+          <!-- Live clock-ownership banner -->
+          <div id="step4-clock-banner"></div>
+
+          <!-- SUB-STEP A: CRA Slot Confirmation (shown until a slot is confirmed) -->
+          <div id="step4-slot-section" class="space-y-3 pt-1 text-xs">
+            <div class="p-3.5 bg-amber-50 border border-amber-300 rounded-xl text-amber-900 space-y-1">
+              <div class="font-bold">Contractual SLA Protection Notice:</div>
+              <p class="text-[11px] leading-relaxed text-amber-800">
+                Call the CRA now. The moment you log the time they've committed to, the clock moves to the Client/CRA account — with an SMS/WhatsApp sent to the CRA confirming exactly what was agreed, so there's never a dispute over the promised time.
+              </p>
+            </div>
+            <form onsubmit="executeConfirmCraSlot(event)" class="space-y-3">
+              <div>
+                <label class="block font-semibold text-slate-700 mb-1">CRA Name *</label>
+                <input type="text" id="cra-name" required placeholder="e.g. Ramesh Kumar" class="w-full p-2.5 border border-slate-300 rounded-lg" />
+              </div>
+              <div>
+                <label class="block font-semibold text-slate-700 mb-1">CRA 10-Digit Mobile *</label>
+                <input type="tel" id="cra-phone" required pattern="[0-9]{10}" placeholder="9876543210" class="w-full p-2.5 border border-slate-300 rounded-lg font-mono" />
+              </div>
+              <div>
+                <label class="block font-semibold text-slate-700 mb-1">Promised Arrival Time *</label>
+                <input type="datetime-local" id="cra-promised-time" required class="w-full p-2.5 border border-slate-300 rounded-lg" />
+              </div>
+              <button type="submit" id="btn-confirm-cra-slot" class="w-full bg-amber-600 hover:bg-amber-700 active:bg-amber-800 text-white font-bold text-xs py-3.5 px-4 rounded-xl shadow-md touch-target flex items-center justify-center gap-2">
+                <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                </svg>
+                <span>Confirm Slot &amp; Notify CRA</span>
+              </button>
+            </form>
           </div>
 
-          <!-- Custodian Delay Button -->
-          <button id="btn-custodian-delay" onclick="recordCustodianDelay()" class="w-full bg-amber-600 hover:bg-amber-700 active:bg-amber-800 text-white font-bold text-xs py-3 px-4 rounded-xl shadow-sm touch-target flex items-center justify-center gap-2">
-            <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-            <span>CUSTODIAN NOT YET ARRIVED (Log Waiting Time)</span>
-          </button>
-
-          <!-- Custodian Arrival Form -->
-          <form onsubmit="executeStep4CustodianArrival(event)" class="space-y-3 pt-2 border-t border-slate-100 text-xs">
-            <div class="font-bold text-slate-800 uppercase text-[11px]">When Custodian Reaches Site:</div>
-
-            <div>
-              <label class="block font-semibold text-slate-700 mb-1">Custodian Full Name *</label>
-              <input type="text" id="cust-name" required placeholder="e.g. Ramesh Kumar" class="w-full p-2.5 border border-slate-300 rounded-lg" />
-            </div>
-
-            <div class="grid grid-cols-2 gap-2">
-              <div>
-                <label class="block font-semibold text-slate-700 mb-1">Employee ID *</label>
-                <input type="text" id="cust-empid" required placeholder="e.g. CMS-9821" class="w-full p-2.5 border border-slate-300 rounded-lg" />
-              </div>
-              <div>
-                <label class="block font-semibold text-slate-700 mb-1">10-Digit Mobile *</label>
-                <input type="tel" id="cust-phone" required pattern="[0-9]{10}" placeholder="9876543210" class="w-full p-2.5 border border-slate-300 rounded-lg font-mono" />
-              </div>
-            </div>
-
-            <div>
-              <label class="block font-semibold text-slate-700 mb-1">Email (Optional)</label>
-              <input type="email" id="cust-email" placeholder="custodian@agency.com" class="w-full p-2.5 border border-slate-300 rounded-lg" />
-            </div>
-
-            <button type="submit" id="btn-custodian-arrived" class="w-full bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-bold text-xs py-3.5 px-4 rounded-xl shadow-md touch-target flex items-center justify-center gap-2">
+          <!-- SUB-STEP B: Waiting (shown once a slot is confirmed, until CRA arrives) -->
+          <div id="step4-waiting-section" class="hidden space-y-3 pt-2 border-t border-slate-100 text-xs">
+            <div id="step4-slot-summary" class="p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-slate-700"></div>
+            <button id="btn-cra-no-show" onclick="recordCraNoShow()" class="w-full bg-amber-600 hover:bg-amber-700 active:bg-amber-800 text-white font-bold text-xs py-3 px-4 rounded-xl shadow-sm touch-target flex items-center justify-center gap-2">
               <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
-              <span>CUSTODIAN HAS ARRIVED (Start Diagnostics)</span>
+              <span>PROMISED TIME PASSED — LOG WAITING FOR CRA</span>
             </button>
-          </form>
+
+            <!-- CRA Arrival Form -->
+            <form onsubmit="executeStep4CustodianArrival(event)" class="space-y-3 pt-2 border-t border-slate-100">
+              <div class="font-bold text-slate-800 uppercase text-[11px]">When CRA Reaches Site:</div>
+
+              <div>
+                <label class="block font-semibold text-slate-700 mb-1">Custodian Full Name *</label>
+                <input type="text" id="cust-name" required placeholder="e.g. Ramesh Kumar" class="w-full p-2.5 border border-slate-300 rounded-lg" />
+              </div>
+
+              <div class="grid grid-cols-2 gap-2">
+                <div>
+                  <label class="block font-semibold text-slate-700 mb-1">Employee ID *</label>
+                  <input type="text" id="cust-empid" required placeholder="e.g. CMS-9821" class="w-full p-2.5 border border-slate-300 rounded-lg" />
+                </div>
+                <div>
+                  <label class="block font-semibold text-slate-700 mb-1">10-Digit Mobile *</label>
+                  <input type="tel" id="cust-phone" required pattern="[0-9]{10}" placeholder="9876543210" class="w-full p-2.5 border border-slate-300 rounded-lg font-mono" />
+                </div>
+              </div>
+
+              <div>
+                <label class="block font-semibold text-slate-700 mb-1">Email (Optional)</label>
+                <input type="email" id="cust-email" placeholder="custodian@agency.com" class="w-full p-2.5 border border-slate-300 rounded-lg" />
+              </div>
+
+              <button type="submit" id="btn-custodian-arrived" class="w-full bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-bold text-xs py-3.5 px-4 rounded-xl shadow-md touch-target flex items-center justify-center gap-2">
+                <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <span>CRA HAS ARRIVED (Start Diagnostics)</span>
+              </button>
+            </form>
+          </div>
         </div>
 
         <!-- =============================================================== -->
@@ -378,6 +407,14 @@
               <span class="text-[11px] text-slate-700">Raise Reimbursable</span>
             </button>
           </div>
+
+          <!-- Wrong Part Received (shown only while a part is genuinely awaited) -->
+          <button id="btn-wrong-part" onclick="logWrongPartReceived()" class="hidden w-full bg-red-50 hover:bg-red-100 border border-red-300 text-red-800 font-bold text-xs py-2.5 px-4 rounded-xl touch-target flex items-center justify-center gap-2">
+            <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <span>Wrong Part Received (Clock Stays With Source)</span>
+          </button>
 
           <!-- Mark As Resolved Form -->
           <div class="bg-white rounded-2xl p-4 shadow-sm border border-slate-200 space-y-3">
@@ -502,6 +539,10 @@
           <strong id="succ-net-tat" class="font-mono text-indigo-700 font-bold">-- min</strong>
         </div>
         <div class="flex justify-between border-b border-slate-100 pb-2">
+          <span class="text-slate-500">Client/CRA TAT:</span>
+          <strong id="succ-client-tat" class="font-mono text-amber-700 font-bold">-- min</strong>
+        </div>
+        <div class="flex justify-between border-b border-slate-100 pb-2">
           <span class="text-slate-500">SLA Contract Result:</span>
           <span id="succ-sla-result" class="font-bold text-emerald-600 uppercase">SLA MET &check;</span>
         </div>
@@ -555,6 +596,15 @@
         <div>
           <label class="block font-semibold text-slate-700 mb-1">Defect Reason *</label>
           <input type="text" id="part-req-reason" required placeholder="Gears stripped during card eject" class="w-full p-2.5 border border-slate-300 rounded-lg" />
+        </div>
+
+        <div>
+          <label class="block font-semibold text-slate-700 mb-1">Parts Source *</label>
+          <select id="part-req-source" required class="w-full p-2.5 border border-slate-300 rounded-lg bg-white">
+            <option value="TSPL">TSPL Stock (our own supply chain)</option>
+            <option value="CLIENT_OEM">Client / OEM Arranged</option>
+          </select>
+          <p class="text-[10px] text-slate-500 mt-1">Determines whose account the waiting clock charges to while this part is pending.</p>
         </div>
 
         <div>
@@ -837,11 +887,13 @@
         initStep7OtpAndCanvas();
       } else if (d.workStartedAt) {
         showStep(6);
+        initStep6Actions();
       } else if (d.custodianReachedAt && d.reachedAt) {
         showStep(5);
         initStep5Timer();
       } else if (d.reachedAt) {
         showStep(4);
+        initStep4CraFlow();
       } else if (d.travelStartedAt) {
         showStep(3);
         initStep3Geofence();
@@ -1348,11 +1400,51 @@
     }
 
     // ------------------------------------------------------------------------
-    // STEP 4: CUSTODIAN DELAY & ARRIVAL FORM
+    // STEP 4: CRA SLOT CONFIRMATION, NO-SHOW & ARRIVAL FORM
     // ------------------------------------------------------------------------
-    async function recordCustodianDelay() {
-      var btn = document.getElementById('btn-custodian-delay');
-      setBtnBusy(btn, true, 'Logging delay...');
+
+    // Decides which of Step 4's two sub-sections to show, and renders the
+    // live clock-ownership banner + slot summary. Called every time Step 4
+    // becomes active (determineActiveStep) and after any CRA action commits.
+    function initStep4CraFlow() {
+      var d = currentDocket;
+      var banner = document.getElementById('step4-clock-banner');
+      if (banner && typeof renderClockOwnerBanner === 'function') banner.innerHTML = renderClockOwnerBanner(d);
+
+      var slotSection = document.getElementById('step4-slot-section');
+      var waitingSection = document.getElementById('step4-waiting-section');
+
+      if (!d.craSlotConfirmedAt) {
+        slotSection.classList.remove('hidden');
+        waitingSection.classList.add('hidden');
+        return;
+      }
+
+      slotSection.classList.add('hidden');
+      waitingSection.classList.remove('hidden');
+
+      var promised = d.craPromisedTime ? (d.craPromisedTime.toDate ? d.craPromisedTime.toDate() : new Date(d.craPromisedTime)) : null;
+      var promisedStr = promised ? fmtDateTime(promised) : '--';
+      var summary = document.getElementById('step4-slot-summary');
+      var pastDue = promised && Date.now() > promised.getTime();
+      summary.innerHTML =
+        '<strong>' + (d.craContactName || 'CRA') + '</strong> (' + (d.craPhone || '--') + ') committed to <strong>' + promisedStr + '</strong>.' +
+        (d.craNoShowLoggedAt ? '<br><span class="text-amber-700 font-semibold">Marked waiting since ' + fmtDateTime(d.craNoShowLoggedAt.toDate ? d.craNoShowLoggedAt.toDate() : new Date(d.craNoShowLoggedAt)) + '.</span>' : '');
+
+      var noShowBtn = document.getElementById('btn-cra-no-show');
+      // Only meaningful once the promised time has actually passed, and only once per slot.
+      noShowBtn.classList.toggle('hidden', !pastDue || !!d.craNoShowLoggedAt);
+    }
+
+    async function executeConfirmCraSlot(e) {
+      e.preventDefault();
+      var btn = document.getElementById('btn-confirm-cra-slot');
+      setBtnBusy(btn, true, 'Confirming & notifying CRA...');
+
+      var craName = document.getElementById('cra-name').value.trim();
+      var craPhone = document.getElementById('cra-phone').value.trim();
+      var promisedInput = document.getElementById('cra-promised-time').value;
+      var promisedDate = promisedInput ? new Date(promisedInput) : null;
 
       try {
         var batch = db.batch();
@@ -1360,26 +1452,82 @@
         var actRef = db.collection('docketActivity').doc();
 
         batch.update(docketRef, {
-          status: 'Custodian Delay',
-          currentDependency: 'Bank Accompaniment',
-          custodianDelayCount: firebase.firestore.FieldValue.increment(1)
+          craContactName: craName,
+          craPhone: craPhone,
+          craPromisedTime: promisedDate,
+          craSlotConfirmedAt: firebase.firestore.FieldValue.serverTimestamp(),
+          status: 'CRA Delay',
+          currentDependency: 'CRA Delay'
         });
 
         batch.set(actRef, {
           docketId: currentDocketId,
           timestamp: firebase.firestore.FieldValue.serverTimestamp(),
-          action: 'Custodian Delay',
+          action: 'CRA Slot Confirmed',
           performedBy: localStorage.getItem('userName') || 'Field Engineer',
           role: 'engineer',
-          notes: 'Custodian not yet at site. Waiting time recorded against Bank Accompaniment SLA exclusion.'
+          notes: 'CRA ' + craName + ' (' + craPhone + ') committed to ' + fmtDateTime(promisedDate) + '. Clock moved to Client/CRA account.'
+        });
+
+        // Clock ownership switches TSPL -> CLIENT the instant the slot is logged.
+        ledgerSwitchSegment(batch, docketRef, currentDocket, 'AWAITING_CRA', 'CRA slot confirmed: ' + fmtDateTime(promisedDate));
+
+        await batch.commit();
+
+        currentDocket.craContactName = craName;
+        currentDocket.craPhone = craPhone;
+        currentDocket.craPromisedTime = promisedDate;
+        currentDocket.craSlotConfirmedAt = new Date();
+        currentDocket.activeClockSegmentId = null; // force a fresh read on next ledger action; local id is unknown until re-fetched
+        await refreshCurrentDocketClockFields();
+
+        // Best-effort SMS/WhatsApp to the CRA -- never blocks the app flow if
+        // no provider is configured yet (see sendCraNotification below).
+        sendCraNotification(craPhone, 'TSPL: Your confirmed slot for ATM ' + (currentDocket.atmId || '') + ' is ' + fmtDateTime(promisedDate) + '. Please be available at this time.');
+
+        initStep4CraFlow();
+        toast('CRA slot confirmed. Clock moved to Client/CRA account.', 'success');
+      } catch (err) {
+        toast('Error confirming CRA slot: ' + err.message, 'error');
+      } finally {
+        setBtnBusy(btn, false, 'Confirm Slot & Notify CRA');
+      }
+    }
+
+    async function recordCraNoShow() {
+      var btn = document.getElementById('btn-cra-no-show');
+      setBtnBusy(btn, true, 'Logging...');
+
+      try {
+        var batch = db.batch();
+        var docketRef = db.collection('dockets').doc(currentDocketId);
+        var actRef = db.collection('docketActivity').doc();
+
+        // No clock switch here -- it's already on the Client/CRA account and
+        // stays there. This just logs proof that TSPL's engineer was on site,
+        // on time, waiting -- so any further delay is provably the CRA's.
+        batch.update(docketRef, { craNoShowLoggedAt: firebase.firestore.FieldValue.serverTimestamp() });
+
+        batch.set(actRef, {
+          docketId: currentDocketId,
+          timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+          action: 'Waiting for CRA (Past Promised Time)',
+          performedBy: localStorage.getItem('userName') || 'Field Engineer',
+          role: 'engineer',
+          notes: 'Promised time passed; engineer on site waiting for CRA. Clock remains on Client/CRA account.'
         });
 
         await batch.commit();
-        toast('Custodian waiting time recorded (Excluded from TSPL Net TAT)', 'warning');
+
+        currentDocket.craNoShowLoggedAt = new Date();
+        sendCraNotification(currentDocket.craPhone, 'TSPL: Our engineer is on site at ATM ' + (currentDocket.atmId || '') + ' waiting for you, past the confirmed time. Please arrive as soon as possible.');
+
+        initStep4CraFlow();
+        toast('Waiting time logged (Client/CRA account) and CRA notified.', 'warning');
       } catch (err) {
-        toast('Error logging delay: ' + err.message, 'error');
+        toast('Error logging wait: ' + err.message, 'error');
       } finally {
-        setBtnBusy(btn, false, 'CUSTODIAN NOT YET ARRIVED (Log Waiting Time)');
+        setBtnBusy(btn, false, 'PROMISED TIME PASSED — LOG WAITING FOR CRA');
       }
     }
 
@@ -1417,24 +1565,71 @@
         batch.set(actRef, {
           docketId: currentDocketId,
           timestamp: firebase.firestore.FieldValue.serverTimestamp(),
-          action: 'Custodian Arrived',
+          action: 'CRA Arrived',
           performedBy: localStorage.getItem('userName') || 'Field Engineer',
           role: 'engineer',
-          notes: 'Custodian ' + custName + ' (' + custEmpId + ', Ph: ' + custPhone + ') verified on site.'
+          notes: 'CRA ' + custName + ' (' + custEmpId + ', Ph: ' + custPhone + ') verified on site. Clock returns to TSPL account.'
         });
+
+        // Clock ownership switches CLIENT -> TSPL now that TSPL can act again.
+        ledgerSwitchSegment(batch, docketRef, currentDocket, 'TSPL_ACTIVE', 'CRA arrived on site');
 
         await batch.commit();
 
         currentDocket.custodianReachedAt = now;
         currentDocket.custodianDetails = custodianData;
         currentDocket.status = 'In Progress';
+        await refreshCurrentDocketClockFields();
         determineActiveStep();
-        toast('Custodian verified. Diagnostics started.', 'success');
+        toast('CRA verified. Clock back on TSPL account. Diagnostics started.', 'success');
       } catch (err) {
         toast('Error recording custodian: ' + err.message, 'error');
       } finally {
-        setBtnBusy(btn, false, 'CUSTODIAN HAS ARRIVED (Start Diagnostics)');
+        setBtnBusy(btn, false, 'CRA HAS ARRIVED (Start Diagnostics)');
       }
+    }
+
+    // Re-reads just the clock-related fields from Firestore after a ledger
+    // switch, so the local currentDocket object has the fresh
+    // activeClockSegmentId the NEXT switch needs (batched writes don't echo
+    // server-generated values back to the client automatically).
+    async function refreshCurrentDocketClockFields() {
+      try {
+        var doc = await db.collection('dockets').doc(currentDocketId).get();
+        if (!doc.exists) return;
+        var data = doc.data();
+        currentDocket.clockOwner = data.clockOwner;
+        currentDocket.clockHeading = data.clockHeading;
+        currentDocket.clockSegmentStartedAt = data.clockSegmentStartedAt;
+        currentDocket.activeClockSegmentId = data.activeClockSegmentId;
+      } catch (err) {
+        console.warn('Could not refresh clock fields:', err);
+      }
+    }
+
+    // Best-effort SMS/WhatsApp send to the CRA. Calls a configurable webhook
+    // (an Apps Script Web App URL, same free-tier pattern as the Google
+    // Sheets sync) rather than embedding any provider API key in this
+    // client-side file. If no webhook is configured yet, this silently no-ops
+    // with a console warning -- it never blocks the clock-ledger flow above,
+    // which is correct and complete regardless of whether the SMS actually
+    // sends. Configure by setting CRA_NOTIFY_WEBHOOK_URL below once TSPL has
+    // an SMS/WhatsApp provider account wired into google-sheets-sync/Code.gs
+    // (see that file's doPost handler and SETUP.md).
+    var CRA_NOTIFY_WEBHOOK_URL = ''; // e.g. 'https://script.google.com/macros/s/XXXXX/exec'
+    function sendCraNotification(phone, message) {
+      if (!CRA_NOTIFY_WEBHOOK_URL) {
+        console.warn('[CRA Notify] No webhook configured (CRA_NOTIFY_WEBHOOK_URL is empty) — SMS/WhatsApp not sent. Message would have been:', phone, message);
+        return;
+      }
+      fetch(CRA_NOTIFY_WEBHOOK_URL, {
+        method: 'POST',
+        mode: 'no-cors', // Apps Script Web Apps don't return CORS headers; fire-and-forget is fine here
+        headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify({ phone: phone, message: message })
+      }).catch(function (err) {
+        console.warn('[CRA Notify] Send failed (non-blocking):', err);
+      });
     }
 
     // ------------------------------------------------------------------------
@@ -1520,6 +1715,7 @@
       var qty = parseInt(document.getElementById('part-req-qty').value, 10);
       var oldSerial = document.getElementById('part-req-old-serial').value.trim();
       var reason = document.getElementById('part-req-reason').value.trim();
+      var source = document.getElementById('part-req-source').value; // 'TSPL' | 'CLIENT_OEM'
       var photoFile = document.getElementById('part-req-photo').files[0];
 
       try {
@@ -1531,19 +1727,22 @@
           var batch = db.batch();
           var docketRef = db.collection('dockets').doc(currentDocketId);
           var actRef = db.collection('docketActivity').doc();
+          var indentRef = db.collection('partsIndent').doc();
+          var sourceLabel = source === 'CLIENT_OEM' ? 'Client/OEM Arranged' : 'TSPL Stock';
 
           var partsRequest = {
             partName: part,
             quantity: qty,
             oldSerial: oldSerial,
             reason: reason,
+            source: source,
             photoBase64: base64Photo,
             requestedAt: firebase.firestore.FieldValue.serverTimestamp()
           };
 
           batch.update(docketRef, {
             status: 'Pending Spares',
-            currentDependency: 'Part Required',
+            currentDependency: source === 'CLIENT_OEM' ? 'SCM Dependency' : 'Engineer Dependency',
             partsRequested: firebase.firestore.FieldValue.arrayUnion(partsRequest)
           });
 
@@ -1553,19 +1752,87 @@
             action: 'Pending Spares',
             performedBy: localStorage.getItem('userName') || 'Field Engineer',
             role: 'engineer',
-            notes: 'Spares Requested: ' + qty + 'x ' + part + ' (Old SN: ' + oldSerial + '). Reason: ' + reason
+            notes: 'Spares Requested: ' + qty + 'x ' + part + ' (Old SN: ' + oldSerial + '). Source: ' + sourceLabel + '. Reason: ' + reason
           });
 
+          // Also raise a formal SCM indent so Technical Support / SCM staff
+          // (parts.html) can approve it and set an ETA -- the engineer-side
+          // request above and the SCM-side indent were previously two
+          // disconnected systems; this links them per the confirmed workflow
+          // (engineer raises -> Tech Support approves -> SCM sets ETA).
+          batch.set(indentRef, {
+            indentNo: 'IND-' + new Date().getFullYear() + '-' + Math.floor(100000 + Math.random() * 900000),
+            docketId: currentDocketId,
+            docketNo: currentDocket.docketNo || currentDocketId,
+            atmId: currentDocket.atmId || '',
+            bank: currentDocket.bank || '',
+            ro: currentDocket.ro || 'RO',
+            partName: part,
+            partCode: oldSerial ? ('OLD-' + oldSerial) : 'OEM-GENERIC',
+            quantity: qty,
+            priority: 'Normal',
+            destination: 'ATM Site Direct',
+            reason: reason,
+            source: source,
+            status: 'Requested',
+            requestedBy: localStorage.getItem('userName') || 'Field Engineer',
+            engineerName: currentDocket.assignedEngineerName || localStorage.getItem('userName') || 'Field Tech',
+            createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+            updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+          });
+
+          // Clock ownership: TSPL's own stock keeps the clock on TSPL's
+          // account (their own supply chain to manage); Client/OEM-arranged
+          // parts move it to the Client's account while awaited.
+          ledgerSwitchSegment(batch, docketRef, currentDocket, source === 'CLIENT_OEM' ? 'AWAITING_PARTS_CLIENT' : 'AWAITING_PARTS_TSPL', 'Parts requested: ' + part + ' (' + sourceLabel + ')');
+
           await batch.commit();
+          await refreshCurrentDocketClockFields();
+          if (typeof initStep4CraFlow === 'function') initStep4CraFlow();
 
           closePartsRequestModal();
-          toast('Parts request submitted. Docket set to Pending Spares.', 'success');
+          toast('Parts request submitted (' + sourceLabel + '). Docket set to Pending Spares.', 'success');
         };
         reader.readAsDataURL(compressedBlob);
       } catch (err) {
         toast('Failed to submit parts request: ' + err.message, 'error');
       } finally {
         setBtnBusy(btn, false, 'Submit Spares Request');
+      }
+    }
+
+    // Shows the "Wrong Part Received" button only while a part is genuinely
+    // being awaited (heading is one of the two AWAITING_PARTS_* states) --
+    // it makes no sense to offer it otherwise.
+    function initStep6Actions() {
+      var d = currentDocket;
+      var wrongBtn = document.getElementById('btn-wrong-part');
+      if (wrongBtn) {
+        var awaitingParts = d.clockHeading === 'AWAITING_PARTS_TSPL' || d.clockHeading === 'AWAITING_PARTS_CLIENT';
+        wrongBtn.classList.toggle('hidden', !awaitingParts);
+      }
+    }
+
+    // Logs that a delivered part turned out to be wrong/defective. Per the
+    // confirmed process, this does NOT switch the clock -- it stays charged
+    // to whichever account sourced it (TSPL or Client/OEM) until a CORRECT
+    // part is actually received (that happens in handleSavePartsReplaced).
+    async function logWrongPartReceived() {
+      var note = prompt('Briefly describe what was wrong with the part received (e.g. wrong model, damaged in transit):');
+      if (note === null) return; // cancelled
+      try {
+        var actRef = db.collection('docketActivity').doc();
+        await actRef.set({
+          docketId: currentDocketId,
+          timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+          action: 'Wrong Part Received',
+          performedBy: localStorage.getItem('userName') || 'Field Engineer',
+          role: 'engineer',
+          notes: (note || 'Wrong/defective part received.') + ' Clock remains on ' + (clockHeadingOwner(currentDocket.clockHeading) === 'CLIENT' ? 'Client/OEM' : 'TSPL') + ' account pending the correct part.'
+        });
+        toast('Logged. Clock unchanged — still awaiting the correct part.', 'warning');
+      } catch (err) {
+        toast('Error logging wrong part: ' + err.message, 'error');
       }
     }
 
@@ -1608,12 +1875,20 @@
             action: 'Parts Replaced',
             performedBy: localStorage.getItem('userName') || 'Field Engineer',
             role: 'engineer',
-            notes: 'Part replaced successfully. New Serial: ' + newSerial
+            notes: 'Correct part received and installed. New Serial: ' + newSerial + '. Clock returns to TSPL account.'
           });
 
+          // The correct part has now actually arrived -- clock resumes on
+          // TSPL's account regardless of which source it was awaited from.
+          if ((currentDocket.clockHeading === 'AWAITING_PARTS_TSPL' || currentDocket.clockHeading === 'AWAITING_PARTS_CLIENT')) {
+            ledgerSwitchSegment(batch, docketRef, currentDocket, 'TSPL_ACTIVE', 'Correct part received: ' + newSerial);
+          }
+
           await batch.commit();
+          await refreshCurrentDocketClockFields();
+          if (typeof initStep6Actions === 'function') initStep6Actions();
           closePartsReplacedModal();
-          toast('Part replacement recorded.', 'success');
+          toast('Part replacement recorded. Clock back on TSPL account.', 'success');
         };
         reader.readAsDataURL(compressedBlob);
       } catch (err) {
@@ -1851,24 +2126,33 @@
         var sigPngBase64 = sigCanvas.toDataURL('image/png');
         var now = new Date();
 
-        // Calculate Gross TAT & TSPL Net TAT
+        // Gross TAT: wall-clock open->close, per the confirmed MTTR definition.
         var callTime = currentDocket.callDateTime ? (currentDocket.callDateTime.toDate ? currentDocket.callDateTime.toDate() : new Date(currentDocket.callDateTime)) : now;
         var grossMins = Math.max(1, Math.round((now.getTime() - callTime.getTime()) / 60000));
 
-        // Deduct bank exclusion / custodian delay time for TSPL Net TAT
-        var exclusionMins = (currentDocket.custodianDelayCount || 0) * 30; // 30 min per delay unit
-        var netMins = Math.max(1, grossMins - exclusionMins);
+        // TSPL Net TAT now comes from the real clock-ownership ledger (Sep 2026
+        // process review) instead of the old "30 minutes per delay" guess:
+        // every CRA-wait and Client/OEM-parts-wait segment is measured to the
+        // actual minute. Computed "as of now" so the still-open final segment
+        // (which we're about to close below) is counted right up to this instant.
+        var clockTotals = await ledgerComputeTotals(currentDocketId, now);
+        var netMins = Math.max(1, clockTotals.tsplMinutes);
+        var clientMins = clockTotals.clientMinutes;
 
         var slaTargetMins = 120; // 2 hours HPY baseline
         var slaMet = (netMins <= slaTargetMins);
 
-        var billability = (typeof classifyBillability === 'function') 
-          ? classifyBillability(currentDocket) 
+        var billability = (typeof classifyBillability === 'function')
+          ? classifyBillability(currentDocket)
           : 'Free / SLA Covered';
 
         var batch = db.batch();
         var docketRef = db.collection('dockets').doc(currentDocketId);
         var actRef = db.collection('docketActivity').doc();
+
+        // Closes the ledger's final (TSPL-owned, normally) segment as of now
+        // -- no more clock time accrues against this docket after this.
+        ledgerCloseFinal(batch, docketRef, currentDocket);
 
         batch.update(docketRef, {
           status: 'Closed',
@@ -1879,8 +2163,24 @@
           custodianSignatureBase64: sigPngBase64,
           grossTATMinutes: grossMins,
           tsplNetTATMinutes: netMins,
+          clientNetTATMinutes: clientMins,
           slaMet: slaMet,
-          billability: billability
+          billability: billability,
+          // Full heading-by-heading breakdown (minutes + %), nested for the
+          // app's own detail views and flattened for Sheets/Looker Studio --
+          // per "each docket should show what % accounts to TSPL and Client
+          // on what headings", this is the deliverable that answers that.
+          clockTotals: clockTotals,
+          clockTotalsAsOf: firebase.firestore.FieldValue.serverTimestamp(),
+          tsplClockMinutes: clockTotals.tsplMinutes,
+          clientClockMinutes: clockTotals.clientMinutes,
+          mttrClockMinutes: clockTotals.mttrMinutes,
+          tsplClockPercent: clockTotals.tsplPercent,
+          clientClockPercent: clockTotals.clientPercent,
+          craWaitMinutes: Math.round(clockTotals.byHeading.AWAITING_CRA || 0),
+          partsWaitTsplMinutes: Math.round(clockTotals.byHeading.AWAITING_PARTS_TSPL || 0),
+          partsWaitClientMinutes: Math.round(clockTotals.byHeading.AWAITING_PARTS_CLIENT || 0),
+          tsplActiveMinutes: Math.round(clockTotals.byHeading.TSPL_ACTIVE || 0)
         });
 
         // Immutable activity log
@@ -1890,7 +2190,7 @@
           action: 'Completed',
           performedBy: localStorage.getItem('userName') || 'Field Engineer',
           role: 'engineer',
-          notes: 'In-person OTP ' + generatedOtp + ' verified and signed by custodian. Gross TAT: ' + grossMins + 'm, Net TAT: ' + netMins + 'm.'
+          notes: 'In-person OTP ' + generatedOtp + ' verified and signed by custodian. Gross TAT: ' + grossMins + 'm, TSPL Net TAT: ' + netMins + 'm (' + clockTotals.tsplPercent + '%), Client/CRA: ' + clientMins + 'm (' + clockTotals.clientPercent + '%).'
         });
 
         // Record resolution breach if Net TAT failed
@@ -1905,6 +2205,8 @@
             breachedAt: firebase.firestore.FieldValue.serverTimestamp(),
             loggedAt: firebase.firestore.FieldValue.serverTimestamp(),
             overdueMins: (netMins - slaTargetMins),
+            tsplNetTATMinutes: netMins,
+            tsplSharePercentage: clockTotals.tsplPercent,
             engineerId: localStorage.getItem('userUid') || '',
             engineerName: localStorage.getItem('userName') || ''
           });
@@ -1921,10 +2223,13 @@
         // Render full screen green completion page
         document.getElementById('succ-docket-no').textContent = 'Docket: ' + (currentDocket.docketNo || currentDocket.id);
         document.getElementById('succ-gross-tat').textContent = grossMins + ' minutes';
-        document.getElementById('succ-net-tat').textContent = netMins + ' minutes';
+        document.getElementById('succ-net-tat').textContent = netMins + ' minutes (' + clockTotals.tsplPercent + '%)';
         document.getElementById('succ-sla-result').textContent = slaMet ? 'SLA MET ✓ (Compliant)' : 'SLA BREACHED ✗';
         document.getElementById('succ-sla-result').className = slaMet ? 'font-bold text-emerald-600 uppercase' : 'font-bold text-red-600 uppercase';
         document.getElementById('succ-billability').textContent = billability;
+        if (document.getElementById('succ-client-tat')) {
+          document.getElementById('succ-client-tat').textContent = clientMins + ' minutes (' + clockTotals.clientPercent + '%)';
+        }
 
         document.getElementById('success-screen').classList.remove('hidden');
       } catch (err) {
