@@ -142,6 +142,29 @@
         </div>
       </div>
 
+      <!-- Action Panel 3B: Seed Clock Ledger Demo Dockets -->
+      <div class="border-b border-slate-100 pb-6 space-y-4">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div>
+            <div class="flex items-center gap-2">
+              <h2 class="text-lg font-semibold text-slate-800">3B. Seed Clock Ledger Demo Dockets</h2>
+              <span class="bg-amber-100 text-amber-800 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider">Reference Only</span>
+            </div>
+            <p class="text-xs text-slate-500 mt-1">Creates 7 closed, clearly-marked demo dockets (docket numbers start <span class="font-mono">DEMO-CLK-</span>) covering every clock-ownership scenario — clean run, CRA on-time, CRA no-show, TSPL-sourced parts, Client/OEM parts with a wrong delivery, a combined worst case, and a genuine TSPL delay — so the <a href="clock-ledger-report.html" class="text-indigo-600 underline font-semibold">Clock Ledger</a> screen has real data to show right away.</p>
+          </div>
+          <button
+            id="btn-seed-clock-demo"
+            onclick="handleSeedClockLedgerDemo()"
+            class="bg-amber-600 hover:bg-amber-700 text-white text-sm font-semibold py-2.5 px-6 rounded-md shadow transition flex items-center justify-center shrink-0 disabled:opacity-50"
+          >
+            Seed 7 Demo Dockets
+          </button>
+        </div>
+        <div class="p-3 bg-amber-50 border border-amber-200 rounded text-xs text-amber-900">
+          <strong>Before showing this to HPY or a bank client:</strong> remove these — every seeded docket carries <span class="font-mono">isDemoData: true</span>, so they're easy to find and delete from the Firestore Console (filter the <span class="font-mono">dockets</span> collection where that field equals true) once your own real dockets have enough history to show instead.
+        </div>
+      </div>
+
       <!-- Action Panel 3: Rebuild Scoreboard -->
       <div class="border-b border-slate-100 pb-6 space-y-4">
         <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -248,6 +271,117 @@
 
         await batch.commit();
         log('Committed batch ' + (i + 1) + '/' + batchesCount + ' for ' + label + ' (' + chunk.length + ' items)', 'info');
+      }
+    }
+
+    // ========================================================================
+    // CLOCK LEDGER DEMO DOCKETS (Sep 2026 process review)
+    // Seven closed, clearly-marked reference dockets covering every clock-
+    // ownership scenario, so clock-ledger-report.html and the Client Portal's
+    // docket detail view have real data to demonstrate immediately.
+    // ========================================================================
+    var CLOCK_DEMO_SCENARIOS = [
+      { atmId: 'ICIC00301', bank: 'ICICI Bank', ro: 'NORTH', scenario: 'Clean run — no delay of any kind',
+        segs: [['TSPL_ACTIVE', 92]] },
+      { atmId: 'HDFC00104', bank: 'HDFC Bank', ro: 'WEST', scenario: 'CRA gave a slot, arrived exactly on time',
+        segs: [['TSPL_ACTIVE', 36], ['AWAITING_CRA', 114], ['TSPL_ACTIVE', 25]] },
+      { atmId: 'AXIS00402', bank: 'Axis Bank', ro: 'SOUTH', scenario: 'CRA missed the promised slot, arrived late',
+        segs: [['TSPL_ACTIVE', 22], ['AWAITING_CRA', 118], ['TSPL_ACTIVE', 15]] },
+      { atmId: 'PNBN00503', bank: 'Punjab National Bank', ro: 'NORTH', scenario: 'Part needed, sourced from TSPL’s own stock',
+        segs: [['TSPL_ACTIVE', 40], ['AWAITING_PARTS_TSPL', 55], ['TSPL_ACTIVE', 15]] },
+      { atmId: 'CANR00701', bank: 'Canara Bank', ro: 'SOUTH', scenario: 'Client/OEM part — first delivery was wrong',
+        segs: [['TSPL_ACTIVE', 45], ['AWAITING_PARTS_CLIENT', 115], ['TSPL_ACTIVE', 15]] },
+      { atmId: 'HDFC00108', bank: 'HDFC Bank', ro: 'WEST', scenario: 'Worst case: CRA delay, then a Client/OEM part wait',
+        segs: [['TSPL_ACTIVE', 32], ['AWAITING_CRA', 58], ['TSPL_ACTIVE', 20], ['AWAITING_PARTS_CLIENT', 90], ['TSPL_ACTIVE', 15]] },
+      { atmId: 'ICIC00305', bank: 'ICICI Bank', ro: 'EAST', scenario: 'No CRA or parts involved — genuinely slow TSPL work',
+        segs: [['TSPL_ACTIVE', 145]] }
+    ];
+    var CLOCK_HEADING_OWNER = {
+      TSPL_ACTIVE: 'TSPL', AWAITING_PARTS_TSPL: 'TSPL',
+      AWAITING_CRA: 'CLIENT', AWAITING_PARTS_CLIENT: 'CLIENT'
+    };
+
+    async function handleSeedClockLedgerDemo() {
+      var btn = document.getElementById('btn-seed-clock-demo');
+      showLoader(btn, 'Seeding demo dockets...');
+      log('Seeding 7 Clock Ledger demo dockets...', 'info');
+
+      try {
+        var ops = [];
+
+        CLOCK_DEMO_SCENARIOS.forEach(function (scen, idx) {
+          var docketRef = db.collection('dockets').doc();
+          var docketNo = 'DEMO-CLK-' + String(idx + 1).padStart(4, '0');
+          // Stagger call times across today so they read naturally, oldest first.
+          var callDateTime = new Date(Date.now() - (CLOCK_DEMO_SCENARIOS.length - idx) * 3 * 3600 * 1000);
+
+          var cursor = new Date(callDateTime);
+          var byHeading = {};
+          var tsplMinutes = 0, clientMinutes = 0;
+
+          scen.segs.forEach(function (seg) {
+            var heading = seg[0], mins = seg[1];
+            var segStart = new Date(cursor);
+            var segEnd = new Date(cursor.getTime() + mins * 60000);
+            var owner = CLOCK_HEADING_OWNER[heading];
+
+            ops.push({
+              type: 'set',
+              ref: docketRef.collection('clockSegments').doc(),
+              data: { owner: owner, heading: heading, startedAt: segStart, endedAt: segEnd, note: 'Demo data' }
+            });
+
+            byHeading[heading] = (byHeading[heading] || 0) + mins;
+            if (owner === 'CLIENT') clientMinutes += mins; else tsplMinutes += mins;
+            cursor = segEnd;
+          });
+
+          var mttrMinutes = tsplMinutes + clientMinutes;
+          var tsplPercent = Math.round((tsplMinutes / mttrMinutes) * 1000) / 10;
+          var clientPercent = Math.round((clientMinutes / mttrMinutes) * 1000) / 10;
+          var closedAt = cursor;
+          var slaMet = tsplMinutes <= 120;
+
+          ops.push({
+            type: 'set',
+            ref: docketRef,
+            data: {
+              docketNo: docketNo, isDemoData: true,
+              atmId: scen.atmId, bank: scen.bank, bankName: scen.bank, ro: scen.ro,
+              region: scen.ro, vendor: 'HPY', locationCategory: 'Metro',
+              callType: 'Break Down', subCallType: 'Reference Demo Data',
+              diagnosis: scen.scenario, remarks: 'Seeded for Clock Ledger reference — ' + scen.scenario,
+              callDateTime: callDateTime,
+              status: 'Closed', subStatus: 'Closed', currentDependency: null,
+              isClosed: true, isBillable: false,
+              assignedEngineerName: 'Demo Engineer', engineerPhone: '9000000000',
+              responseTargetMins: 120, resolutionTargetMins: 120, ageingBucket: 'a) 0-2days',
+              closedAt: closedAt, workDoneSummary: 'Demo dataset — ' + scen.scenario,
+              clockOwner: null, clockHeading: null, activeClockSegmentId: null,
+              clockTotals: { byHeading: byHeading, tsplMinutes: tsplMinutes, clientMinutes: clientMinutes, mttrMinutes: mttrMinutes, tsplPercent: tsplPercent, clientPercent: clientPercent },
+              clockTotalsAsOf: closedAt,
+              tsplClockMinutes: tsplMinutes, clientClockMinutes: clientMinutes, mttrClockMinutes: mttrMinutes,
+              tsplClockPercent: tsplPercent, clientClockPercent: clientPercent,
+              craWaitMinutes: Math.round(byHeading.AWAITING_CRA || 0),
+              partsWaitTsplMinutes: Math.round(byHeading.AWAITING_PARTS_TSPL || 0),
+              partsWaitClientMinutes: Math.round(byHeading.AWAITING_PARTS_CLIENT || 0),
+              tsplActiveMinutes: Math.round(byHeading.TSPL_ACTIVE || 0),
+              grossTATMinutes: mttrMinutes, tsplNetTATMinutes: tsplMinutes, clientNetTATMinutes: clientMinutes,
+              slaMet: slaMet, billability: 'Free / SLA Covered',
+              createdAt: callDateTime, updatedAt: closedAt
+            }
+          });
+
+          log(docketNo + ' (' + scen.bank + '): ' + Math.round(mttrMinutes) + 'm total — TSPL ' + tsplPercent + '% / Client ' + clientPercent + '%', 'info');
+        });
+
+        await commitInBatches(ops, 'Clock Ledger Demo Dockets');
+        log('Done. Open Clock Ledger (with Status = All Dockets, and a From Date covering today) to see them.', 'info');
+      } catch (err) {
+        log('Error seeding Clock Ledger demo dockets: ' + err.message, 'error');
+        console.error(err);
+      } finally {
+        hideLoader(btn);
       }
     }
 
