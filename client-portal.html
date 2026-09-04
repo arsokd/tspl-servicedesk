@@ -14,6 +14,7 @@
   <!-- SheetJS for 23-Column Bank Export -->
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script src="firebase-config.js"></script>
+  <script src="clock-ledger.js"></script>
   <!-- PWA: installable app shell -->
   <link rel="manifest" href="manifest.json">
   <meta name="theme-color" content="#0f233d">
@@ -334,6 +335,9 @@
           </div>
         </div>
 
+        <!-- Clock Ownership: whose account each minute is charged to -->
+        <div id="detail-clock-ledger" class="bg-slate-50 p-3.5 rounded-xl border border-slate-200"></div>
+
         <div class="flex items-center justify-end pt-2 border-t border-slate-200">
           <button onclick="closeDetailModal()" class="px-5 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-lg font-bold">
             Close View
@@ -605,8 +609,46 @@
       }
 
       renderTimeline(d);
+      renderClockLedger(d);
 
       document.getElementById('modal-docket-detail').classList.remove('hidden');
+    }
+
+    // Shows the bank exactly what our own operations team sees: whose
+    // account (TSPL or the bank/CRA) each minute of this call is charged to,
+    // and why -- the same clock-ownership ledger used internally, scoped
+    // automatically to this bank's own dockets by firestore.rules.
+    async function renderClockLedger(d) {
+      var box = document.getElementById('detail-clock-ledger');
+      box.innerHTML = '<div class="text-[11px] text-slate-400">Loading clock breakdown…</div>';
+      try {
+        var t = await ledgerComputeTotals(d.id);
+        if (!t.mttrMinutes) {
+          box.innerHTML = '<div class="text-[11px] text-slate-400">No clock activity recorded yet on this docket.</div>';
+          return;
+        }
+        var headingColor = {
+          TSPL_ACTIVE: '#4F46E5', AWAITING_PARTS_TSPL: '#A5A0F0',
+          AWAITING_CRA: '#D97706', AWAITING_PARTS_CLIENT: '#F3C480'
+        };
+        var segsHtml = '';
+        var cursor = 0;
+        Object.keys(t.byHeading).forEach(function (h) {
+          var mins = t.byHeading[h];
+          var pct = (mins / t.mttrMinutes * 100);
+          segsHtml += '<div class="absolute top-0 bottom-0" style="left:' + (cursor / t.mttrMinutes * 100) + '%;width:' + pct + '%;background:' + (headingColor[h] || '#94a3b8') + '" title="' + clockHeadingLabel(h) + ': ' + Math.round(mins) + ' min"></div>';
+          cursor += mins;
+        });
+        box.innerHTML =
+          '<span class="text-slate-500 text-[10px] uppercase font-bold tracking-wider">Clock Ownership — Who This Time Belongs To</span>' +
+          '<div class="relative h-6 bg-slate-200 rounded overflow-hidden mt-2 mb-2">' + segsHtml + '</div>' +
+          '<div class="flex items-center justify-between text-[11px]">' +
+            '<span><span class="font-bold" style="color:#4F46E5">TSPL: ' + Math.round(t.tsplMinutes) + ' min (' + t.tsplPercent + '%)</span></span>' +
+            '<span><span class="font-bold text-amber-600">Client/CRA: ' + Math.round(t.clientMinutes) + ' min (' + t.clientPercent + '%)</span></span>' +
+          '</div>';
+      } catch (err) {
+        box.innerHTML = '<div class="text-[11px] text-red-500">Could not load clock breakdown: ' + err.message + '</div>';
+      }
     }
 
     function closeDetailModal() {
