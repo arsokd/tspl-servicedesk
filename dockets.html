@@ -399,9 +399,14 @@
         <!-- Assigned Engineer & Diagnosis -->
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
-            <label class="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">Assign Engineer</label>
+            <div class="flex items-center justify-between mb-1">
+              <label class="block text-xs font-semibold text-slate-700 uppercase tracking-wider">Assign Engineer</label>
+              <button type="button" onclick="handleAutoAssignZoneRoundRobin()" class="text-[10px] font-bold text-indigo-600 hover:text-indigo-800 underline touch-target">
+                &#9889; Auto-Assign (Zone + Round Robin)
+              </button>
+            </div>
             <select id="modal-assigned-engineer" onchange="syncSelectedEngineer(this.value)" class="w-full text-xs p-2.5 border border-slate-300 rounded-md focus:ring-1 focus:ring-indigo-500 bg-white">
-              <option value="">Select or use Nearest Assistant above</option>
+              <option value="">Select, use Nearest Assistant above, or Auto-Assign</option>
             </select>
           </div>
 
@@ -1020,6 +1025,39 @@
     function assignEngineerFromAssistant(uid) {
       document.getElementById('modal-assigned-engineer').value = uid;
       toast('Engineer assigned to dispatch slot', 'success');
+    }
+
+    // TSPL's confirmed dispatch rule (Sep 2026 process review): zone first
+    // (the ATM's own RO), then round robin among that zone's engineers --
+    // distinct from the GPS-nearest assistant above, which stays available
+    // as a manual override.
+    async function handleAutoAssignZoneRoundRobin() {
+      if (!selectedAtmObject) {
+        toast('Select an ATM first — the zone comes from its RO.', 'warn');
+        return;
+      }
+      var ro = selectedAtmObject.ro || 'NORTH';
+      try {
+        var chosen = await autoAssignEngineerByZone(ro);
+        if (!chosen) {
+          toast('No active engineers found in RO ' + ro + '. Assign manually.', 'warn');
+          return;
+        }
+        // Make sure the dropdown actually has this engineer as an option --
+        // engineersCache is normally populated from a separate load, but this
+        // guards against a zone engineer not yet present in that cache.
+        var select = document.getElementById('modal-assigned-engineer');
+        var alreadyListed = engineersCache.some(function (e) { return e.uid === chosen.uid; });
+        if (!alreadyListed) {
+          engineersCache.push(chosen);
+          select.appendChild(new Option((chosen.name || chosen.email) + ' (' + ro + ')', chosen.uid));
+        }
+        select.value = chosen.uid;
+        toast('Auto-assigned ' + (chosen.name || chosen.email) + ' — zone ' + ro + ', round robin.', 'success');
+      } catch (err) {
+        console.error('Auto-assign error:', err);
+        toast('Auto-assign failed: ' + err.message, 'error');
+      }
     }
 
     function syncSelectedEngineer(uid) {

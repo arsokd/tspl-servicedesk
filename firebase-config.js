@@ -143,6 +143,66 @@ function minsBetween(start, end) {
 }
 
 /**
+ * ZONE-BASED ROUND-ROBIN AUTO-ASSIGNMENT
+ * TSPL's confirmed dispatch rule (Sep 2026 process review): assignment is
+ * first scoped to the docket's own zone (the ATM's `ro` -- NORTH/SOUTH/EAST/
+ * WEST), then cycles evenly through that zone's active engineers via round
+ * robin -- never by GPS proximity (that's the separate "5 Nearest Engineers"
+ * assistant already in dockets.html, kept as a manual override option).
+ *
+ * This is also the assignment logic a future Hitachi API auto-router will
+ * call once that integration exists -- built now so it can be exercised via
+ * manual docket entry during this testing phase, ahead of that API.
+ *
+ * Round-robin state is a small doc per zone at counters/roundRobin_<RO>,
+ * updated inside a transaction so two dockets raised at the same instant
+ * never land on the same engineer. Reuses the existing `counters` collection
+ * (already writable by callcentre/techsupport/rm/regionalhead/unithead/
+ * engineer roles in firestore.rules) rather than needing a new rule.
+ */
+async function autoAssignEngineerByZone(ro) {
+  if (!ro) return null;
+
+  var engSnap = await db.collection('users')
+    .where('role', '==', 'engineer')
+    .where('ro', '==', ro)
+    .get();
+
+  var engineers = [];
+  // Match the rest of the app's own convention (masters-users.html): a
+  // missing isActive field means active-by-default, only an explicit
+  // `false` excludes someone. A strict "== true" filter would silently
+  // drop older/seed engineer records that never set the field at all.
+  engSnap.forEach(function (doc) {
+    var data = doc.data();
+    if (data.isActive !== false) engineers.push(Object.assign({ uid: doc.id }, data));
+  });
+  if (!engineers.length) return null;
+
+  // Deterministic order so "index" means the same thing across runs.
+  engineers.sort(function (a, b) { return a.uid < b.uid ? -1 : (a.uid > b.uid ? 1 : 0); });
+
+  var counterRef = db.collection('counters').doc('roundRobin_' + ro);
+  var chosen = null;
+
+  await db.runTransaction(async function (tx) {
+    var snap = await tx.get(counterRef);
+    var lastIndex = (snap.exists && typeof snap.data().lastIndex === 'number') ? snap.data().lastIndex : -1;
+    var nextIndex = (lastIndex + 1) % engineers.length;
+    chosen = engineers[nextIndex];
+    tx.set(counterRef, {
+      ro: ro,
+      lastIndex: nextIndex,
+      lastAssignedUid: chosen.uid,
+      lastAssignedName: chosen.name || chosen.email || '',
+      lastAssignedAt: firebase.firestore.FieldValue.serverTimestamp()
+    }, { merge: true });
+  });
+
+  return chosen;
+}
+
+/**
  * Formats duration from minutes into human-readable string (e.g., 2h 15m)
  */
 function fmtDuration(totalMinutes) {
