@@ -38,6 +38,7 @@
       <a href="masters-atm.html" class="px-3 py-1.5 rounded-lg bg-white border border-slate-300 text-slate-600 hover:bg-slate-50 font-semibold transition">ATM Masters</a>
       <a href="masters-users.html" class="px-3 py-1.5 rounded-lg bg-white border border-slate-300 text-slate-600 hover:bg-slate-50 font-semibold transition">User Masters</a>
       <a href="masters-clients.html" class="px-3 py-1.5 rounded-lg bg-[#4F46E5] text-white font-bold">Client Masters</a>
+      <a href="masters-parts.html" class="px-3 py-1.5 rounded-lg bg-white border border-slate-300 text-slate-600 hover:bg-slate-50 font-semibold transition">Parts Master</a>
     </div>
 
     <!-- Header & Action Row -->
@@ -79,12 +80,13 @@
               <th class="px-3 py-2.5 text-left">HQ City / State</th>
               <th class="px-3 py-2.5 text-left">Contract Period</th>
               <th class="px-3 py-2.5 text-left">SLA Targets (min) M / U / SU / R</th>
+              <th class="px-3 py-2.5 text-left">Parts Supply</th>
               <th class="px-3 py-2.5 text-left">Status</th>
               <th class="px-3 py-2.5 text-center">Actions</th>
             </tr>
           </thead>
           <tbody id="clients-tbody">
-            <tr><td colspan="8" class="text-center py-10 text-slate-400">Loading clients…</td></tr>
+            <tr><td colspan="9" class="text-center py-10 text-slate-400">Loading clients…</td></tr>
           </tbody>
         </table>
       </div>
@@ -169,6 +171,16 @@
         </div>
 
         <div>
+          <label class="block text-[11px] font-semibold text-slate-600 mb-1">Parts Supply Responsibility</label>
+          <select id="client-parts-responsibility" class="w-full text-xs p-2.5 border border-slate-300 rounded-md bg-white">
+            <option value="TSPL">TSPL Supplies (our own supply chain)</option>
+            <option value="CLIENT_OEM">Bank / OEM Supplies</option>
+            <option value="MIXED">Mixed — decide per part</option>
+          </select>
+          <p class="text-[10px] text-slate-400 mt-1">The usual arrangement for this bank; each parts indent can still override it per part.</p>
+        </div>
+
+        <div>
           <label class="block text-[11px] font-semibold text-slate-600 mb-1">Status</label>
           <select id="client-status" class="w-full text-xs p-2.5 border border-slate-300 rounded-md bg-white">
             <option value="Active">Active</option>
@@ -206,7 +218,7 @@
       <!-- Expected Header Preview -->
       <div class="text-[11px] font-mono bg-slate-50 p-2.5 rounded border border-slate-200 text-slate-700 overflow-x-auto">
         <strong>Required CSV Headers:</strong><br/>
-        bankName,contactPerson,contactPhone,contactEmail,hqAddress,hqCity,hqState,contractStartDate,contractEndDate,slaMetroMins,slaUrbanMins,slaSemiUrbanMins,slaRuralMins,status
+        bankName,contactPerson,contactPhone,contactEmail,hqAddress,hqCity,hqState,contractStartDate,contractEndDate,slaMetroMins,slaUrbanMins,slaSemiUrbanMins,slaRuralMins,partsSupplyResponsibility,status
       </div>
 
       <!-- Starter Template -->
@@ -322,7 +334,7 @@
         });
 
         if (allClients.length === 0) {
-          tbody.innerHTML = '<tr><td colspan="8" class="text-center py-10 text-slate-400">No clients on file yet. Use "+ Add New Client" or "Import Clients (CSV)" above.</td></tr>';
+          tbody.innerHTML = '<tr><td colspan="9" class="text-center py-10 text-slate-400">No clients on file yet. Use "+ Add New Client" or "Import Clients (CSV)" above.</td></tr>';
           return;
         }
 
@@ -332,6 +344,12 @@
           var statusPill = c.status === 'Inactive'
             ? '<span class="px-2 py-0.5 rounded text-[11px] bg-slate-200 text-slate-700 font-semibold">Inactive</span>'
             : '<span class="px-2 py-0.5 rounded text-[11px] bg-emerald-100 text-emerald-800 font-semibold">Active</span>';
+          var partsSupplyLabel = { TSPL: 'TSPL Supplies', CLIENT_OEM: 'Bank / OEM Supplies', MIXED: 'Mixed' }[c.partsSupplyResponsibility] || 'TSPL Supplies';
+          var partsSupplyPill = c.partsSupplyResponsibility === 'CLIENT_OEM'
+            ? '<span class="px-2 py-0.5 rounded text-[11px] bg-amber-100 text-amber-800 font-semibold">' + partsSupplyLabel + '</span>'
+            : (c.partsSupplyResponsibility === 'MIXED'
+              ? '<span class="px-2 py-0.5 rounded text-[11px] bg-slate-200 text-slate-700 font-semibold">' + partsSupplyLabel + '</span>'
+              : '<span class="px-2 py-0.5 rounded text-[11px] bg-indigo-100 text-indigo-800 font-semibold">' + partsSupplyLabel + '</span>');
 
           return (
             '<tr class="hover:bg-slate-50 transition border-t border-slate-100">' +
@@ -344,6 +362,7 @@
                 (sla.metro != null ? sla.metro : '--') + ' / ' + (sla.urban != null ? sla.urban : '--') + ' / ' +
                 (sla.semiUrban != null ? sla.semiUrban : '--') + ' / ' + (sla.rural != null ? sla.rural : '--') +
               '</td>' +
+              '<td class="px-3 py-2.5 whitespace-nowrap">' + partsSupplyPill + '</td>' +
               '<td class="px-3 py-2.5 whitespace-nowrap">' + statusPill + '</td>' +
               '<td class="px-3 py-2.5 text-center whitespace-nowrap">' +
                 '<button onclick="openClientModal(\'' + c.id + '\')" class="text-xs bg-[#4F46E5] hover:bg-indigo-700 text-white px-2.5 py-1 rounded font-medium transition shadow-sm">Edit</button>' +
@@ -353,7 +372,7 @@
         }).join('');
       } catch (err) {
         console.error('Load clients error:', err);
-        tbody.innerHTML = '<tr><td colspan="8" class="text-center py-10 text-red-500 font-semibold">Error loading clients: ' + err.message + '</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="9" class="text-center py-10 text-red-500 font-semibold">Error loading clients: ' + err.message + '</td></tr>';
       }
     }
 
@@ -381,6 +400,7 @@
       document.getElementById('client-sla-urban').value = sla.urban != null ? sla.urban : '';
       document.getElementById('client-sla-semiurban').value = sla.semiUrban != null ? sla.semiUrban : '';
       document.getElementById('client-sla-rural').value = sla.rural != null ? sla.rural : '';
+      document.getElementById('client-parts-responsibility').value = c ? (c.partsSupplyResponsibility || 'TSPL') : 'TSPL';
       document.getElementById('client-status').value = c ? (c.status || 'Active') : 'Active';
       document.getElementById('client-notes').value = c ? (c.notes || '') : '';
 
@@ -417,6 +437,7 @@
           semiUrban: parseInt(document.getElementById('client-sla-semiurban').value, 10) || null,
           rural: parseInt(document.getElementById('client-sla-rural').value, 10) || null
         },
+        partsSupplyResponsibility: document.getElementById('client-parts-responsibility').value,
         status: document.getElementById('client-status').value,
         notes: document.getElementById('client-notes').value.trim(),
         updatedAt: firebase.firestore.FieldValue.serverTimestamp()
@@ -455,10 +476,10 @@
     }
 
     function downloadClientCsvTemplate() {
-      var header = 'bankName,contactPerson,contactPhone,contactEmail,hqAddress,hqCity,hqState,contractStartDate,contractEndDate,slaMetroMins,slaUrbanMins,slaSemiUrbanMins,slaRuralMins,status';
+      var header = 'bankName,contactPerson,contactPhone,contactEmail,hqAddress,hqCity,hqState,contractStartDate,contractEndDate,slaMetroMins,slaUrbanMins,slaSemiUrbanMins,slaRuralMins,partsSupplyResponsibility,status';
       var rows = [
-        'HDFC Bank,Anil Mehta,9811100011,anil.mehta@hdfcbank.example,HDFC House Senapati Bapat Marg,Mumbai,Maharashtra,2026-01-01,2027-12-31,120,180,240,360,Active',
-        'ICICI Bank,Sunita Rao,9845100022,sunita.rao@icicibank.example,ICICI Towers Bandra Kurla Complex,Mumbai,Maharashtra,2026-01-01,2027-12-31,120,180,240,360,Active'
+        'HDFC Bank,Anil Mehta,9811100011,anil.mehta@hdfcbank.example,HDFC House Senapati Bapat Marg,Mumbai,Maharashtra,2026-01-01,2027-12-31,120,180,240,360,TSPL,Active',
+        'ICICI Bank,Sunita Rao,9845100022,sunita.rao@icicibank.example,ICICI Towers Bandra Kurla Complex,Mumbai,Maharashtra,2026-01-01,2027-12-31,120,180,240,360,CLIENT_OEM,Active'
       ];
       var csvContent = 'data:text/csv;charset=utf-8,' + header + '\n' + rows.join('\n') + '\n';
       var link = document.createElement('a');
@@ -513,8 +534,12 @@
             semiUrban: parseInt(cols[11], 10) || null,
             rural: parseInt(cols[12], 10) || null
           },
-          status: (cols[13] || 'Active').trim()
+          partsSupplyResponsibility: (cols[13] || 'TSPL').trim().toUpperCase(),
+          status: (cols[14] || 'Active').trim()
         };
+        if (['TSPL', 'CLIENT_OEM', 'MIXED'].indexOf(rowObj.partsSupplyResponsibility) === -1) {
+          rowObj.partsSupplyResponsibility = 'TSPL';
+        }
 
         if (!rowObj.bankName) {
           errors.push('Row ' + (i + 1) + ': Missing Bank Name');
@@ -573,6 +598,7 @@
             '<td class="p-2">' + sla.urban + '</td>' +
             '<td class="p-2">' + sla.semiUrban + '</td>' +
             '<td class="p-2">' + sla.rural + '</td>' +
+            '<td class="p-2">' + r.partsSupplyResponsibility + '</td>' +
             '<td class="p-2">' + r.status + '</td>' +
           '</tr>'
         );
@@ -630,6 +656,7 @@
             contractStartDate: row.contractStartDate,
             contractEndDate: row.contractEndDate,
             slaTargetMins: row.slaTargetMins,
+            partsSupplyResponsibility: row.partsSupplyResponsibility,
             status: row.status,
             updatedAt: firebase.firestore.FieldValue.serverTimestamp()
           }, { merge: true });

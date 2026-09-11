@@ -1,0 +1,612 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Spare Parts Master — TSPL ServiceDesk</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Firebase Compat 10.7.1 -->
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
+  <script src="firebase-config.js"></script>
+  <!-- PWA: installable app shell -->
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#0f233d">
+  <link rel="apple-touch-icon" href="assets/icon-180.png">
+  <script>
+    if ("serviceWorker" in navigator) {
+      window.addEventListener("load", function () {
+        navigator.serviceWorker.register("sw.js").catch(function (err) {
+          console.warn("[PWA] Service worker registration failed:", err);
+        });
+      });
+    }
+  </script>
+  <script src="auth-guard.js"></script>
+</head>
+<body class="bg-slate-100 min-h-screen flex flex-col font-sans antialiased text-slate-800">
+
+  <!-- Main Navigation injected by auth-guard.js -->
+  <div id="main-nav"></div>
+
+  <main class="flex-grow max-w-[1650px] w-full mx-auto p-4 sm:p-6 lg:p-8 space-y-5">
+
+    <!-- Masters Sub-Nav -->
+    <div class="flex items-center gap-1.5 text-xs">
+      <a href="masters-atm.html" class="px-3 py-1.5 rounded-lg bg-white border border-slate-300 text-slate-600 hover:bg-slate-50 font-semibold transition">ATM Masters</a>
+      <a href="masters-users.html" class="px-3 py-1.5 rounded-lg bg-white border border-slate-300 text-slate-600 hover:bg-slate-50 font-semibold transition">User Masters</a>
+      <a href="masters-clients.html" class="px-3 py-1.5 rounded-lg bg-white border border-slate-300 text-slate-600 hover:bg-slate-50 font-semibold transition">Client Masters</a>
+      <a href="masters-parts.html" class="px-3 py-1.5 rounded-lg bg-[#4F46E5] text-white font-bold">Parts Master</a>
+    </div>
+
+    <!-- Header & Action Row -->
+    <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4 sm:p-5 flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div>
+        <h1 class="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight">Spare Parts Master (Catalog, Pricing &amp; Default Source)</h1>
+        <p class="text-xs text-slate-500 mt-0.5">One catalog record per spare part: purchase price (TSPL's cost), selling price (billed to the client when TSPL supplies and invoices it), and which side normally sources it.</p>
+      </div>
+
+      <div class="flex flex-wrap items-center gap-2.5">
+        <button
+          onclick="openCsvImportModal()"
+          class="bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold py-2 px-3.5 rounded-lg border border-slate-300 shadow-sm transition flex items-center gap-1.5"
+        >
+          <svg class="h-4 w-4 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+          </svg>
+          Import Parts (CSV)
+        </button>
+        <button onclick="openPartModal()" class="bg-[#4F46E5] hover:bg-indigo-700 text-white text-xs font-semibold py-2 px-4 rounded-lg shadow-sm transition">
+          + Add New Part
+        </button>
+      </div>
+    </div>
+
+    <div class="p-3 bg-amber-50 border-l-4 border-[#D97706] rounded-r-md text-amber-900 text-xs">
+      <strong>Reference only, for now:</strong> raising a parts indent on a docket (Parts / Docket Work) still asks the engineer or SCM to type or pick the part and its source by hand. This catalog is the priced, structured master to eventually pre-fill that from — it doesn't yet auto-fill the indent form.
+    </div>
+
+    <!-- Parts Table -->
+    <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+      <div class="overflow-x-auto">
+        <table class="w-full text-xs">
+          <thead class="bg-slate-50 text-slate-500 uppercase text-[10px]">
+            <tr>
+              <th class="px-3 py-2.5 text-left">Part Code</th>
+              <th class="px-3 py-2.5 text-left">Part Name</th>
+              <th class="px-3 py-2.5 text-left">Compatible Models</th>
+              <th class="px-3 py-2.5 text-left">Unit</th>
+              <th class="px-3 py-2.5 text-right">Purchase Price</th>
+              <th class="px-3 py-2.5 text-right">Selling Price</th>
+              <th class="px-3 py-2.5 text-left">Default Source</th>
+              <th class="px-3 py-2.5 text-left">Status</th>
+              <th class="px-3 py-2.5 text-center">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="parts-tbody">
+            <tr><td colspan="9" class="text-center py-10 text-slate-400">Loading parts…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+
+  <!-- ===================================================================== -->
+  <!-- MODAL: ADD / EDIT PART                                                -->
+  <!-- ===================================================================== -->
+  <div id="part-modal" class="hidden fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 flex items-center justify-center p-4">
+    <div class="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto border border-slate-200 p-6 space-y-4">
+      <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+        <h2 id="part-modal-title" class="text-base font-bold text-slate-900">Add New Part</h2>
+        <button onclick="closePartModal()" class="text-slate-400 hover:text-slate-700 text-xl font-bold">&times;</button>
+      </div>
+
+      <input type="hidden" id="part-doc-id" value="" />
+
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div>
+          <label class="block text-[11px] font-semibold text-slate-600 mb-1">Part Code / OEM Reference *</label>
+          <input type="text" id="part-code" required placeholder="e.g. NCR-445-072819" class="w-full text-xs p-2.5 border border-slate-300 rounded-md uppercase font-mono focus:ring-1 focus:ring-indigo-500" />
+        </div>
+        <div>
+          <label class="block text-[11px] font-semibold text-slate-600 mb-1">Part Name / Module *</label>
+          <input list="existing-part-names-list" id="part-name" required placeholder="e.g. Cash Dispenser Unit (CDU)" class="w-full text-xs p-2.5 border border-slate-300 rounded-md focus:ring-1 focus:ring-indigo-500" />
+          <datalist id="existing-part-names-list">
+            <option value="Motorized Card Reader (EMV)">
+            <option value="DIP Card Reader">
+            <option value="Cash Dispenser Unit (CDU)">
+            <option value="Presenter Module">
+            <option value="EPP Keypad (PCI Certified)">
+            <option value="Thermal Receipt Printer">
+            <option value="Journal Printer">
+            <option value="Main Motherboard / Controller">
+            <option value="Power Supply Unit (PSU)">
+            <option value="LCD Display & Touch Screen">
+            <option value="Cassette Assembly (Pick Module)">
+            <option value="Sensors & Harness Cables">
+            <option value="Other Component">
+          </datalist>
+        </div>
+
+        <div class="sm:col-span-2">
+          <label class="block text-[11px] font-semibold text-slate-600 mb-1">Compatible ATM Models</label>
+          <input type="text" id="part-compatible-models" placeholder="e.g. Hitachi SR7500, Hitachi CashLive 300" class="w-full text-xs p-2.5 border border-slate-300 rounded-md focus:ring-1 focus:ring-indigo-500" />
+        </div>
+
+        <div>
+          <label class="block text-[11px] font-semibold text-slate-600 mb-1">Unit</label>
+          <select id="part-unit" class="w-full text-xs p-2.5 border border-slate-300 rounded-md bg-white">
+            <option value="Nos">Nos</option>
+            <option value="Set">Set</option>
+            <option value="Pair">Pair</option>
+            <option value="Mtr">Mtr</option>
+            <option value="Kit">Kit</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-[11px] font-semibold text-slate-600 mb-1">HSN / SAC Code</label>
+          <input type="text" id="part-hsn" class="w-full text-xs p-2.5 border border-slate-300 rounded-md focus:ring-1 focus:ring-indigo-500" />
+        </div>
+
+        <div>
+          <label class="block text-[11px] font-semibold text-slate-600 mb-1">Purchase Price (&#8377;, TSPL's cost) *</label>
+          <input type="number" min="0" step="0.01" id="part-purchase-price" required class="w-full text-xs p-2.5 border border-slate-300 rounded-md font-mono focus:ring-1 focus:ring-indigo-500" />
+        </div>
+        <div>
+          <label class="block text-[11px] font-semibold text-slate-600 mb-1">Selling Price (&#8377;, billed to client) *</label>
+          <input type="number" min="0" step="0.01" id="part-selling-price" required class="w-full text-xs p-2.5 border border-slate-300 rounded-md font-mono focus:ring-1 focus:ring-indigo-500" />
+        </div>
+
+        <div>
+          <label class="block text-[11px] font-semibold text-slate-600 mb-1">Default Source</label>
+          <select id="part-default-source" class="w-full text-xs p-2.5 border border-slate-300 rounded-md bg-white">
+            <option value="TSPL">TSPL Stock (our own supply chain)</option>
+            <option value="CLIENT_OEM">Client / OEM Arranged</option>
+          </select>
+          <p class="text-[10px] text-slate-400 mt-1">Same two values used on every parts indent — a starting suggestion, not a lock.</p>
+        </div>
+        <div>
+          <label class="block text-[11px] font-semibold text-slate-600 mb-1">Reorder Level</label>
+          <input type="number" min="0" id="part-reorder-level" placeholder="e.g. 5" class="w-full text-xs p-2.5 border border-slate-300 rounded-md font-mono focus:ring-1 focus:ring-indigo-500" />
+        </div>
+
+        <div>
+          <label class="block text-[11px] font-semibold text-slate-600 mb-1">Status</label>
+          <select id="part-status" class="w-full text-xs p-2.5 border border-slate-300 rounded-md bg-white">
+            <option value="Active">Active</option>
+            <option value="Discontinued">Discontinued</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="flex items-center justify-end gap-3 pt-3 border-t border-slate-100">
+        <button type="button" onclick="closePartModal()" class="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-md">Cancel</button>
+        <button type="button" id="btn-save-part" onclick="handleSavePart()" class="px-6 py-2 text-xs font-semibold bg-[#4F46E5] text-white rounded-md shadow">Save Part</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================================================================== -->
+  <!-- MODAL: BULK IMPORT PARTS (CSV)                                        -->
+  <!-- ===================================================================== -->
+  <div id="csv-modal" class="hidden fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 flex items-center justify-center p-4">
+    <div class="bg-white rounded-xl shadow-2xl max-w-3xl w-full max-h-[90vh] overflow-y-auto border border-slate-200 p-6 space-y-5">
+
+      <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+        <div>
+          <h2 class="text-base font-bold text-slate-900">Bulk Import Parts (CSV)</h2>
+          <p class="text-xs text-slate-500">Plain JavaScript parser with client validation, batched writes.</p>
+        </div>
+        <button onclick="closeCsvImportModal()" class="text-slate-400 hover:text-slate-700 text-xl font-bold">&times;</button>
+      </div>
+
+      <!-- Expected Header Preview -->
+      <div class="text-[11px] font-mono bg-slate-50 p-2.5 rounded border border-slate-200 text-slate-700 overflow-x-auto">
+        <strong>Required CSV Headers:</strong><br/>
+        partCode,partName,compatibleModels,unit,purchasePrice,sellingPrice,hsnCode,defaultSource,reorderLevel,status
+      </div>
+
+      <!-- Starter Template -->
+      <button type="button" onclick="downloadPartsCsvTemplate()" class="w-full py-2 bg-white hover:bg-slate-50 text-indigo-700 border border-indigo-300 text-xs font-bold rounded-md shadow-sm transition flex items-center justify-center gap-1.5">
+        <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+        Download Blank CSV Template (with example rows)
+      </button>
+
+      <!-- File Input -->
+      <div>
+        <input type="file" id="csv-file-input" accept=".csv" onchange="handleCsvFileSelected(event)" class="text-xs file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100" />
+      </div>
+
+      <!-- Preview -->
+      <div id="csv-preview-container" class="hidden space-y-2">
+        <div class="flex items-center justify-between">
+          <span class="text-xs font-semibold text-slate-600">Preview (first 10 rows)</span>
+          <span id="csv-validation-badge" class="text-xs px-2 py-0.5 rounded font-bold"></span>
+        </div>
+        <div class="overflow-x-auto border border-slate-200 rounded-lg max-h-64">
+          <table class="w-full text-[11px]">
+            <thead class="bg-slate-100"><tr id="csv-preview-header"></tr></thead>
+            <tbody id="csv-preview-body"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Progress -->
+      <div id="csv-progress-box" class="hidden space-y-2">
+        <div class="flex justify-between text-xs font-semibold">
+          <span id="csv-progress-text">Importing…</span>
+          <span id="csv-progress-pct" class="font-mono text-indigo-600 font-bold">0%</span>
+        </div>
+        <div class="w-full bg-slate-200 rounded-full h-2">
+          <div id="csv-progress-fill" class="bg-[#4F46E5] h-2 rounded-full transition-all" style="width: 0%"></div>
+        </div>
+      </div>
+
+      <div class="flex items-center justify-end gap-3 pt-3 border-t border-slate-100">
+        <button type="button" onclick="closeCsvImportModal()" class="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-md">Cancel</button>
+        <button type="button" id="btn-start-import" onclick="executeBatchImport()" disabled class="px-6 py-2 text-xs font-semibold bg-[#4F46E5] text-white rounded-md shadow disabled:opacity-40 disabled:cursor-not-allowed">
+          Start Import
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    var allParts = [];
+    var parsedCsvRows = [];
+    var VALID_SOURCES = ['TSPL', 'CLIENT_OEM'];
+
+    document.addEventListener('DOMContentLoaded', async function () {
+      if (typeof checkAuth === 'function') {
+        checkAuth(['admin']);
+      }
+      if (typeof buildNav === 'function') {
+        buildNav('masters-atm.html');
+      }
+      await loadParts();
+    });
+
+    function slugifyPartCode(code) {
+      return (code || '').trim().toLowerCase()
+        .replace(/[^a-z0-9]+/g, '_')
+        .replace(/^_+|_+$/g, '');
+    }
+
+    function fmtRupee(n) {
+      if (n === null || n === undefined || isNaN(n)) return '--';
+      return '₹' + Number(n).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+
+    // ------------------------------------------------------------------------
+    // 1. LOAD & RENDER
+    // ------------------------------------------------------------------------
+    async function loadParts() {
+      var tbody = document.getElementById('parts-tbody');
+      try {
+        var snap = await db.collection('partsMaster').orderBy('partName').get();
+        allParts = [];
+        snap.forEach(function (doc) {
+          var p = doc.data();
+          p.id = doc.id;
+          allParts.push(p);
+        });
+
+        if (allParts.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="9" class="text-center py-10 text-slate-400">No parts on file yet. Use "+ Add New Part" or "Import Parts (CSV)" above.</td></tr>';
+          return;
+        }
+
+        tbody.innerHTML = allParts.map(function (p) {
+          var sourceLabel = p.defaultSource === 'CLIENT_OEM' ? 'Client / OEM' : 'TSPL Stock';
+          var sourcePill = p.defaultSource === 'CLIENT_OEM'
+            ? '<span class="px-2 py-0.5 rounded text-[11px] bg-amber-100 text-amber-800 font-semibold">' + sourceLabel + '</span>'
+            : '<span class="px-2 py-0.5 rounded text-[11px] bg-indigo-100 text-indigo-800 font-semibold">' + sourceLabel + '</span>';
+          var statusPill = p.status === 'Discontinued'
+            ? '<span class="px-2 py-0.5 rounded text-[11px] bg-slate-200 text-slate-700 font-semibold">Discontinued</span>'
+            : '<span class="px-2 py-0.5 rounded text-[11px] bg-emerald-100 text-emerald-800 font-semibold">Active</span>';
+
+          return (
+            '<tr class="hover:bg-slate-50 transition border-t border-slate-100">' +
+              '<td class="px-3 py-2.5 font-mono font-bold text-slate-800 whitespace-nowrap">' + (p.partCode || '--') + '</td>' +
+              '<td class="px-3 py-2.5 text-slate-700 whitespace-nowrap">' + (p.partName || '--') + '</td>' +
+              '<td class="px-3 py-2.5 text-slate-500 whitespace-nowrap truncate max-w-[220px]">' + (p.compatibleModels || '--') + '</td>' +
+              '<td class="px-3 py-2.5 text-slate-600 whitespace-nowrap">' + (p.unit || 'Nos') + '</td>' +
+              '<td class="px-3 py-2.5 text-right font-mono text-slate-700 whitespace-nowrap">' + fmtRupee(p.purchasePrice) + '</td>' +
+              '<td class="px-3 py-2.5 text-right font-mono text-slate-900 font-bold whitespace-nowrap">' + fmtRupee(p.sellingPrice) + '</td>' +
+              '<td class="px-3 py-2.5 whitespace-nowrap">' + sourcePill + '</td>' +
+              '<td class="px-3 py-2.5 whitespace-nowrap">' + statusPill + '</td>' +
+              '<td class="px-3 py-2.5 text-center whitespace-nowrap">' +
+                '<button onclick="openPartModal(\'' + p.id + '\')" class="text-xs bg-[#4F46E5] hover:bg-indigo-700 text-white px-2.5 py-1 rounded font-medium transition shadow-sm">Edit</button>' +
+              '</td>' +
+            '</tr>'
+          );
+        }).join('');
+      } catch (err) {
+        console.error('Load parts error:', err);
+        tbody.innerHTML = '<tr><td colspan="9" class="text-center py-10 text-red-500 font-semibold">Error loading parts: ' + err.message + '</td></tr>';
+      }
+    }
+
+    // ------------------------------------------------------------------------
+    // 2. ADD / EDIT MODAL
+    // ------------------------------------------------------------------------
+    function openPartModal(partId) {
+      document.getElementById('part-modal-title').textContent = partId ? 'Edit Part' : 'Add New Part';
+      document.getElementById('part-doc-id').value = partId || '';
+
+      var p = partId ? allParts.find(function (x) { return x.id === partId; }) : null;
+
+      document.getElementById('part-code').value = p ? (p.partCode || '') : '';
+      document.getElementById('part-code').disabled = !!partId; // stable key -- editing it would fork the record
+      document.getElementById('part-name').value = p ? (p.partName || '') : '';
+      document.getElementById('part-compatible-models').value = p ? (p.compatibleModels || '') : '';
+      document.getElementById('part-unit').value = p ? (p.unit || 'Nos') : 'Nos';
+      document.getElementById('part-hsn').value = p ? (p.hsnCode || '') : '';
+      document.getElementById('part-purchase-price').value = p && p.purchasePrice != null ? p.purchasePrice : '';
+      document.getElementById('part-selling-price').value = p && p.sellingPrice != null ? p.sellingPrice : '';
+      document.getElementById('part-default-source').value = p ? (p.defaultSource || 'TSPL') : 'TSPL';
+      document.getElementById('part-reorder-level').value = p && p.reorderLevel != null ? p.reorderLevel : '';
+      document.getElementById('part-status').value = p ? (p.status || 'Active') : 'Active';
+
+      document.getElementById('part-modal').classList.remove('hidden');
+    }
+
+    function closePartModal() {
+      document.getElementById('part-modal').classList.add('hidden');
+    }
+
+    async function handleSavePart() {
+      var btn = document.getElementById('btn-save-part');
+      var partCode = document.getElementById('part-code').value.trim().toUpperCase();
+      var partName = document.getElementById('part-name').value.trim();
+
+      if (!partCode || !partName) {
+        toast('Part Code and Part Name are required', 'error');
+        return;
+      }
+
+      var docId = document.getElementById('part-doc-id').value || slugifyPartCode(partCode);
+
+      var payload = {
+        partCode: partCode,
+        partName: partName,
+        compatibleModels: document.getElementById('part-compatible-models').value.trim(),
+        unit: document.getElementById('part-unit').value,
+        hsnCode: document.getElementById('part-hsn').value.trim(),
+        purchasePrice: parseFloat(document.getElementById('part-purchase-price').value) || 0,
+        sellingPrice: parseFloat(document.getElementById('part-selling-price').value) || 0,
+        defaultSource: document.getElementById('part-default-source').value,
+        reorderLevel: parseInt(document.getElementById('part-reorder-level').value, 10) || null,
+        status: document.getElementById('part-status').value,
+        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+      };
+
+      showLoader(btn, 'Saving...');
+      try {
+        await db.collection('partsMaster').doc(docId).set(payload, { merge: true });
+        toast('Part saved: ' + partName, 'success');
+        closePartModal();
+        await loadParts();
+      } catch (err) {
+        console.error('Save part error:', err);
+        toast('Error saving part: ' + err.message, 'error');
+      } finally {
+        hideLoader(btn);
+      }
+    }
+
+    // ------------------------------------------------------------------------
+    // 3. CSV IMPORT
+    // ------------------------------------------------------------------------
+    function openCsvImportModal() {
+      document.getElementById('csv-modal').classList.remove('hidden');
+      document.getElementById('csv-file-input').value = '';
+      document.getElementById('csv-preview-container').classList.add('hidden');
+      document.getElementById('csv-progress-box').classList.add('hidden');
+      document.getElementById('btn-start-import').disabled = true;
+      parsedCsvRows = [];
+    }
+
+    function closeCsvImportModal() {
+      document.getElementById('csv-modal').classList.add('hidden');
+    }
+
+    function downloadPartsCsvTemplate() {
+      var header = 'partCode,partName,compatibleModels,unit,purchasePrice,sellingPrice,hsnCode,defaultSource,reorderLevel,status';
+      var rows = [
+        'NCR-445-072819,Cash Dispenser Unit (CDU),"Hitachi SR7500, Hitachi CashLive 300",Nos,42000,52500,84733010,TSPL,3,Active',
+        'HIT-EPP-2201,EPP Keypad (PCI Certified),Hitachi HT-2845V,Nos,8500,10800,84733010,CLIENT_OEM,5,Active',
+        'HIT-CST-3301,Cassette Assembly (Pick Module),"Hitachi SR7500, Hitachi HT-2845V",Set,15000,18500,84733010,TSPL,4,Active'
+      ];
+      var csvContent = 'data:text/csv;charset=utf-8,' + header + '\n' + rows.join('\n') + '\n';
+      var link = document.createElement('a');
+      link.setAttribute('href', encodeURI(csvContent));
+      link.setAttribute('download', 'TSPL_Parts_Import_Template.csv');
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
+
+    function handleCsvFileSelected(event) {
+      var file = event.target.files[0];
+      if (!file) return;
+
+      var reader = new FileReader();
+      reader.onload = function (e) {
+        parseAndValidateCsv(e.target.result);
+      };
+      reader.readAsText(file);
+    }
+
+    function parseAndValidateCsv(text) {
+      var lines = text.split(/\r\n|\n/).filter(function (l) { return l.trim().length > 0; });
+      if (lines.length < 2) {
+        toast('CSV file is empty or missing data rows', 'error');
+        return;
+      }
+
+      var rawHeaders = parseCsvLine(lines[0]).map(function (h) { return h.trim(); });
+      parsedCsvRows = [];
+      var seenCodes = new Set();
+      var errors = [];
+
+      for (var i = 1; i < lines.length; i++) {
+        var cols = parseCsvLine(lines[i]);
+        if (cols.length < 1) continue;
+
+        var partCode = (cols[0] || '').trim().toUpperCase();
+        var defaultSource = (cols[7] || 'TSPL').trim().toUpperCase();
+        if (VALID_SOURCES.indexOf(defaultSource) === -1) defaultSource = 'TSPL';
+
+        var rowObj = {
+          partCode: partCode,
+          partName: (cols[1] || '').trim(),
+          compatibleModels: (cols[2] || '').trim(),
+          unit: (cols[3] || 'Nos').trim(),
+          purchasePrice: parseFloat(cols[4]) || 0,
+          sellingPrice: parseFloat(cols[5]) || 0,
+          hsnCode: (cols[6] || '').trim(),
+          defaultSource: defaultSource,
+          reorderLevel: parseInt(cols[8], 10) || null,
+          status: (cols[9] || 'Active').trim()
+        };
+
+        if (!rowObj.partCode) {
+          errors.push('Row ' + (i + 1) + ': Missing Part Code');
+        } else if (seenCodes.has(rowObj.partCode)) {
+          errors.push('Row ' + (i + 1) + ': Duplicate Part Code in file (' + rowObj.partCode + ')');
+        }
+        if (!rowObj.partName) {
+          errors.push('Row ' + (i + 1) + ': Missing Part Name');
+        }
+        seenCodes.add(rowObj.partCode);
+
+        parsedCsvRows.push(rowObj);
+      }
+
+      renderCsvPreview(rawHeaders, parsedCsvRows.slice(0, 10), errors);
+    }
+
+    function parseCsvLine(line) {
+      var arr = [];
+      var insideQuote = false;
+      var cur = '';
+      for (var i = 0; i < line.length; i++) {
+        var ch = line[i];
+        if (ch === '"') {
+          insideQuote = !insideQuote;
+        } else if (ch === ',' && !insideQuote) {
+          arr.push(cur);
+          cur = '';
+        } else {
+          cur += ch;
+        }
+      }
+      arr.push(cur);
+      return arr;
+    }
+
+    function renderCsvPreview(headers, previewRows, errors) {
+      var pHead = document.getElementById('csv-preview-header');
+      var pBody = document.getElementById('csv-preview-body');
+      var badge = document.getElementById('csv-validation-badge');
+      var btn = document.getElementById('btn-start-import');
+
+      pHead.innerHTML = headers.map(function (h) { return '<th class="p-2 border-b border-slate-200">' + h + '</th>'; }).join('');
+
+      pBody.innerHTML = previewRows.map(function (r) {
+        return (
+          '<tr>' +
+            '<td class="p-2 font-bold text-indigo-700">' + r.partCode + '</td>' +
+            '<td class="p-2">' + r.partName + '</td>' +
+            '<td class="p-2 truncate max-w-[140px]">' + r.compatibleModels + '</td>' +
+            '<td class="p-2">' + r.unit + '</td>' +
+            '<td class="p-2 text-right">' + r.purchasePrice + '</td>' +
+            '<td class="p-2 text-right">' + r.sellingPrice + '</td>' +
+            '<td class="p-2">' + r.hsnCode + '</td>' +
+            '<td class="p-2">' + r.defaultSource + '</td>' +
+            '<td class="p-2">' + r.reorderLevel + '</td>' +
+            '<td class="p-2">' + r.status + '</td>' +
+          '</tr>'
+        );
+      }).join('');
+
+      if (errors.length > 0) {
+        badge.className = 'text-xs px-2 py-0.5 rounded font-bold bg-red-100 text-red-800';
+        badge.textContent = errors.length + ' Validation Errors';
+        toast('Validation errors in CSV. ' + errors[0], 'error');
+        btn.disabled = true;
+      } else {
+        badge.className = 'text-xs px-2 py-0.5 rounded font-bold bg-emerald-100 text-emerald-800';
+        badge.textContent = 'Validated ' + parsedCsvRows.length + ' rows ready';
+        btn.disabled = false;
+      }
+
+      document.getElementById('csv-preview-container').classList.remove('hidden');
+    }
+
+    async function executeBatchImport() {
+      var btn = document.getElementById('btn-start-import');
+      var pBox = document.getElementById('csv-progress-box');
+      var pText = document.getElementById('csv-progress-text');
+      var pPct = document.getElementById('csv-progress-pct');
+      var pFill = document.getElementById('csv-progress-fill');
+
+      btn.disabled = true;
+      pBox.classList.remove('hidden');
+
+      var total = parsedCsvRows.length;
+      var batchSize = 400;
+      var chunks = [];
+      for (var i = 0; i < total; i += batchSize) {
+        chunks.push(parsedCsvRows.slice(i, i + batchSize));
+      }
+
+      for (var c = 0; c < chunks.length; c++) {
+        var currentChunk = chunks[c];
+        var batch = db.batch();
+
+        currentChunk.forEach(function (row) {
+          var docId = slugifyPartCode(row.partCode);
+          var ref = db.collection('partsMaster').doc(docId);
+          batch.set(ref, {
+            partCode: row.partCode,
+            partName: row.partName,
+            compatibleModels: row.compatibleModels,
+            unit: row.unit,
+            purchasePrice: row.purchasePrice,
+            sellingPrice: row.sellingPrice,
+            hsnCode: row.hsnCode,
+            defaultSource: row.defaultSource,
+            reorderLevel: row.reorderLevel,
+            status: row.status,
+            updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+          }, { merge: true });
+        });
+
+        try {
+          await batch.commit();
+        } catch (err) {
+          console.error('Batch commit error:', err);
+          toast('Error on batch ' + (c + 1) + ': ' + err.message, 'error');
+        }
+
+        var pct = Math.round(((c + 1) / chunks.length) * 100);
+        pPct.textContent = pct + '%';
+        pFill.style.width = pct + '%';
+        pText.textContent = 'Imported ' + Math.min((c + 1) * batchSize, total) + ' / ' + total + ' parts...';
+
+        await new Promise(function (res) { return setTimeout(res, 200); });
+      }
+
+      pText.textContent = 'Import finished successfully! ' + total + ' part(s) processed.';
+      toast('Imported ' + total + ' part(s).', 'success');
+
+      await loadParts();
+      setTimeout(closeCsvImportModal, 1200);
+    }
+  </script>
+</body>
+</html>

@@ -88,6 +88,15 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    match /partsMaster/{partId} {
+      // Plain English: Spare parts catalog -- purchase/selling price and default
+      // source (Parts Master). Same shape as atms/clients above -- readable by all
+      // authenticated staff (SCM/Parts/engineers all look parts up), writable only
+      // by Admins.
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
     match /users/{userId} {
       // Plain English: Users can read their own profile; Admins can read all profiles; ONLY Admins can create or update user permissions.
       // [USES get() LOOKUP in isAdmin()]
