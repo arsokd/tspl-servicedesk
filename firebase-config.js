@@ -33,8 +33,13 @@ if (!firebase.apps.length) {
 
 var db = firebase.firestore();
 var auth = firebase.auth();
-var storage = firebase.storage();
-var rtdb = firebase.database();
+// Storage and Realtime Database are only used by some pages (photo uploads,
+// live GPS respectively) -- not every page loads those two SDK scripts in
+// its <head>. Guarded so a page that skips one doesn't crash this shared
+// file partway through and leave everything declared below (IST_OFFSET_MS,
+// _cache, etc.) permanently undefined for the rest of that page's life.
+var storage = (typeof firebase.storage === 'function') ? firebase.storage() : null;
+var rtdb = (typeof firebase.database === 'function') ? firebase.database() : null;
 
 // Enable offline persistence for Firestore
 db.enablePersistence({ synchronizeTabs: true }).catch(function (err) {
