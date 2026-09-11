@@ -47,6 +47,11 @@
 var CLOCK_HEADINGS = {
   TSPL_ACTIVE:           { label: 'TSPL Active Work',                owner: 'TSPL' },
   AWAITING_CRA:          { label: 'Awaiting CRA (Custodian)',         owner: 'CLIENT' },
+  // CRA has physically arrived, but the ATM itself isn't free yet (e.g. still
+  // mid cash-loading, or customers still using it) -- a distinct reason from
+  // "CRA hasn't arrived", added per the client's own confirmed instruction
+  // that this wait is still charged to their account, not TSPL's.
+  AWAITING_ATM_ACCESS:   { label: 'Awaiting ATM Access (CRA on site, machine busy)', owner: 'CLIENT' },
   AWAITING_PARTS_TSPL:   { label: 'Awaiting Parts (TSPL Source)',     owner: 'TSPL' },
   AWAITING_PARTS_CLIENT: { label: 'Awaiting Parts (Client/OEM Source)', owner: 'CLIENT' }
 };
@@ -174,6 +179,7 @@ async function ledgerPersistTotals(docketId, batchOrNull) {
     tsplClockPercent: totals.tsplPercent,
     clientClockPercent: totals.clientPercent,
     craWaitMinutes: Math.round(totals.byHeading.AWAITING_CRA || 0),
+    atmAccessWaitMinutes: Math.round(totals.byHeading.AWAITING_ATM_ACCESS || 0),
     partsWaitTsplMinutes: Math.round(totals.byHeading.AWAITING_PARTS_TSPL || 0),
     partsWaitClientMinutes: Math.round(totals.byHeading.AWAITING_PARTS_CLIENT || 0),
     tsplActiveMinutes: Math.round(totals.byHeading.TSPL_ACTIVE || 0)
