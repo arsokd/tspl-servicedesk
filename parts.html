@@ -424,7 +424,7 @@
         <div class="grid grid-cols-2 gap-3">
           <div>
             <label class="block font-bold text-slate-700 uppercase text-[10px] mb-1">Part Category / Name *</label>
-            <select id="new-part-name" required class="w-full border border-slate-300 rounded-lg p-2 bg-white">
+            <select id="new-part-name" required onchange="handlePartCatalogChange()" class="w-full border border-slate-300 rounded-lg p-2 bg-white">
               <option value="">-- Select Module --</option>
               <option value="Motorized Card Reader (EMV)">Motorized Card Reader (EMV)</option>
               <option value="DIP Card Reader">DIP Card Reader</option>
@@ -480,6 +480,7 @@
             <option value="CLIENT_OEM">Client / OEM Arranged</option>
           </select>
           <p class="text-[10px] text-slate-500 mt-1">Determines whose account the waiting clock charges to while this part is pending.</p>
+          <p id="new-part-price-note" class="hidden text-[10px] text-indigo-700 font-semibold mt-1"></p>
         </div>
 
         <div>
@@ -521,7 +522,72 @@
 
       await loadStatsStrip();
       await fetchIndents(true);
+      await loadPartsCatalog();
     });
+
+    // ------------------------------------------------------------------------
+    // SPARE PARTS MASTER CATALOG: pre-fills part name/price/default source on
+    // the New Indent form instead of everything being typed by hand. Catalog
+    // entries are ADDED alongside the original generic module list, never
+    // replacing it -- a part that hasn't been catalogued yet still works
+    // exactly as before, just with no price attached.
+    // ------------------------------------------------------------------------
+    var partsCatalogByCode = {};
+
+    async function loadPartsCatalog() {
+      try {
+        var snap = await db.collection('partsMaster').where('status', '==', 'Active').orderBy('partName').get();
+        if (snap.empty) return;
+
+        var select = document.getElementById('new-part-name');
+        var group = document.createElement('optgroup');
+        group.label = 'Catalog Parts (priced)';
+
+        snap.forEach(function (doc) {
+          var p = doc.data();
+          partsCatalogByCode[p.partCode] = p;
+
+          var opt = document.createElement('option');
+          opt.value = p.partCode;
+          opt.textContent = p.partName + ' (' + p.partCode + ')';
+          group.appendChild(opt);
+        });
+
+        select.appendChild(group);
+      } catch (e) {
+        console.warn('Could not load parts catalog (form still works without it):', e);
+      }
+    }
+
+    // The dropdown's value is the catalog's partCode for a catalog entry
+    // (two different priced parts can share the same generic display name,
+    // e.g. two CDU models -- the code is what's actually unique), or the
+    // plain generic name for one of the original, uncatalogued options.
+    // handleCreateNewIndent() below tells the two apart the same way.
+    function handlePartCatalogChange() {
+      var selected = document.getElementById('new-part-name').value;
+      var noteBox = document.getElementById('new-part-price-note');
+      var p = partsCatalogByCode[selected];
+
+      if (!p) {
+        noteBox.classList.add('hidden');
+        return;
+      }
+
+      // Auto-fill from the catalog -- all three stay editable afterwards,
+      // since a specific indent can still legitimately differ from the
+      // catalog default (e.g. this bank sources this one part themselves).
+      document.getElementById('new-part-code').value = p.partCode;
+      document.getElementById('new-source').value = p.defaultSource || 'TSPL';
+
+      noteBox.textContent = 'Catalog price — Purchase: ' + fmtRupee(p.purchasePrice) + ' · Selling: ' + fmtRupee(p.sellingPrice) + ' (' + (p.unit || 'Nos') + ')';
+      noteBox.classList.remove('hidden');
+    }
+
+    function fmtRupee(n) {
+      if (n === null || n === undefined || isNaN(n)) return '--';
+      return '₹' + Number(n).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
 
     // ------------------------------------------------------------------------
     // LOAD SUMMARY STRIP FROM stats/parts OR DYNAMIC FALLBACK
@@ -1097,8 +1163,16 @@
       btn.disabled = true;
       btn.innerHTML = 'Creating Indent...';
 
-      var partName = document.getElementById('new-part-name').value;
+      var selectedPartValue = document.getElementById('new-part-name').value;
+      var catalogMatch = partsCatalogByCode[selectedPartValue];
+      // A catalog option's dropdown value is its partCode (two priced parts
+      // can share a display name), so the actual name comes from the
+      // catalog lookup; a plain generic option's value IS its name, same
+      // as before this catalog existed.
+      var partName = catalogMatch ? catalogMatch.partName : selectedPartValue;
       var partCode = document.getElementById('new-part-code').value.trim() || 'OEM-GENERIC';
+      var purchasePrice = catalogMatch ? catalogMatch.purchasePrice : null;
+      var sellingPrice = catalogMatch ? catalogMatch.sellingPrice : null;
       var qty = parseInt(document.getElementById('new-quantity').value, 10) || 1;
       var priority = document.getElementById('new-priority').value;
       var destination = document.getElementById('new-destination').value;
@@ -1124,6 +1198,8 @@
           ro: verifiedDocketData.ro || 'RO',
           partName: partName,
           partCode: partCode,
+          purchasePrice: purchasePrice,
+          sellingPrice: sellingPrice,
           quantity: qty,
           priority: priority,
           destination: destination,
