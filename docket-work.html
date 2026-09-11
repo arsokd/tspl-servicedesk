@@ -779,7 +779,10 @@
 
     document.addEventListener('DOMContentLoaded', async function () {
       if (typeof checkAuth === 'function') {
-        checkAuth(['engineer']);
+        // 'admin' included so ops/testing staff can open any docket's work
+        // screen directly to test/demo the field flow (CRA, ATM access,
+        // parts, closure) without needing a separate engineer login/device.
+        checkAuth(['engineer', 'admin']);
       }
 
       // Read docket id from URL query parameter
