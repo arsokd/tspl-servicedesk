@@ -513,7 +513,7 @@
     document.addEventListener('DOMContentLoaded', async function () {
       // 1. RBAC Guard: admin and techsupport only
       if (typeof checkAuth === 'function') {
-        checkAuth(['admin', 'techsupport']);
+        checkAuth(['admin', 'techsupport', 'scm']);
       }
       if (typeof buildNav === 'function') {
         buildNav('parts.html');

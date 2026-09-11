@@ -160,13 +160,13 @@ function buildNav(activePage) {
   var userRole = localStorage.getItem('userRole') || 'callcentre';
 
   var navItems = [
-    { name: 'Dashboard', file: 'dashboard.html', roles: ['admin', 'callcentre', 'techsupport', 'rm', 'regionalhead', 'unithead'] },
+    { name: 'Dashboard', file: 'dashboard.html', roles: ['admin', 'callcentre', 'techsupport', 'rm', 'regionalhead', 'unithead', 'scm'] },
     { name: 'SLA Board', file: 'sla-board.html', roles: ['admin', 'callcentre', 'rm', 'regionalhead'] },
-    { name: 'Dockets', file: 'dockets.html', roles: ['admin', 'callcentre', 'techsupport', 'rm', 'regionalhead', 'unithead'] },
+    { name: 'Dockets', file: 'dockets.html', roles: ['admin', 'callcentre', 'techsupport', 'rm', 'regionalhead', 'unithead', 'scm'] },
     { name: 'Live Map', file: 'live-map.html', roles: ['admin', 'callcentre', 'rm', 'regionalhead'] },
-    { name: 'Parts', file: 'parts.html', roles: ['admin', 'techsupport'] },
+    { name: 'Parts', file: 'parts.html', roles: ['admin', 'techsupport', 'scm'] },
     { name: 'Reports', file: 'reports.html', roles: ['admin', 'rm', 'regionalhead', 'unithead'] },
-    { name: 'Clock Ledger', file: 'clock-ledger-report.html', roles: ['admin', 'techsupport', 'rm', 'regionalhead', 'unithead'] },
+    { name: 'Clock Ledger', file: 'clock-ledger-report.html', roles: ['admin', 'techsupport', 'rm', 'regionalhead', 'unithead', 'scm'] },
     { name: 'Billing', file: 'billing.html', roles: ['admin'] },
     { name: 'Compliance', file: 'compliance.html', roles: ['admin'] },
     { name: 'Masters', file: 'masters-atm.html', roles: ['admin'] },
