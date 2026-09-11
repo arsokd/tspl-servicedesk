@@ -1,0 +1,664 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Client / Bank Master — TSPL ServiceDesk</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Firebase Compat 10.7.1 -->
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
+  <script src="firebase-config.js"></script>
+  <!-- PWA: installable app shell -->
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#0f233d">
+  <link rel="apple-touch-icon" href="assets/icon-180.png">
+  <script>
+    if ("serviceWorker" in navigator) {
+      window.addEventListener("load", function () {
+        navigator.serviceWorker.register("sw.js").catch(function (err) {
+          console.warn("[PWA] Service worker registration failed:", err);
+        });
+      });
+    }
+  </script>
+  <script src="auth-guard.js"></script>
+</head>
+<body class="bg-slate-100 min-h-screen flex flex-col font-sans antialiased text-slate-800">
+
+  <!-- Main Navigation injected by auth-guard.js -->
+  <div id="main-nav"></div>
+
+  <main class="flex-grow max-w-[1650px] w-full mx-auto p-4 sm:p-6 lg:p-8 space-y-5">
+
+    <!-- Masters Sub-Nav -->
+    <div class="flex items-center gap-1.5 text-xs">
+      <a href="masters-atm.html" class="px-3 py-1.5 rounded-lg bg-white border border-slate-300 text-slate-600 hover:bg-slate-50 font-semibold transition">ATM Masters</a>
+      <a href="masters-users.html" class="px-3 py-1.5 rounded-lg bg-white border border-slate-300 text-slate-600 hover:bg-slate-50 font-semibold transition">User Masters</a>
+      <a href="masters-clients.html" class="px-3 py-1.5 rounded-lg bg-[#4F46E5] text-white font-bold">Client Masters</a>
+    </div>
+
+    <!-- Header & Action Row -->
+    <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4 sm:p-5 flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div>
+        <h1 class="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight">Client / Bank Master (Contact &amp; Contract Registry)</h1>
+        <p class="text-xs text-slate-500 mt-0.5">Per-bank contact details and contractual SLA targets. Saving a client here also registers its bank name in the shared Bank list used across Dockets, ATM Masters, and User Masters.</p>
+      </div>
+
+      <div class="flex flex-wrap items-center gap-2.5">
+        <button
+          onclick="openCsvImportModal()"
+          class="bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold py-2 px-3.5 rounded-lg border border-slate-300 shadow-sm transition flex items-center gap-1.5"
+        >
+          <svg class="h-4 w-4 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+          </svg>
+          Import Clients (CSV)
+        </button>
+        <button onclick="openClientModal()" class="bg-[#4F46E5] hover:bg-indigo-700 text-white text-xs font-semibold py-2 px-4 rounded-lg shadow-sm transition">
+          + Add New Client
+        </button>
+      </div>
+    </div>
+
+    <div class="p-3 bg-amber-50 border-l-4 border-[#D97706] rounded-r-md text-amber-900 text-xs">
+      <strong>Reference only, for now:</strong> the SLA target minutes stored here do not yet drive live SLA countdowns — every docket's countdown still reads the shared contract set up under <span class="font-mono">Setup</span>. This registry captures the real per-bank numbers so they're ready to wire in later without re-entering them.
+    </div>
+
+    <!-- Clients Table -->
+    <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+      <div class="overflow-x-auto">
+        <table class="w-full text-xs">
+          <thead class="bg-slate-50 text-slate-500 uppercase text-[10px]">
+            <tr>
+              <th class="px-3 py-2.5 text-left">Bank Name</th>
+              <th class="px-3 py-2.5 text-left">Contact Person</th>
+              <th class="px-3 py-2.5 text-left">Contact Phone</th>
+              <th class="px-3 py-2.5 text-left">HQ City / State</th>
+              <th class="px-3 py-2.5 text-left">Contract Period</th>
+              <th class="px-3 py-2.5 text-left">SLA Targets (min) M / U / SU / R</th>
+              <th class="px-3 py-2.5 text-left">Status</th>
+              <th class="px-3 py-2.5 text-center">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="clients-tbody">
+            <tr><td colspan="8" class="text-center py-10 text-slate-400">Loading clients…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+
+  <!-- ===================================================================== -->
+  <!-- MODAL: ADD / EDIT CLIENT                                              -->
+  <!-- ===================================================================== -->
+  <div id="client-modal" class="hidden fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 flex items-center justify-center p-4">
+    <div class="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto border border-slate-200 p-6 space-y-4">
+      <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+        <h2 id="client-modal-title" class="text-base font-bold text-slate-900">Add New Client</h2>
+        <button onclick="closeClientModal()" class="text-slate-400 hover:text-slate-700 text-xl font-bold">&times;</button>
+      </div>
+
+      <input type="hidden" id="client-doc-id" value="" />
+
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div class="sm:col-span-2">
+          <label class="block text-[11px] font-semibold text-slate-600 mb-1">Bank Name *</label>
+          <input list="existing-banks-list" id="client-bank-name" required placeholder="e.g. HDFC Bank" class="w-full text-xs p-2.5 border border-slate-300 rounded-md focus:ring-1 focus:ring-indigo-500" />
+          <datalist id="existing-banks-list"></datalist>
+          <p class="text-[10px] text-slate-400 mt-1">Pick an existing name from the list where possible; type a new one only for a genuinely new bank.</p>
+        </div>
+
+        <div>
+          <label class="block text-[11px] font-semibold text-slate-600 mb-1">Contact Person</label>
+          <input type="text" id="client-contact-person" class="w-full text-xs p-2.5 border border-slate-300 rounded-md focus:ring-1 focus:ring-indigo-500" />
+        </div>
+        <div>
+          <label class="block text-[11px] font-semibold text-slate-600 mb-1">Contact Phone</label>
+          <input type="text" id="client-contact-phone" class="w-full text-xs p-2.5 border border-slate-300 rounded-md focus:ring-1 focus:ring-indigo-500" />
+        </div>
+        <div class="sm:col-span-2">
+          <label class="block text-[11px] font-semibold text-slate-600 mb-1">Contact Email</label>
+          <input type="email" id="client-contact-email" class="w-full text-xs p-2.5 border border-slate-300 rounded-md focus:ring-1 focus:ring-indigo-500" />
+        </div>
+
+        <div class="sm:col-span-2">
+          <label class="block text-[11px] font-semibold text-slate-600 mb-1">HQ Address</label>
+          <input type="text" id="client-hq-address" class="w-full text-xs p-2.5 border border-slate-300 rounded-md focus:ring-1 focus:ring-indigo-500" />
+        </div>
+        <div>
+          <label class="block text-[11px] font-semibold text-slate-600 mb-1">HQ City</label>
+          <input type="text" id="client-hq-city" class="w-full text-xs p-2.5 border border-slate-300 rounded-md focus:ring-1 focus:ring-indigo-500" />
+        </div>
+        <div>
+          <label class="block text-[11px] font-semibold text-slate-600 mb-1">HQ State</label>
+          <input type="text" id="client-hq-state" class="w-full text-xs p-2.5 border border-slate-300 rounded-md focus:ring-1 focus:ring-indigo-500" />
+        </div>
+
+        <div>
+          <label class="block text-[11px] font-semibold text-slate-600 mb-1">Contract Start Date</label>
+          <input type="date" id="client-contract-start" class="w-full text-xs p-2.5 border border-slate-300 rounded-md focus:ring-1 focus:ring-indigo-500" />
+        </div>
+        <div>
+          <label class="block text-[11px] font-semibold text-slate-600 mb-1">Contract End Date</label>
+          <input type="date" id="client-contract-end" class="w-full text-xs p-2.5 border border-slate-300 rounded-md focus:ring-1 focus:ring-indigo-500" />
+        </div>
+
+        <div class="sm:col-span-2">
+          <label class="block text-[11px] font-semibold text-slate-600 mb-1">Contractual SLA Target (minutes), by RBI Location Category</label>
+          <div class="grid grid-cols-4 gap-2">
+            <div>
+              <span class="block text-[10px] text-slate-400 mb-0.5">Metro</span>
+              <input type="number" min="0" id="client-sla-metro" placeholder="120" class="w-full text-xs p-2 border border-slate-300 rounded-md" />
+            </div>
+            <div>
+              <span class="block text-[10px] text-slate-400 mb-0.5">Urban</span>
+              <input type="number" min="0" id="client-sla-urban" placeholder="180" class="w-full text-xs p-2 border border-slate-300 rounded-md" />
+            </div>
+            <div>
+              <span class="block text-[10px] text-slate-400 mb-0.5">Semi-Urban</span>
+              <input type="number" min="0" id="client-sla-semiurban" placeholder="240" class="w-full text-xs p-2 border border-slate-300 rounded-md" />
+            </div>
+            <div>
+              <span class="block text-[10px] text-slate-400 mb-0.5">Rural</span>
+              <input type="number" min="0" id="client-sla-rural" placeholder="360" class="w-full text-xs p-2 border border-slate-300 rounded-md" />
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-[11px] font-semibold text-slate-600 mb-1">Status</label>
+          <select id="client-status" class="w-full text-xs p-2.5 border border-slate-300 rounded-md bg-white">
+            <option value="Active">Active</option>
+            <option value="Inactive">Inactive</option>
+          </select>
+        </div>
+
+        <div class="sm:col-span-2">
+          <label class="block text-[11px] font-semibold text-slate-600 mb-1">Notes</label>
+          <textarea id="client-notes" rows="2" class="w-full text-xs p-2.5 border border-slate-300 rounded-md focus:ring-1 focus:ring-indigo-500"></textarea>
+        </div>
+      </div>
+
+      <div class="flex items-center justify-end gap-3 pt-3 border-t border-slate-100">
+        <button type="button" onclick="closeClientModal()" class="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-md">Cancel</button>
+        <button type="button" id="btn-save-client" onclick="handleSaveClient()" class="px-6 py-2 text-xs font-semibold bg-[#4F46E5] text-white rounded-md shadow">Save Client</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================================================================== -->
+  <!-- MODAL: BULK IMPORT CLIENTS (CSV)                                      -->
+  <!-- ===================================================================== -->
+  <div id="csv-modal" class="hidden fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 flex items-center justify-center p-4">
+    <div class="bg-white rounded-xl shadow-2xl max-w-3xl w-full max-h-[90vh] overflow-y-auto border border-slate-200 p-6 space-y-5">
+
+      <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+        <div>
+          <h2 class="text-base font-bold text-slate-900">Bulk Import Clients (CSV)</h2>
+          <p class="text-xs text-slate-500">Plain JavaScript parser with client validation, batched writes. Also registers any new bank name in the shared Bank list.</p>
+        </div>
+        <button onclick="closeCsvImportModal()" class="text-slate-400 hover:text-slate-700 text-xl font-bold">&times;</button>
+      </div>
+
+      <!-- Expected Header Preview -->
+      <div class="text-[11px] font-mono bg-slate-50 p-2.5 rounded border border-slate-200 text-slate-700 overflow-x-auto">
+        <strong>Required CSV Headers:</strong><br/>
+        bankName,contactPerson,contactPhone,contactEmail,hqAddress,hqCity,hqState,contractStartDate,contractEndDate,slaMetroMins,slaUrbanMins,slaSemiUrbanMins,slaRuralMins,status
+      </div>
+
+      <!-- Starter Template -->
+      <button type="button" onclick="downloadClientCsvTemplate()" class="w-full py-2 bg-white hover:bg-slate-50 text-indigo-700 border border-indigo-300 text-xs font-bold rounded-md shadow-sm transition flex items-center justify-center gap-1.5">
+        <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+        Download Blank CSV Template (with example rows)
+      </button>
+
+      <!-- File Input -->
+      <div>
+        <input type="file" id="csv-file-input" accept=".csv" onchange="handleCsvFileSelected(event)" class="text-xs file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100" />
+      </div>
+
+      <!-- Preview -->
+      <div id="csv-preview-container" class="hidden space-y-2">
+        <div class="flex items-center justify-between">
+          <span class="text-xs font-semibold text-slate-600">Preview (first 10 rows)</span>
+          <span id="csv-validation-badge" class="text-xs px-2 py-0.5 rounded font-bold"></span>
+        </div>
+        <div class="overflow-x-auto border border-slate-200 rounded-lg max-h-64">
+          <table class="w-full text-[11px]">
+            <thead class="bg-slate-100"><tr id="csv-preview-header"></tr></thead>
+            <tbody id="csv-preview-body"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Progress -->
+      <div id="csv-progress-box" class="hidden space-y-2">
+        <div class="flex justify-between text-xs font-semibold">
+          <span id="csv-progress-text">Importing…</span>
+          <span id="csv-progress-pct" class="font-mono text-indigo-600 font-bold">0%</span>
+        </div>
+        <div class="w-full bg-slate-200 rounded-full h-2">
+          <div id="csv-progress-fill" class="bg-[#4F46E5] h-2 rounded-full transition-all" style="width: 0%"></div>
+        </div>
+      </div>
+
+      <div class="flex items-center justify-end gap-3 pt-3 border-t border-slate-100">
+        <button type="button" onclick="closeCsvImportModal()" class="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-md">Cancel</button>
+        <button type="button" id="btn-start-import" onclick="executeBatchImport()" disabled class="px-6 py-2 text-xs font-semibold bg-[#4F46E5] text-white rounded-md shadow disabled:opacity-40 disabled:cursor-not-allowed">
+          Start Import
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    var allClients = [];
+    var parsedCsvRows = [];
+    var LOCATION_CATS = ['Metro', 'Urban', 'Semi-Urban', 'Rural'];
+
+    document.addEventListener('DOMContentLoaded', async function () {
+      if (typeof checkAuth === 'function') {
+        checkAuth(['admin']);
+      }
+      if (typeof buildNav === 'function') {
+        buildNav('masters-atm.html');
+      }
+      await populateExistingBanksList();
+      await loadClients();
+    });
+
+    // ------------------------------------------------------------------------
+    // 1. BANK NAME SLUG (stable doc id, also used to de-dupe on both the
+    // manual Add/Edit form and the CSV importer)
+    // ------------------------------------------------------------------------
+    function slugifyBankName(name) {
+      return (name || '').trim().toLowerCase()
+        .replace(/[^a-z0-9]+/g, '_')
+        .replace(/^_+|_+$/g, '');
+    }
+
+    async function populateExistingBanksList() {
+      try {
+        var banks = await getMasters('bank');
+        var list = document.getElementById('existing-banks-list');
+        list.innerHTML = banks.map(function (b) { return '<option value="' + b + '">'; }).join('');
+      } catch (e) {
+        console.warn('Could not load existing bank list:', e);
+      }
+    }
+
+    // Registers a bank name in the shared masters/bank taxonomy so it shows up
+    // immediately in every other dropdown (Dockets, ATM Masters, User Masters)
+    // without anyone having to separately maintain that list. Safe/idempotent:
+    // arrayUnion never creates a duplicate entry.
+    async function registerBankNameInTaxonomy(names) {
+      var uniqueNames = Array.from(new Set((Array.isArray(names) ? names : [names]).filter(Boolean)));
+      if (uniqueNames.length === 0) return;
+      try {
+        await db.collection('masters').doc('bank').update({
+          values: firebase.firestore.FieldValue.arrayUnion.apply(null, uniqueNames)
+        });
+        sessionStorage.removeItem('tspl_master_bank'); // force a fresh read next time any page calls getMasters('bank')
+      } catch (e) {
+        console.warn('Could not register bank name in taxonomy (client record itself was still saved):', e);
+      }
+    }
+
+    // ------------------------------------------------------------------------
+    // 2. LOAD & RENDER
+    // ------------------------------------------------------------------------
+    async function loadClients() {
+      var tbody = document.getElementById('clients-tbody');
+      try {
+        var snap = await db.collection('clients').orderBy('bankName').get();
+        allClients = [];
+        snap.forEach(function (doc) {
+          var c = doc.data();
+          c.id = doc.id;
+          allClients.push(c);
+        });
+
+        if (allClients.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="8" class="text-center py-10 text-slate-400">No clients on file yet. Use "+ Add New Client" or "Import Clients (CSV)" above.</td></tr>';
+          return;
+        }
+
+        tbody.innerHTML = allClients.map(function (c) {
+          var sla = c.slaTargetMins || {};
+          var period = (c.contractStartDate || '--') + ' &rarr; ' + (c.contractEndDate || '--');
+          var statusPill = c.status === 'Inactive'
+            ? '<span class="px-2 py-0.5 rounded text-[11px] bg-slate-200 text-slate-700 font-semibold">Inactive</span>'
+            : '<span class="px-2 py-0.5 rounded text-[11px] bg-emerald-100 text-emerald-800 font-semibold">Active</span>';
+
+          return (
+            '<tr class="hover:bg-slate-50 transition border-t border-slate-100">' +
+              '<td class="px-3 py-2.5 font-bold text-slate-800 whitespace-nowrap">' + (c.bankName || '--') + '</td>' +
+              '<td class="px-3 py-2.5 text-slate-700 whitespace-nowrap">' + (c.contactPerson || '--') + '</td>' +
+              '<td class="px-3 py-2.5 text-slate-600 font-mono whitespace-nowrap">' + (c.contactPhone || '--') + '</td>' +
+              '<td class="px-3 py-2.5 text-slate-600 whitespace-nowrap">' + (c.hqCity || '--') + (c.hqState ? ', ' + c.hqState : '') + '</td>' +
+              '<td class="px-3 py-2.5 text-slate-500 font-mono text-[11px] whitespace-nowrap">' + period + '</td>' +
+              '<td class="px-3 py-2.5 text-slate-600 font-mono whitespace-nowrap">' +
+                (sla.metro != null ? sla.metro : '--') + ' / ' + (sla.urban != null ? sla.urban : '--') + ' / ' +
+                (sla.semiUrban != null ? sla.semiUrban : '--') + ' / ' + (sla.rural != null ? sla.rural : '--') +
+              '</td>' +
+              '<td class="px-3 py-2.5 whitespace-nowrap">' + statusPill + '</td>' +
+              '<td class="px-3 py-2.5 text-center whitespace-nowrap">' +
+                '<button onclick="openClientModal(\'' + c.id + '\')" class="text-xs bg-[#4F46E5] hover:bg-indigo-700 text-white px-2.5 py-1 rounded font-medium transition shadow-sm">Edit</button>' +
+              '</td>' +
+            '</tr>'
+          );
+        }).join('');
+      } catch (err) {
+        console.error('Load clients error:', err);
+        tbody.innerHTML = '<tr><td colspan="8" class="text-center py-10 text-red-500 font-semibold">Error loading clients: ' + err.message + '</td></tr>';
+      }
+    }
+
+    // ------------------------------------------------------------------------
+    // 3. ADD / EDIT MODAL
+    // ------------------------------------------------------------------------
+    function openClientModal(clientId) {
+      document.getElementById('client-modal-title').textContent = clientId ? 'Edit Client' : 'Add New Client';
+      document.getElementById('client-doc-id').value = clientId || '';
+
+      var c = clientId ? allClients.find(function (x) { return x.id === clientId; }) : null;
+      var sla = (c && c.slaTargetMins) || {};
+
+      document.getElementById('client-bank-name').value = c ? (c.bankName || '') : '';
+      document.getElementById('client-bank-name').disabled = !!clientId; // bank name is the stable key -- editing it would fork the record
+      document.getElementById('client-contact-person').value = c ? (c.contactPerson || '') : '';
+      document.getElementById('client-contact-phone').value = c ? (c.contactPhone || '') : '';
+      document.getElementById('client-contact-email').value = c ? (c.contactEmail || '') : '';
+      document.getElementById('client-hq-address').value = c ? (c.hqAddress || '') : '';
+      document.getElementById('client-hq-city').value = c ? (c.hqCity || '') : '';
+      document.getElementById('client-hq-state').value = c ? (c.hqState || '') : '';
+      document.getElementById('client-contract-start').value = c ? (c.contractStartDate || '') : '';
+      document.getElementById('client-contract-end').value = c ? (c.contractEndDate || '') : '';
+      document.getElementById('client-sla-metro').value = sla.metro != null ? sla.metro : '';
+      document.getElementById('client-sla-urban').value = sla.urban != null ? sla.urban : '';
+      document.getElementById('client-sla-semiurban').value = sla.semiUrban != null ? sla.semiUrban : '';
+      document.getElementById('client-sla-rural').value = sla.rural != null ? sla.rural : '';
+      document.getElementById('client-status').value = c ? (c.status || 'Active') : 'Active';
+      document.getElementById('client-notes').value = c ? (c.notes || '') : '';
+
+      document.getElementById('client-modal').classList.remove('hidden');
+    }
+
+    function closeClientModal() {
+      document.getElementById('client-modal').classList.add('hidden');
+    }
+
+    async function handleSaveClient() {
+      var btn = document.getElementById('btn-save-client');
+      var bankName = document.getElementById('client-bank-name').value.trim();
+      if (!bankName) {
+        toast('Bank Name is required', 'error');
+        return;
+      }
+
+      var docId = document.getElementById('client-doc-id').value || slugifyBankName(bankName);
+
+      var payload = {
+        bankName: bankName,
+        contactPerson: document.getElementById('client-contact-person').value.trim(),
+        contactPhone: document.getElementById('client-contact-phone').value.trim(),
+        contactEmail: document.getElementById('client-contact-email').value.trim(),
+        hqAddress: document.getElementById('client-hq-address').value.trim(),
+        hqCity: document.getElementById('client-hq-city').value.trim(),
+        hqState: document.getElementById('client-hq-state').value.trim(),
+        contractStartDate: document.getElementById('client-contract-start').value,
+        contractEndDate: document.getElementById('client-contract-end').value,
+        slaTargetMins: {
+          metro: parseInt(document.getElementById('client-sla-metro').value, 10) || null,
+          urban: parseInt(document.getElementById('client-sla-urban').value, 10) || null,
+          semiUrban: parseInt(document.getElementById('client-sla-semiurban').value, 10) || null,
+          rural: parseInt(document.getElementById('client-sla-rural').value, 10) || null
+        },
+        status: document.getElementById('client-status').value,
+        notes: document.getElementById('client-notes').value.trim(),
+        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+      };
+
+      showLoader(btn, 'Saving...');
+      try {
+        await db.collection('clients').doc(docId).set(payload, { merge: true });
+        await registerBankNameInTaxonomy(bankName);
+        toast('Client saved: ' + bankName, 'success');
+        closeClientModal();
+        await populateExistingBanksList();
+        await loadClients();
+      } catch (err) {
+        console.error('Save client error:', err);
+        toast('Error saving client: ' + err.message, 'error');
+      } finally {
+        hideLoader(btn);
+      }
+    }
+
+    // ------------------------------------------------------------------------
+    // 4. CSV IMPORT
+    // ------------------------------------------------------------------------
+    function openCsvImportModal() {
+      document.getElementById('csv-modal').classList.remove('hidden');
+      document.getElementById('csv-file-input').value = '';
+      document.getElementById('csv-preview-container').classList.add('hidden');
+      document.getElementById('csv-progress-box').classList.add('hidden');
+      document.getElementById('btn-start-import').disabled = true;
+      parsedCsvRows = [];
+    }
+
+    function closeCsvImportModal() {
+      document.getElementById('csv-modal').classList.add('hidden');
+    }
+
+    function downloadClientCsvTemplate() {
+      var header = 'bankName,contactPerson,contactPhone,contactEmail,hqAddress,hqCity,hqState,contractStartDate,contractEndDate,slaMetroMins,slaUrbanMins,slaSemiUrbanMins,slaRuralMins,status';
+      var rows = [
+        'HDFC Bank,Anil Mehta,9811100011,anil.mehta@hdfcbank.example,HDFC House Senapati Bapat Marg,Mumbai,Maharashtra,2026-01-01,2027-12-31,120,180,240,360,Active',
+        'ICICI Bank,Sunita Rao,9845100022,sunita.rao@icicibank.example,ICICI Towers Bandra Kurla Complex,Mumbai,Maharashtra,2026-01-01,2027-12-31,120,180,240,360,Active'
+      ];
+      var csvContent = 'data:text/csv;charset=utf-8,' + header + '\n' + rows.join('\n') + '\n';
+      var link = document.createElement('a');
+      link.setAttribute('href', encodeURI(csvContent));
+      link.setAttribute('download', 'TSPL_Client_Import_Template.csv');
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
+
+    function handleCsvFileSelected(event) {
+      var file = event.target.files[0];
+      if (!file) return;
+
+      var reader = new FileReader();
+      reader.onload = function (e) {
+        parseAndValidateCsv(e.target.result);
+      };
+      reader.readAsText(file);
+    }
+
+    function parseAndValidateCsv(text) {
+      var lines = text.split(/\r\n|\n/).filter(function (l) { return l.trim().length > 0; });
+      if (lines.length < 2) {
+        toast('CSV file is empty or missing data rows', 'error');
+        return;
+      }
+
+      var rawHeaders = lines[0].split(',').map(function (h) { return h.trim(); });
+      parsedCsvRows = [];
+      var seenNames = new Set();
+      var errors = [];
+
+      for (var i = 1; i < lines.length; i++) {
+        var cols = parseCsvLine(lines[i]);
+        if (cols.length < 1) continue;
+
+        var bankName = (cols[0] || '').trim();
+        var rowObj = {
+          bankName: bankName,
+          contactPerson: (cols[1] || '').trim(),
+          contactPhone: (cols[2] || '').trim(),
+          contactEmail: (cols[3] || '').trim(),
+          hqAddress: (cols[4] || '').trim(),
+          hqCity: (cols[5] || '').trim(),
+          hqState: (cols[6] || '').trim(),
+          contractStartDate: (cols[7] || '').trim(),
+          contractEndDate: (cols[8] || '').trim(),
+          slaTargetMins: {
+            metro: parseInt(cols[9], 10) || null,
+            urban: parseInt(cols[10], 10) || null,
+            semiUrban: parseInt(cols[11], 10) || null,
+            rural: parseInt(cols[12], 10) || null
+          },
+          status: (cols[13] || 'Active').trim()
+        };
+
+        if (!rowObj.bankName) {
+          errors.push('Row ' + (i + 1) + ': Missing Bank Name');
+        } else if (seenNames.has(rowObj.bankName)) {
+          errors.push('Row ' + (i + 1) + ': Duplicate Bank Name in file (' + rowObj.bankName + ')');
+        }
+        seenNames.add(rowObj.bankName);
+
+        parsedCsvRows.push(rowObj);
+      }
+
+      renderCsvPreview(rawHeaders, parsedCsvRows.slice(0, 10), errors);
+    }
+
+    function parseCsvLine(line) {
+      var arr = [];
+      var insideQuote = false;
+      var cur = '';
+      for (var i = 0; i < line.length; i++) {
+        var ch = line[i];
+        if (ch === '"') {
+          insideQuote = !insideQuote;
+        } else if (ch === ',' && !insideQuote) {
+          arr.push(cur);
+          cur = '';
+        } else {
+          cur += ch;
+        }
+      }
+      arr.push(cur);
+      return arr;
+    }
+
+    function renderCsvPreview(headers, previewRows, errors) {
+      var pHead = document.getElementById('csv-preview-header');
+      var pBody = document.getElementById('csv-preview-body');
+      var badge = document.getElementById('csv-validation-badge');
+      var btn = document.getElementById('btn-start-import');
+
+      pHead.innerHTML = headers.map(function (h) { return '<th class="p-2 border-b border-slate-200">' + h + '</th>'; }).join('');
+
+      pBody.innerHTML = previewRows.map(function (r) {
+        var sla = r.slaTargetMins;
+        return (
+          '<tr>' +
+            '<td class="p-2 font-bold text-indigo-700">' + r.bankName + '</td>' +
+            '<td class="p-2">' + r.contactPerson + '</td>' +
+            '<td class="p-2">' + r.contactPhone + '</td>' +
+            '<td class="p-2">' + r.contactEmail + '</td>' +
+            '<td class="p-2 truncate max-w-[120px]">' + r.hqAddress + '</td>' +
+            '<td class="p-2">' + r.hqCity + '</td>' +
+            '<td class="p-2">' + r.hqState + '</td>' +
+            '<td class="p-2">' + r.contractStartDate + '</td>' +
+            '<td class="p-2">' + r.contractEndDate + '</td>' +
+            '<td class="p-2">' + sla.metro + '</td>' +
+            '<td class="p-2">' + sla.urban + '</td>' +
+            '<td class="p-2">' + sla.semiUrban + '</td>' +
+            '<td class="p-2">' + sla.rural + '</td>' +
+            '<td class="p-2">' + r.status + '</td>' +
+          '</tr>'
+        );
+      }).join('');
+
+      if (errors.length > 0) {
+        badge.className = 'text-xs px-2 py-0.5 rounded font-bold bg-red-100 text-red-800';
+        badge.textContent = errors.length + ' Validation Errors';
+        toast('Validation errors in CSV. ' + errors[0], 'error');
+        btn.disabled = true;
+      } else {
+        badge.className = 'text-xs px-2 py-0.5 rounded font-bold bg-emerald-100 text-emerald-800';
+        badge.textContent = 'Validated ' + parsedCsvRows.length + ' rows ready';
+        btn.disabled = false;
+      }
+
+      document.getElementById('csv-preview-container').classList.remove('hidden');
+    }
+
+    async function executeBatchImport() {
+      var btn = document.getElementById('btn-start-import');
+      var pBox = document.getElementById('csv-progress-box');
+      var pText = document.getElementById('csv-progress-text');
+      var pPct = document.getElementById('csv-progress-pct');
+      var pFill = document.getElementById('csv-progress-fill');
+
+      btn.disabled = true;
+      pBox.classList.remove('hidden');
+
+      var total = parsedCsvRows.length;
+      var batchSize = 400;
+      var chunks = [];
+      for (var i = 0; i < total; i += batchSize) {
+        chunks.push(parsedCsvRows.slice(i, i + batchSize));
+      }
+
+      var allBankNames = [];
+
+      for (var c = 0; c < chunks.length; c++) {
+        var currentChunk = chunks[c];
+        var batch = db.batch();
+
+        currentChunk.forEach(function (row) {
+          var docId = slugifyBankName(row.bankName);
+          allBankNames.push(row.bankName);
+          var ref = db.collection('clients').doc(docId);
+          batch.set(ref, {
+            bankName: row.bankName,
+            contactPerson: row.contactPerson,
+            contactPhone: row.contactPhone,
+            contactEmail: row.contactEmail,
+            hqAddress: row.hqAddress,
+            hqCity: row.hqCity,
+            hqState: row.hqState,
+            contractStartDate: row.contractStartDate,
+            contractEndDate: row.contractEndDate,
+            slaTargetMins: row.slaTargetMins,
+            status: row.status,
+            updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+          }, { merge: true });
+        });
+
+        try {
+          await batch.commit();
+        } catch (err) {
+          console.error('Batch commit error:', err);
+          toast('Error on batch ' + (c + 1) + ': ' + err.message, 'error');
+        }
+
+        var pct = Math.round(((c + 1) / chunks.length) * 100);
+        pPct.textContent = pct + '%';
+        pFill.style.width = pct + '%';
+        pText.textContent = 'Imported ' + Math.min((c + 1) * batchSize, total) + ' / ' + total + ' clients...';
+
+        await new Promise(function (res) { return setTimeout(res, 200); });
+      }
+
+      await registerBankNameInTaxonomy(allBankNames);
+
+      pText.textContent = 'Import finished successfully! ' + total + ' client(s) processed.';
+      toast('Imported ' + total + ' client(s).', 'success');
+
+      await populateExistingBanksList();
+      await loadClients();
+      setTimeout(closeCsvImportModal, 1200);
+    }
+  </script>
+</body>
+</html>
