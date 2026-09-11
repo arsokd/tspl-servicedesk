@@ -91,6 +91,7 @@
         <div class="mt-3 flex flex-wrap gap-2">
           <a id="det-assign-link" href="#" class="text-xs bg-[#4F46E5] hover:bg-indigo-700 text-white px-3 py-1.5 rounded font-semibold transition">Manage in Dockets List &rarr;</a>
           <a id="det-parts-link" href="parts.html" class="text-xs bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 px-3 py-1.5 rounded font-semibold transition">Open Parts (SCM) &rarr;</a>
+          <a id="det-work-link" href="#" class="hidden text-xs bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 px-3 py-1.5 rounded font-semibold transition">Open Field Work Screen &rarr;</a>
         </div>
       </div>
 
@@ -231,6 +232,16 @@
       }
 
       document.getElementById('det-assign-link').href = 'dockets.html?search=' + encodeURIComponent(d.docketNo || d.id);
+
+      // Admin-only: a real in-app link to the same field-work screen the
+      // engineer uses (CRA appointment, ATM access, parts, closure) --
+      // admin sessions are exempt from docket-work.html's assigned-engineer
+      // check, same as this page, so this is never a dead link for them.
+      if (localStorage.getItem('userRole') === 'admin') {
+        var workLink = document.getElementById('det-work-link');
+        workLink.href = 'docket-work.html?id=' + d.id;
+        workLink.classList.remove('hidden');
+      }
 
       renderTimeline(d);
     }
