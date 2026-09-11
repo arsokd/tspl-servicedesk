@@ -80,6 +80,14 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    match /clients/{clientId} {
+      // Plain English: Per-bank contact details and contractual SLA targets (Client
+      // Masters). Same shape as atms/contracts above -- readable by all authenticated
+      // staff for dropdowns/lookups, writable only by Admins.
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
     match /users/{userId} {
       // Plain English: Users can read their own profile; Admins can read all profiles; ONLY Admins can create or update user permissions.
       // [USES get() LOOKUP in isAdmin()]
