@@ -872,10 +872,15 @@
 
         currentDocket = { id: doc.id, ...doc.data() };
         var loggedUid = localStorage.getItem('userUid') || (auth.currentUser ? auth.currentUser.uid : null);
+        var loggedRole = localStorage.getItem('userRole');
 
-        // Security check: verify this docket is assigned to this engineer
+        // Security check: verify this docket is assigned to this engineer.
+        // Admins are exempt -- they're allowed onto any docket's work screen
+        // to test/demo the flow (see the page-level checkAuth above), so
+        // this ownership check would otherwise deny them on every docket
+        // that isn't assigned to their own (non-engineer) account.
         var assignedId = currentDocket.assignedEngineerId || currentDocket.engineerId;
-        if (assignedId && assignedId !== loggedUid) {
+        if (assignedId && assignedId !== loggedUid && loggedRole !== 'admin') {
           showAccessDenied();
           return;
         }
