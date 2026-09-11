@@ -311,38 +311,57 @@
               <span>PROMISED TIME PASSED — LOG WAITING FOR CRA</span>
             </button>
 
-            <!-- CRA Arrival Form -->
-            <form onsubmit="executeStep4CustodianArrival(event)" class="space-y-3 pt-2 border-t border-slate-100">
-              <div class="font-bold text-slate-800 uppercase text-[11px]">When CRA Reaches Site:</div>
+            <!-- CRA Arrival Form (hidden once CRA has actually arrived -- see step4-atm-wait-section below) -->
+            <div id="step4-arrival-form-wrap">
+              <form onsubmit="executeStep4CustodianArrival(event)" class="space-y-3 pt-2 border-t border-slate-100">
+                <div class="font-bold text-slate-800 uppercase text-[11px]">When CRA Reaches Site:</div>
 
-              <div>
-                <label class="block font-semibold text-slate-700 mb-1">Custodian Full Name *</label>
-                <input type="text" id="cust-name" required placeholder="e.g. Ramesh Kumar" class="w-full p-2.5 border border-slate-300 rounded-lg" />
-              </div>
-
-              <div class="grid grid-cols-2 gap-2">
                 <div>
-                  <label class="block font-semibold text-slate-700 mb-1">Employee ID *</label>
-                  <input type="text" id="cust-empid" required placeholder="e.g. CMS-9821" class="w-full p-2.5 border border-slate-300 rounded-lg" />
+                  <label class="block font-semibold text-slate-700 mb-1">Custodian Full Name *</label>
+                  <input type="text" id="cust-name" required placeholder="e.g. Ramesh Kumar" class="w-full p-2.5 border border-slate-300 rounded-lg" />
                 </div>
+
+                <div class="grid grid-cols-2 gap-2">
+                  <div>
+                    <label class="block font-semibold text-slate-700 mb-1">Employee ID *</label>
+                    <input type="text" id="cust-empid" required placeholder="e.g. CMS-9821" class="w-full p-2.5 border border-slate-300 rounded-lg" />
+                  </div>
+                  <div>
+                    <label class="block font-semibold text-slate-700 mb-1">10-Digit Mobile *</label>
+                    <input type="tel" id="cust-phone" required pattern="[0-9]{10}" placeholder="9876543210" class="w-full p-2.5 border border-slate-300 rounded-lg font-mono" />
+                  </div>
+                </div>
+
                 <div>
-                  <label class="block font-semibold text-slate-700 mb-1">10-Digit Mobile *</label>
-                  <input type="tel" id="cust-phone" required pattern="[0-9]{10}" placeholder="9876543210" class="w-full p-2.5 border border-slate-300 rounded-lg font-mono" />
+                  <label class="block font-semibold text-slate-700 mb-1">Email (Optional)</label>
+                  <input type="email" id="cust-email" placeholder="custodian@agency.com" class="w-full p-2.5 border border-slate-300 rounded-lg" />
                 </div>
-              </div>
 
-              <div>
-                <label class="block font-semibold text-slate-700 mb-1">Email (Optional)</label>
-                <input type="email" id="cust-email" placeholder="custodian@agency.com" class="w-full p-2.5 border border-slate-300 rounded-lg" />
-              </div>
+                <button type="submit" id="btn-custodian-arrived" class="w-full bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-bold text-xs py-3.5 px-4 rounded-xl shadow-md touch-target flex items-center justify-center gap-2">
+                  <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <span>CRA HAS ARRIVED (Verify &amp; Log Arrival)</span>
+                </button>
+              </form>
+            </div>
 
-              <button type="submit" id="btn-custodian-arrived" class="w-full bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-bold text-xs py-3.5 px-4 rounded-xl shadow-md touch-target flex items-center justify-center gap-2">
+            <!-- SUB-STEP C: CRA is on site, but the ATM itself may not be free yet
+                 (e.g. still mid cash-loading) -- shown once custodianReachedAt is
+                 set, until the engineer confirms the ATM is actually free to work
+                 on. This wait is charged to the Client's account, same as CRA
+                 not-yet-arrived, per the confirmed process. -->
+            <div id="step4-atm-wait-section" class="hidden space-y-3">
+              <div class="p-3 bg-amber-50 border border-amber-300 rounded-xl text-amber-900 text-[11px]">
+                CRA verified on site. If the machine is still busy (e.g. cash-loading in progress), the clock stays on the Client's account until you confirm the ATM is actually free to work on.
+              </div>
+              <button id="btn-atm-now-free" onclick="executeAtmNowFree()" class="w-full bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-bold text-xs py-3.5 px-4 rounded-xl shadow-md touch-target flex items-center justify-center gap-2">
                 <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
-                <span>CRA HAS ARRIVED (Start Diagnostics)</span>
+                <span>ATM IS FREE — START WORK</span>
               </button>
-            </form>
+            </div>
           </div>
         </div>
 
@@ -725,6 +744,24 @@
   </div>
 
   <!-- ===================================================================== -->
+  <!-- MODAL: CONFIRM SEND CRA NOTIFICATION (SMS today, WhatsApp later --      -->
+  <!-- the channel is a backend config choice, this prompt doesn't change)    -->
+  <!-- ===================================================================== -->
+  <div id="modal-confirm-notify" class="hidden fixed inset-0 z-50 bg-slate-900/70 flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-2xl max-w-sm w-full border border-slate-200 p-5 space-y-4">
+      <div class="flex items-center justify-between border-b border-slate-100 pb-2">
+        <h3 class="text-sm font-bold text-slate-900 uppercase">Notify CRA?</h3>
+      </div>
+      <p id="confirm-notify-preview" class="text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded-lg p-3"></p>
+      <p class="text-[11px] text-slate-400">Sent via SMS today; will move to WhatsApp once connected — nothing else about this screen changes either way.</p>
+      <div class="flex justify-end gap-2 pt-2 border-t border-slate-100">
+        <button type="button" onclick="declineSendNotification()" class="px-3 py-2 text-slate-600 rounded-lg font-semibold">No, Skip</button>
+        <button type="button" onclick="confirmSendNotification()" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg shadow touch-target">Yes, Send Now</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================================================================== -->
   <!-- SCRIPT LOGIC                                                          -->
   <!-- ===================================================================== -->
   <script>
@@ -936,8 +973,8 @@
       // Step Completion Hierarchy:
       // Step 7: Final Custodian Sign-Off (if status is Resolved)
       // Step 6: Work Execution / Actions (if workStartedAt exists)
-      // Step 5: Start Work Benchmark (if reachedAt & custodianReachedAt exist)
-      // Step 4: Custodian Arrival (if reachedAt exists)
+      // Step 5: Start Work Benchmark (if reachedAt & atmFreedAt exist)
+      // Step 4: Custodian Arrival + ATM Availability (if reachedAt exists)
       // Step 3: Reach Site (if travelStartedAt exists)
       // Step 2: Start Travel (if acceptedAt exists)
       // Step 1: Accept Call (if not accepted)
@@ -950,7 +987,7 @@
       } else if (d.workStartedAt) {
         showStep(6);
         initStep6Actions();
-      } else if (d.custodianReachedAt && d.reachedAt) {
+      } else if (d.atmFreedAt && d.reachedAt) {
         showStep(5);
         initStep5Timer();
       } else if (d.reachedAt) {
@@ -1496,6 +1533,20 @@
       var noShowBtn = document.getElementById('btn-cra-no-show');
       // Only meaningful once the promised time has actually passed, and only once per slot.
       noShowBtn.classList.toggle('hidden', !pastDue || !!d.craNoShowLoggedAt);
+
+      // Once CRA has actually arrived, swap the arrival form for the
+      // ATM-availability sub-step -- there's nothing left to log on the
+      // arrival form itself at that point.
+      var arrivalFormWrap = document.getElementById('step4-arrival-form-wrap');
+      var atmWaitSection = document.getElementById('step4-atm-wait-section');
+      if (d.custodianReachedAt) {
+        arrivalFormWrap.classList.add('hidden');
+        noShowBtn.classList.add('hidden');
+        atmWaitSection.classList.remove('hidden');
+      } else {
+        arrivalFormWrap.classList.remove('hidden');
+        atmWaitSection.classList.add('hidden');
+      }
     }
 
     async function executeConfirmCraSlot(e) {
@@ -1543,9 +1594,11 @@
         currentDocket.activeClockSegmentId = null; // force a fresh read on next ledger action; local id is unknown until re-fetched
         await refreshCurrentDocketClockFields();
 
-        // Best-effort SMS/WhatsApp to the CRA -- never blocks the app flow if
-        // no provider is configured yet (see sendCraNotification below).
-        sendCraNotification(craPhone, 'TSPL: Your confirmed slot for ATM ' + (currentDocket.atmId || '') + ' is ' + fmtDateTime(promisedDate) + '. Please be available at this time.');
+        // Ask before sending -- never auto-fires. See sendCraNotification
+        // below for why this never blocks the clock-ledger flow above
+        // regardless of whether the engineer says yes, no, or no provider
+        // is configured yet.
+        promptSendNotification(craPhone, 'TSPL: Your confirmed slot for ATM ' + (currentDocket.atmId || '') + ' is ' + fmtDateTime(promisedDate) + '. Please be available at this time.');
 
         initStep4CraFlow();
         toast('CRA slot confirmed. Clock moved to Client/CRA account.', 'success');
@@ -1582,10 +1635,10 @@
         await batch.commit();
 
         currentDocket.craNoShowLoggedAt = new Date();
-        sendCraNotification(currentDocket.craPhone, 'TSPL: Our engineer is on site at ATM ' + (currentDocket.atmId || '') + ' waiting for you, past the confirmed time. Please arrive as soon as possible.');
+        promptSendNotification(currentDocket.craPhone, 'TSPL: Our engineer is on site at ATM ' + (currentDocket.atmId || '') + ' waiting for you, past the confirmed time. Please arrive as soon as possible.');
 
         initStep4CraFlow();
-        toast('Waiting time logged (Client/CRA account) and CRA notified.', 'warning');
+        toast('Waiting time logged (Client/CRA account).', 'warning');
       } catch (err) {
         toast('Error logging wait: ' + err.message, 'error');
       } finally {
@@ -1621,7 +1674,10 @@
           custodianReachedAt: firebase.firestore.FieldValue.serverTimestamp(),
           custodianDetails: custodianData,
           status: 'In Progress',
-          currentDependency: 'Engineer Dependency'
+          // Still not TSPL's turn to work yet -- the ATM itself might still be
+          // busy (e.g. cash-loading). currentDependency only moves to
+          // 'Engineer Dependency' once executeAtmNowFree() confirms it's free.
+          currentDependency: 'ATM Access Pending'
         });
 
         batch.set(actRef, {
@@ -1630,24 +1686,72 @@
           action: 'CRA Arrived',
           performedBy: localStorage.getItem('userName') || 'Field Engineer',
           role: 'engineer',
-          notes: 'CRA ' + custName + ' (' + custEmpId + ', Ph: ' + custPhone + ') verified on site. Clock returns to TSPL account.'
+          notes: 'CRA ' + custName + ' (' + custEmpId + ', Ph: ' + custPhone + ') verified on site. Clock stays on Client account until the ATM is confirmed free to work on.'
         });
 
-        // Clock ownership switches CLIENT -> TSPL now that TSPL can act again.
-        ledgerSwitchSegment(batch, docketRef, currentDocket, 'TSPL_ACTIVE', 'CRA arrived on site');
+        // Clock stays on the Client's account -- CRA showing up doesn't by
+        // itself mean the ATM is free to work on (still charged to Client
+        // per the confirmed process). It only moves to TSPL_ACTIVE once
+        // executeAtmNowFree() below confirms the machine is actually free.
+        ledgerSwitchSegment(batch, docketRef, currentDocket, 'AWAITING_ATM_ACCESS', 'CRA arrived on site; confirming ATM is free');
 
         await batch.commit();
 
         currentDocket.custodianReachedAt = now;
         currentDocket.custodianDetails = custodianData;
         currentDocket.status = 'In Progress';
+        currentDocket.currentDependency = 'ATM Access Pending';
         await refreshCurrentDocketClockFields();
         determineActiveStep();
-        toast('CRA verified. Clock back on TSPL account. Diagnostics started.', 'success');
+        toast('CRA verified. Confirm the ATM is free to start work.', 'success');
       } catch (err) {
         toast('Error recording custodian: ' + err.message, 'error');
       } finally {
-        setBtnBusy(btn, false, 'CRA HAS ARRIVED (Start Diagnostics)');
+        setBtnBusy(btn, false, 'CRA HAS ARRIVED (Verify & Log Arrival)');
+      }
+    }
+
+    // SUB-STEP C: engineer confirms the ATM is now actually free to work on
+    // (immediately, if it already was the moment CRA arrived, or after a
+    // genuine wait if it wasn't) -- this is what actually starts diagnostics
+    // and moves the clock back onto TSPL's account.
+    async function executeAtmNowFree() {
+      var btn = document.getElementById('btn-atm-now-free');
+      setBtnBusy(btn, true, 'Starting Work...');
+
+      try {
+        var batch = db.batch();
+        var docketRef = db.collection('dockets').doc(currentDocketId);
+        var actRef = db.collection('docketActivity').doc();
+
+        batch.update(docketRef, {
+          atmFreedAt: firebase.firestore.FieldValue.serverTimestamp(),
+          currentDependency: 'Engineer Dependency'
+        });
+
+        batch.set(actRef, {
+          docketId: currentDocketId,
+          timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+          action: 'ATM Freed Up — Work Commenced',
+          performedBy: localStorage.getItem('userName') || 'Field Engineer',
+          role: 'engineer',
+          notes: 'ATM confirmed free for service. Diagnostics started. Clock returns to TSPL account.'
+        });
+
+        // Clock ownership switches CLIENT -> TSPL now that TSPL can actually work.
+        ledgerSwitchSegment(batch, docketRef, currentDocket, 'TSPL_ACTIVE', 'ATM freed up for work');
+
+        await batch.commit();
+
+        currentDocket.atmFreedAt = new Date();
+        currentDocket.currentDependency = 'Engineer Dependency';
+        await refreshCurrentDocketClockFields();
+        determineActiveStep();
+        toast('ATM freed up. Clock back on TSPL account. Diagnostics started.', 'success');
+      } catch (err) {
+        toast('Error starting work: ' + err.message, 'error');
+      } finally {
+        setBtnBusy(btn, false, 'ATM IS FREE — START WORK');
       }
     }
 
@@ -1669,15 +1773,50 @@
       }
     }
 
-    // Best-effort SMS/WhatsApp send to the CRA. Calls a configurable webhook
-    // (an Apps Script Web App URL, same free-tier pattern as the Google
-    // Sheets sync) rather than embedding any provider API key in this
-    // client-side file. If no webhook is configured yet, this silently no-ops
-    // with a console warning -- it never blocks the clock-ledger flow above,
-    // which is correct and complete regardless of whether the SMS actually
-    // sends. Configure by setting CRA_NOTIFY_WEBHOOK_URL below once TSPL has
-    // an SMS/WhatsApp provider account wired into google-sheets-sync/Code.gs
-    // (see that file's doPost handler and SETUP.md).
+    // Confirm-before-send: the engineer is asked every time before anything
+    // goes out to the CRA, rather than it firing silently. Yes/No only
+    // decides whether sendCraNotification() below is called at all -- it
+    // never affects the clock-ledger switch that already happened, which is
+    // correct and complete regardless of this answer.
+    var pendingNotifyPhone = null;
+    var pendingNotifyMessage = null;
+
+    function promptSendNotification(phone, message) {
+      pendingNotifyPhone = phone;
+      pendingNotifyMessage = message;
+      document.getElementById('confirm-notify-preview').textContent = message;
+      document.getElementById('modal-confirm-notify').classList.remove('hidden');
+    }
+
+    function confirmSendNotification() {
+      document.getElementById('modal-confirm-notify').classList.add('hidden');
+      if (pendingNotifyPhone && pendingNotifyMessage) {
+        sendCraNotification(pendingNotifyPhone, pendingNotifyMessage);
+        toast('Sent to CRA.', 'success');
+      }
+      pendingNotifyPhone = null;
+      pendingNotifyMessage = null;
+    }
+
+    function declineSendNotification() {
+      document.getElementById('modal-confirm-notify').classList.add('hidden');
+      pendingNotifyPhone = null;
+      pendingNotifyMessage = null;
+    }
+
+    // Best-effort SMS/WhatsApp send to the CRA -- SMS today, WhatsApp once
+    // connected; this function and the webhook behind it don't care which,
+    // the provider is entirely a Script Properties config choice (see
+    // google-sheets-sync/Code.gs's sendViaProvider_ and SETUP.md). Calls a
+    // configurable webhook (an Apps Script Web App URL, same free-tier
+    // pattern as the Google Sheets sync) rather than embedding any provider
+    // API key in this client-side file. If no webhook is configured yet,
+    // this silently no-ops with a console warning -- it never blocks the
+    // clock-ledger flow above, which is correct and complete regardless of
+    // whether the message actually sends. Configure by setting
+    // CRA_NOTIFY_WEBHOOK_URL below once TSPL has a provider account wired
+    // into google-sheets-sync/Code.gs (see that file's doPost handler and
+    // SETUP.md).
     var CRA_NOTIFY_WEBHOOK_URL = ''; // e.g. 'https://script.google.com/macros/s/XXXXX/exec'
     function sendCraNotification(phone, message) {
       if (!CRA_NOTIFY_WEBHOOK_URL) {
@@ -1701,7 +1840,10 @@
       if (diagTickerInterval) clearInterval(diagTickerInterval);
 
       var rTime = currentDocket.reachedAt ? (currentDocket.reachedAt.toDate ? currentDocket.reachedAt.toDate() : new Date(currentDocket.reachedAt)) : new Date();
-      var cTime = currentDocket.custodianReachedAt ? (currentDocket.custodianReachedAt.toDate ? currentDocket.custodianReachedAt.toDate() : new Date(currentDocket.custodianReachedAt)) : new Date();
+      // Diagnostics genuinely start once the ATM is confirmed free (atmFreedAt),
+      // not merely once the CRA arrives -- a machine that's still busy after
+      // CRA shows up shouldn't burn into this benchmark.
+      var cTime = currentDocket.atmFreedAt ? (currentDocket.atmFreedAt.toDate ? currentDocket.atmFreedAt.toDate() : new Date(currentDocket.atmFreedAt)) : new Date();
 
       var startTime = new Date(Math.max(rTime.getTime(), cTime.getTime()));
       var targetDeadline = new Date(startTime.getTime() + (15 * 60 * 1000));

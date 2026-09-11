@@ -52,7 +52,7 @@ var DOCKET_COLUMNS = [
   // the client explicitly needs to be able to review per docket.
   'clockOwner', 'clockHeading', 'tsplClockMinutes', 'clientClockMinutes',
   'mttrClockMinutes', 'tsplClockPercent', 'clientClockPercent',
-  'craWaitMinutes', 'partsWaitTsplMinutes', 'partsWaitClientMinutes',
+  'craWaitMinutes', 'atmAccessWaitMinutes', 'partsWaitTsplMinutes', 'partsWaitClientMinutes',
   'tsplActiveMinutes', 'clientNetTATMinutes'
 ];
 
