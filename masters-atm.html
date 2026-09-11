@@ -433,6 +433,12 @@
         atmId,bankName,vendor,address,city,state,ro,region,locationCategory,latitude,longitude,qrCode,siteStatus
       </div>
 
+      <!-- Starter Template -->
+      <button type="button" onclick="downloadAtmCsvTemplate()" class="w-full py-2 bg-white hover:bg-slate-50 text-indigo-700 border border-indigo-300 text-xs font-bold rounded-md shadow-sm transition flex items-center justify-center gap-1.5">
+        <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+        Download Blank CSV Template (with example rows)
+      </button>
+
       <!-- File Input -->
       <div>
         <input type="file" id="csv-file-input" accept=".csv" onchange="handleCsvFileSelected(event)" class="text-xs file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100" />
@@ -942,6 +948,29 @@
       }
       arr.push(cur);
       return arr;
+    }
+
+    // Starter file for bulk ATM import -- exact column order parseAndValidateCsv
+    // reads positionally above. bankName must match the live Bank taxonomy
+    // seeded from Setup exactly (case-sensitive -- it's what the Client Portal's
+    // firestore.rules matches against), so these examples use real taxonomy
+    // names rather than a shortened/renamed version of them. Coordinates are
+    // decimal-degree latitude/longitude -- right-click the pin location on
+    // Google Maps and copy the two numbers it shows.
+    function downloadAtmCsvTemplate() {
+      var header = 'atmId,bankName,vendor,address,city,state,ro,region,locationCategory,latitude,longitude,qrCode,siteStatus';
+      var rows = [
+        'HDFC00201,HDFC Bank,HPY,Sector 29 Main Market Ground Floor,Gurugram,Haryana,NORTH,North West,Metro,28.4650,77.0864,,Active',
+        'ICIC00401,ICICI Bank,HPY,Station Road Near Bus Stand,Nashik,Maharashtra,WEST,South East,Urban,19.9975,73.7898,,Active',
+        'SBIN00501,State Bank Of India,HPY,Village Panchayat Office Road,Warangal Rural,Telangana,SOUTH,South East,Rural,17.9784,79.5941,,Active'
+      ];
+      var csvContent = 'data:text/csv;charset=utf-8,' + header + '\n' + rows.join('\n') + '\n';
+      var link = document.createElement('a');
+      link.setAttribute('href', encodeURI(csvContent));
+      link.setAttribute('download', 'TSPL_ATM_Import_Template.csv');
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
     }
 
     function renderCsvPreview(headers, previewRows, errors) {

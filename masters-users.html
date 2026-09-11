@@ -470,12 +470,18 @@
       <!-- Warning & Header Preview -->
       <div class="text-[11px] font-mono bg-slate-50 p-2.5 rounded border border-slate-200 text-slate-700 overflow-x-auto">
         <strong>Required CSV Headers:</strong><br/>
-        name,email,phone,role,employeeId,vendorPartner,ro,state,platform,unitHead,regionalHead,regionalManager
+        name,email,phone,role,employeeId,vendorPartner,ro,state,platform,unitHead,regionalHead,regionalManager,clientBank
       </div>
 
       <div class="p-3 bg-amber-50 border border-amber-300 rounded-lg text-xs text-amber-900">
         <strong>Schedule IV Notice:</strong> Imported engineers default to BGV Status <span class="font-bold underline">"Not Started"</span> and cannot log in until verified.
       </div>
+
+      <!-- Starter Template -->
+      <button type="button" onclick="downloadUserCsvTemplate()" class="w-full py-2 bg-white hover:bg-slate-50 text-indigo-700 border border-indigo-300 text-xs font-bold rounded-md shadow-sm transition flex items-center justify-center gap-1.5">
+        <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+        Download Blank CSV Template (with example rows)
+      </button>
 
       <!-- File Input -->
       <div>
@@ -1007,7 +1013,11 @@
           platform: (cols[8] || 'Not Set').trim(),
           unitHead: (cols[9] || '').trim(),
           regionalHead: (cols[10] || '').trim(),
-          regionalManager: (cols[11] || '').trim()
+          regionalManager: (cols[11] || '').trim(),
+          // Which bank this login is scoped to -- only meaningful when role
+          // is 'client', but always read so a stray value in a non-client
+          // row is simply ignored rather than silently dropping the column.
+          clientBank: (cols[12] || '').trim()
         });
       }
 
@@ -1077,6 +1087,10 @@
             unitHead: u.unitHead,
             regionalHead: u.regionalHead,
             regionalManager: u.regionalManager,
+            // Same rule the single-user Add/Edit modal already applies: only a
+            // 'client' row ever gets a bank scope -- everyone else stays null
+            // so they're never accidentally read as scoped to some bank.
+            clientBank: u.role === 'client' ? (u.clientBank || null) : null,
             shiftStartTime: "09:00",
             shiftEndTime: "18:00",
             isActive: true,
@@ -1126,6 +1140,28 @@
       var link = document.createElement("a");
       link.setAttribute("href", encodedUri);
       link.setAttribute("download", "TSPL_Temporary_Passwords_" + Date.now() + ".csv");
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
+
+    // Starter file for bulk personnel import -- exact column order the
+    // parser above reads positionally, with one example row per role shape
+    // (a plain office role, an engineer with a zone/hierarchy, and a Client
+    // Bank login that actually needs the clientBank column filled in --
+    // that column is easy to forget since older exports never had it).
+    function downloadUserCsvTemplate() {
+      var header = 'name,email,phone,role,employeeId,vendorPartner,ro,state,platform,unitHead,regionalHead,regionalManager,clientBank';
+      var rows = [
+        'Ramesh Kumar,ramesh.kumar@example.com,9811122233,engineer,ENG-1001,HPY,NORTH,Delhi,Not Set,Suresh Nair,Anita Rao,Vikram Singh,',
+        'Priya Sharma,priya.sharma@tspl.example,9845112244,callcentre,EMP-2002,HPY,SOUTH,Karnataka,Not Set,,,,',
+        'Deepak Verma,deepak.verma@tspl.example,9820112255,scm,EMP-3003,HPY,WEST,Maharashtra,Not Set,,,,',
+        'HDFC Bank Viewer,hdfc.viewer@hdfcbank.example,9900011122,client,,,NORTH,Delhi,Not Set,,,,HDFC Bank'
+      ];
+      var csvContent = 'data:text/csv;charset=utf-8,' + header + '\n' + rows.join('\n') + '\n';
+      var link = document.createElement('a');
+      link.setAttribute('href', encodeURI(csvContent));
+      link.setAttribute('download', 'TSPL_Personnel_Import_Template.csv');
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
