@@ -155,35 +155,76 @@
         </div>
 
         <!-- =============================================================== -->
-        <!-- STEP 2: START TRAVEL                                            -->
+        <!-- STEP 2: COORDINATE CRA, THEN TRAVEL                             -->
+        <!-- Per the confirmed process: call the CRA and fix a time BEFORE   -->
+        <!-- travelling, then depart timed to arrive ~5 min ahead of them.   -->
         <!-- =============================================================== -->
         <div id="step-2" class="step-card hidden bg-white rounded-2xl p-5 shadow-sm border border-slate-200 space-y-4">
           <div class="text-center space-y-1">
-            <div class="inline-flex p-3 bg-blue-50 text-blue-600 rounded-full mb-1">
+            <div class="inline-flex p-3 bg-amber-50 text-amber-600 rounded-full mb-1">
               <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
               </svg>
             </div>
-            <h2 class="text-sm font-bold text-slate-900 uppercase">Step 2: Start Travel</h2>
-            <p class="text-xs text-slate-500">Captures departure GPS and switches telemetry to active transit mode.</p>
+            <h2 class="text-sm font-bold text-slate-900 uppercase">Step 2: Coordinate CRA, Then Travel</h2>
+            <p class="text-xs text-slate-500">Call the CRA and fix a time first — travel only once a slot is confirmed.</p>
           </div>
 
-          <div class="p-3 bg-blue-50 border border-blue-200 rounded-xl text-xs text-blue-900 space-y-1">
-            <div class="font-bold flex items-center gap-1.5">
-              <span class="h-2 w-2 rounded-full bg-blue-600 animate-ping"></span>
-              En-Route Tracking
+          <!-- Live clock-ownership banner -->
+          <div id="step2-clock-banner"></div>
+
+          <!-- SUB-STEP A: CRA Slot Confirmation (shown until a slot is confirmed) -->
+          <div id="step2-cra-section" class="space-y-3 pt-1 text-xs">
+            <div class="p-3.5 bg-amber-50 border border-amber-300 rounded-xl text-amber-900 space-y-1">
+              <div class="font-bold">Contractual SLA Protection Notice:</div>
+              <p class="text-[11px] leading-relaxed text-amber-800">
+                Call the CRA now, before you travel. The moment you log the time they've committed to, the clock moves to the Client/CRA account — with an SMS/WhatsApp sent to the CRA confirming exactly what was agreed, so there's never a dispute over the promised time.
+              </p>
             </div>
-            <p class="text-[11px] text-blue-800">
-              Your location will be broadcast to the Operations Control Room to provide real-time ETA updates to the bank.
-            </p>
+            <form onsubmit="executeConfirmCraSlot(event)" class="space-y-3">
+              <div>
+                <label class="block font-semibold text-slate-700 mb-1">CRA Name *</label>
+                <input type="text" id="cra-name" required placeholder="e.g. Ramesh Kumar" class="w-full p-2.5 border border-slate-300 rounded-lg" />
+              </div>
+              <div>
+                <label class="block font-semibold text-slate-700 mb-1">CRA 10-Digit Mobile *</label>
+                <input type="tel" id="cra-phone" required pattern="[0-9]{10}" placeholder="9876543210" class="w-full p-2.5 border border-slate-300 rounded-lg font-mono" />
+              </div>
+              <div>
+                <label class="block font-semibold text-slate-700 mb-1">Promised Arrival Time *</label>
+                <input type="datetime-local" id="cra-promised-time" required class="w-full p-2.5 border border-slate-300 rounded-lg" />
+              </div>
+              <button type="submit" id="btn-confirm-cra-slot" class="w-full bg-amber-600 hover:bg-amber-700 active:bg-amber-800 text-white font-bold text-xs py-3.5 px-4 rounded-xl shadow-md touch-target flex items-center justify-center gap-2">
+                <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                </svg>
+                <span>Confirm Slot &amp; Notify CRA</span>
+              </button>
+            </form>
           </div>
 
-          <button id="btn-step2-travel" onclick="executeStep2Travel()" class="w-full bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-bold text-xs py-3.5 px-4 rounded-xl shadow-md touch-target flex items-center justify-center gap-2">
-            <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
-            </svg>
-            <span>Start Travel (GPS Verified)</span>
-          </button>
+          <!-- SUB-STEP B: Start Travel (shown once a slot is confirmed) -->
+          <div id="step2-travel-section" class="hidden space-y-3 pt-2 border-t border-slate-100 text-xs">
+            <div id="step2-slot-summary" class="p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-slate-700"></div>
+            <div id="step2-travel-guidance" class="p-3 bg-indigo-50 border border-indigo-200 rounded-xl text-indigo-900"></div>
+
+            <div class="p-3 bg-blue-50 border border-blue-200 rounded-xl text-xs text-blue-900 space-y-1">
+              <div class="font-bold flex items-center gap-1.5">
+                <span class="h-2 w-2 rounded-full bg-blue-600 animate-ping"></span>
+                En-Route Tracking
+              </div>
+              <p class="text-[11px] text-blue-800">
+                Your location will be broadcast to the Operations Control Room to provide real-time ETA updates to the bank.
+              </p>
+            </div>
+
+            <button id="btn-step2-travel" onclick="executeStep2Travel()" class="w-full bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-bold text-xs py-3.5 px-4 rounded-xl shadow-md touch-target flex items-center justify-center gap-2">
+              <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+              </svg>
+              <span>Start Travel (GPS Verified)</span>
+            </button>
+          </div>
         </div>
 
         <!-- =============================================================== -->
@@ -264,45 +305,17 @@
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
               </svg>
             </div>
-            <h2 class="text-sm font-bold text-slate-900 uppercase">Step 4: CRA (Custodian) Coordination</h2>
+            <h2 class="text-sm font-bold text-slate-900 uppercase">Step 4: CRA Arrival &amp; Site Access</h2>
             <p class="text-xs text-slate-500">Cash Replenishment Agent — vault combination & security key handover.</p>
           </div>
 
           <!-- Live clock-ownership banner -->
           <div id="step4-clock-banner"></div>
 
-          <!-- SUB-STEP A: CRA Slot Confirmation (shown until a slot is confirmed) -->
-          <div id="step4-slot-section" class="space-y-3 pt-1 text-xs">
-            <div class="p-3.5 bg-amber-50 border border-amber-300 rounded-xl text-amber-900 space-y-1">
-              <div class="font-bold">Contractual SLA Protection Notice:</div>
-              <p class="text-[11px] leading-relaxed text-amber-800">
-                Call the CRA now. The moment you log the time they've committed to, the clock moves to the Client/CRA account — with an SMS/WhatsApp sent to the CRA confirming exactly what was agreed, so there's never a dispute over the promised time.
-              </p>
-            </div>
-            <form onsubmit="executeConfirmCraSlot(event)" class="space-y-3">
-              <div>
-                <label class="block font-semibold text-slate-700 mb-1">CRA Name *</label>
-                <input type="text" id="cra-name" required placeholder="e.g. Ramesh Kumar" class="w-full p-2.5 border border-slate-300 rounded-lg" />
-              </div>
-              <div>
-                <label class="block font-semibold text-slate-700 mb-1">CRA 10-Digit Mobile *</label>
-                <input type="tel" id="cra-phone" required pattern="[0-9]{10}" placeholder="9876543210" class="w-full p-2.5 border border-slate-300 rounded-lg font-mono" />
-              </div>
-              <div>
-                <label class="block font-semibold text-slate-700 mb-1">Promised Arrival Time *</label>
-                <input type="datetime-local" id="cra-promised-time" required class="w-full p-2.5 border border-slate-300 rounded-lg" />
-              </div>
-              <button type="submit" id="btn-confirm-cra-slot" class="w-full bg-amber-600 hover:bg-amber-700 active:bg-amber-800 text-white font-bold text-xs py-3.5 px-4 rounded-xl shadow-md touch-target flex items-center justify-center gap-2">
-                <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                </svg>
-                <span>Confirm Slot &amp; Notify CRA</span>
-              </button>
-            </form>
-          </div>
-
-          <!-- SUB-STEP B: Waiting (shown once a slot is confirmed, until CRA arrives) -->
-          <div id="step4-waiting-section" class="hidden space-y-3 pt-2 border-t border-slate-100 text-xs">
+          <!-- The slot was already confirmed back in Step 2 (travel doesn't start
+               without one), so this step opens straight into waiting/arrival --
+               no separate "confirm slot" sub-step needed here anymore. -->
+          <div id="step4-waiting-section" class="space-y-3 text-xs">
             <div id="step4-slot-summary" class="p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-slate-700"></div>
             <button id="btn-cra-no-show" onclick="recordCraNoShow()" class="w-full bg-amber-600 hover:bg-amber-700 active:bg-amber-800 text-white font-bold text-xs py-3 px-4 rounded-xl shadow-sm touch-target flex items-center justify-center gap-2">
               <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -984,7 +997,7 @@
       // Step 5: Start Work Benchmark (if reachedAt & atmFreedAt exist)
       // Step 4: Custodian Arrival + ATM Availability (if reachedAt exists)
       // Step 3: Reach Site (if travelStartedAt exists)
-      // Step 2: Start Travel (if acceptedAt exists)
+      // Step 2: Coordinate CRA, Then Travel (if acceptedAt exists)
       // Step 1: Accept Call (if not accepted)
 
       var d = currentDocket;
@@ -1006,6 +1019,7 @@
         initStep3Geofence();
       } else if (d.acceptedAt) {
         showStep(2);
+        initStep2CraTravelFlow();
       } else {
         showStep(1);
         initStep1Details();
@@ -1510,25 +1524,89 @@
     // STEP 4: CRA SLOT CONFIRMATION, NO-SHOW & ARRIVAL FORM
     // ------------------------------------------------------------------------
 
-    // Decides which of Step 4's two sub-sections to show, and renders the
-    // live clock-ownership banner + slot summary. Called every time Step 4
-    // becomes active (determineActiveStep) and after any CRA action commits.
+    // Decides which of Step 2's two sub-sections to show (call CRA, or
+    // travel once a slot is confirmed), and renders the live clock-ownership
+    // banner + a suggested-departure estimate. Called every time Step 2
+    // becomes active (determineActiveStep) and right after the slot is confirmed.
+    function initStep2CraTravelFlow() {
+      var d = currentDocket;
+      var banner = document.getElementById('step2-clock-banner');
+      if (banner && typeof renderClockOwnerBanner === 'function') banner.innerHTML = renderClockOwnerBanner(d);
+
+      var craSection = document.getElementById('step2-cra-section');
+      var travelSection = document.getElementById('step2-travel-section');
+
+      if (!d.craSlotConfirmedAt) {
+        craSection.classList.remove('hidden');
+        travelSection.classList.add('hidden');
+        return;
+      }
+
+      craSection.classList.add('hidden');
+      travelSection.classList.remove('hidden');
+
+      var promised = d.craPromisedTime ? (d.craPromisedTime.toDate ? d.craPromisedTime.toDate() : new Date(d.craPromisedTime)) : null;
+      var summary = document.getElementById('step2-slot-summary');
+      summary.innerHTML = '<strong>' + (d.craContactName || 'CRA') + '</strong> (' + (d.craPhone || '--') + ') committed to <strong>' + (promised ? fmtDateTime(promised) : '--') + '</strong>.';
+
+      renderTravelGuidance(promised);
+    }
+
+    // Straight-line (not road-routed) distance from the engineer's current
+    // GPS to the ATM, turned into a suggested departure time: promised CRA
+    // time, minus an assumed-speed travel estimate, minus a 5-minute buffer
+    // -- per the confirmed process ("start travel based on distance so he
+    // reaches 5 minutes before CRA arrival"). Purely advisory: never blocks
+    // or delays the actual "Start Travel" button, which the engineer can
+    // still tap whenever they judge best (traffic, personal read of the
+    // situation) -- this only helps them decide when.
+    var ASSUMED_AVG_SPEED_KMH = 30; // conservative mixed urban-traffic default
+    function renderTravelGuidance(promised) {
+      var box = document.getElementById('step2-travel-guidance');
+      if (!box) return;
+
+      if (!promised) {
+        box.innerHTML = '<span class="text-[11px]">No promised time on file yet.</span>';
+        return;
+      }
+
+      var atmLat = (currentAtm && currentAtm.lat) || (currentDocket.atmCoords && currentDocket.atmCoords.lat);
+      var atmLng = (currentAtm && currentAtm.lng) || (currentDocket.atmCoords && currentDocket.atmCoords.lng);
+
+      if (!atmLat || !atmLng || typeof haversine !== 'function' || !('geolocation' in navigator)) {
+        box.innerHTML = '<span class="text-[11px]">Depart in time to reach the ATM 5 minutes before <strong>' + fmtDateTime(promised) + '</strong>.</span>';
+        return;
+      }
+
+      box.innerHTML = '<span class="text-[11px] text-indigo-400">Estimating travel time from your current location…</span>';
+
+      navigator.geolocation.getCurrentPosition(
+        function (pos) {
+          var distanceKm = haversine(pos.coords.latitude, pos.coords.longitude, atmLat, atmLng) / 1000;
+          var travelMins = Math.round((distanceKm / ASSUMED_AVG_SPEED_KMH) * 60);
+          var departBy = new Date(promised.getTime() - (travelMins + 5) * 60000);
+
+          box.innerHTML =
+            '<strong>Suggested departure: ' + fmtDateTime(departBy) + '</strong>' +
+            '<p class="text-[11px] mt-1 text-indigo-700">Approx. ' + distanceKm.toFixed(1) + ' km, ~' + travelMins + ' min drive (straight-line estimate at ' + ASSUMED_AVG_SPEED_KMH + ' km/h — allow extra for traffic), to reach 5 minutes before the CRA\'s ' + fmtDateTime(promised) + ' slot.</p>';
+        },
+        function () {
+          box.innerHTML = '<span class="text-[11px]">Enable location access for a suggested departure time. Otherwise, depart in time to reach the ATM 5 minutes before <strong>' + fmtDateTime(promised) + '</strong>.</span>';
+        },
+        { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 }
+      );
+    }
+
+    // Decides which of Step 4's sub-sections to show (waiting/arrival vs ATM
+    // access), and renders the live clock-ownership banner + slot summary.
+    // The slot itself is already confirmed by the time Step 4 is reachable
+    // (Step 2 gates travel on it), so there's no separate "confirm slot"
+    // sub-step here anymore. Called every time Step 4 becomes active
+    // (determineActiveStep) and after any CRA action commits.
     function initStep4CraFlow() {
       var d = currentDocket;
       var banner = document.getElementById('step4-clock-banner');
       if (banner && typeof renderClockOwnerBanner === 'function') banner.innerHTML = renderClockOwnerBanner(d);
-
-      var slotSection = document.getElementById('step4-slot-section');
-      var waitingSection = document.getElementById('step4-waiting-section');
-
-      if (!d.craSlotConfirmedAt) {
-        slotSection.classList.remove('hidden');
-        waitingSection.classList.add('hidden');
-        return;
-      }
-
-      slotSection.classList.add('hidden');
-      waitingSection.classList.remove('hidden');
 
       var promised = d.craPromisedTime ? (d.craPromisedTime.toDate ? d.craPromisedTime.toDate() : new Date(d.craPromisedTime)) : null;
       var promisedStr = promised ? fmtDateTime(promised) : '--';
@@ -1608,8 +1686,8 @@
         // is configured yet.
         promptSendNotification(craPhone, 'TSPL: Your confirmed slot for ATM ' + (currentDocket.atmId || '') + ' is ' + fmtDateTime(promisedDate) + '. Please be available at this time.');
 
-        initStep4CraFlow();
-        toast('CRA slot confirmed. Clock moved to Client/CRA account.', 'success');
+        initStep2CraTravelFlow();
+        toast('CRA slot confirmed. Clock moved to Client/CRA account. Depart in time to arrive 5 min early.', 'success');
       } catch (err) {
         toast('Error confirming CRA slot: ' + err.message, 'error');
       } finally {
