@@ -328,6 +328,7 @@
             <div id="step4-arrival-form-wrap">
               <form onsubmit="executeStep4CustodianArrival(event)" class="space-y-3 pt-2 border-t border-slate-100">
                 <div class="font-bold text-slate-800 uppercase text-[11px]">When CRA Reaches Site:</div>
+                <p class="text-[11px] text-slate-400 -mt-1">Name &amp; mobile are pre-filled from the CRA confirmed in Step 2 — only change them if a different person has actually turned up.</p>
 
                 <div>
                   <label class="block font-semibold text-slate-700 mb-1">Custodian Full Name *</label>
@@ -1632,7 +1633,24 @@
       } else {
         arrivalFormWrap.classList.remove('hidden');
         atmWaitSection.classList.add('hidden');
+        prefillArrivalForm(d);
       }
+    }
+
+    // The name and mobile were already captured when the slot was confirmed
+    // in Step 2 -- no reason to make the engineer type Mr. Kumar's details
+    // in twice. Pre-fills once (won't clobber an edit already in progress,
+    // e.g. because a different person from the agency actually turned up)
+    // and leaves Employee ID blank, since that's only knowable by checking
+    // their badge in person.
+    var arrivalFormPrefilled = false;
+    function prefillArrivalForm(d) {
+      if (arrivalFormPrefilled) return;
+      var nameField = document.getElementById('cust-name');
+      var phoneField = document.getElementById('cust-phone');
+      if (nameField && !nameField.value && d.craContactName) nameField.value = d.craContactName;
+      if (phoneField && !phoneField.value && d.craPhone) phoneField.value = d.craPhone;
+      arrivalFormPrefilled = true;
     }
 
     async function executeConfirmCraSlot(e) {
