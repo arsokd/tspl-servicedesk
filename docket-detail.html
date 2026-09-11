@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Docket Detail — TSPL ServiceDesk</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Firebase Compat 10.7.1 -->
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
+  <script src="firebase-config.js"></script>
+  <script src="clock-ledger.js"></script>
+  <!-- PWA: installable app shell -->
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#0f233d">
+  <link rel="apple-touch-icon" href="assets/icon-180.png">
+  <script>
+    if ("serviceWorker" in navigator) {
+      window.addEventListener("load", function () {
+        navigator.serviceWorker.register("sw.js").catch(function (err) {
+          console.warn("[PWA] Service worker registration failed:", err);
+        });
+      });
+    }
+  </script>
+  <script src="auth-guard.js"></script>
+</head>
+<body class="bg-slate-100 min-h-screen flex flex-col font-sans antialiased text-slate-800">
+
+  <!-- Main Navigation injected by auth-guard.js -->
+  <div id="main-nav"></div>
+
+  <main class="flex-grow max-w-5xl w-full mx-auto p-4 sm:p-6 lg:p-8 space-y-5">
+
+    <!-- Back link + header -->
+    <div class="flex items-center gap-2 text-xs">
+      <a href="dockets.html" class="text-slate-500 hover:text-indigo-700 font-semibold flex items-center gap-1">
+        <svg class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/></svg>
+        Back to Dockets List
+      </a>
+    </div>
+
+    <div id="loading-state" class="bg-white rounded-xl shadow-sm border border-slate-200 p-10 text-center text-sm text-slate-400">
+      Loading docket…
+    </div>
+
+    <div id="detail-content" class="hidden space-y-5">
+
+      <!-- Header Card -->
+      <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4 sm:p-6">
+        <div class="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
+          <div>
+            <div class="flex items-center gap-2 flex-wrap">
+              <h1 id="det-docket-no" class="text-xl sm:text-2xl font-bold text-slate-900 font-mono tracking-tight">--</h1>
+              <span id="det-repeat-badge" class="hidden bg-red-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded uppercase">REPEAT</span>
+              <span id="det-closed-badge" class="hidden bg-slate-800 text-white text-[10px] font-bold px-2 py-0.5 rounded uppercase">Closed</span>
+              <span id="det-open-badge" class="hidden bg-emerald-100 text-emerald-800 text-[10px] font-bold px-2 py-0.5 rounded uppercase">Open</span>
+            </div>
+            <p id="det-atm-line" class="text-sm text-slate-600 mt-1">--</p>
+          </div>
+          <div class="text-right shrink-0">
+            <span class="text-[10px] uppercase font-bold text-slate-400 tracking-wider block">SLA Status</span>
+            <span id="det-sla-status" class="text-lg font-mono font-bold">--</span>
+          </div>
+        </div>
+
+        <!-- Overview grid -->
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-slate-50 p-3.5 rounded-xl border border-slate-200 text-[11px] mt-4">
+          <div><span class="text-slate-500 block">Bank / Client</span><strong id="det-bank" class="text-slate-900 font-bold">--</strong></div>
+          <div><span class="text-slate-500 block">Call Type</span><strong id="det-call-type" class="text-slate-900 font-bold">--</strong></div>
+          <div><span class="text-slate-500 block">Dependency</span><strong id="det-dependency" class="text-slate-900 font-bold">--</strong></div>
+          <div><span class="text-slate-500 block">Ageing Band</span><strong id="det-ageing" class="text-slate-900 font-bold">--</strong></div>
+          <div><span class="text-slate-500 block">Assigned Engineer</span><strong id="det-engineer" class="text-slate-900 font-bold">--</strong></div>
+          <div><span class="text-slate-500 block">Regional Office</span><strong id="det-ro" class="text-slate-900 font-bold">--</strong></div>
+          <div><span class="text-slate-500 block">Call Logged</span><strong id="det-call-time" class="text-slate-900 font-mono">--</strong></div>
+          <div><span class="text-slate-500 block">SLA Target</span><strong id="det-sla-target" class="text-slate-900 font-mono">--</strong></div>
+        </div>
+
+        <div class="mt-3 bg-slate-50 p-3.5 rounded-xl border border-slate-200 text-xs space-y-2">
+          <div><span class="text-slate-500 text-[10px] uppercase font-bold tracking-wider">Diagnosis / Remarks:</span>
+            <p id="det-diagnosis" class="text-slate-800 mt-0.5">--</p>
+          </div>
+          <div id="det-resolution-box" class="hidden pt-2 border-t border-slate-200">
+            <span class="text-emerald-700 text-[10px] uppercase font-bold tracking-wider">Resolution / Closure Notes:</span>
+            <p id="det-resolution-text" class="text-slate-800 mt-0.5">--</p>
+          </div>
+        </div>
+
+        <div class="mt-3 flex flex-wrap gap-2">
+          <a id="det-assign-link" href="#" class="text-xs bg-[#4F46E5] hover:bg-indigo-700 text-white px-3 py-1.5 rounded font-semibold transition">Manage in Dockets List &rarr;</a>
+          <a id="det-parts-link" href="parts.html" class="text-xs bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 px-3 py-1.5 rounded font-semibold transition">Open Parts (SCM) &rarr;</a>
+        </div>
+      </div>
+
+      <!-- Milestone Timeline -->
+      <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4 sm:p-6">
+        <h2 class="text-sm font-bold text-slate-900 uppercase tracking-wider mb-3">Milestone Timeline</h2>
+        <div id="det-timeline" class="space-y-3 border-l-2 border-slate-200 pl-4 ml-2"></div>
+      </div>
+
+      <!-- Clock Ownership Ledger -->
+      <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4 sm:p-6">
+        <h2 class="text-sm font-bold text-slate-900 uppercase tracking-wider mb-1">Clock Ownership — TSPL vs Client/CRA</h2>
+        <p class="text-[11px] text-slate-500 mb-3">Out of the total MTTR clock (which starts the instant this docket reached our system and never stops), this is exactly which minutes are on TSPL's account vs the Client/CRA's account, and why — the same evidentiary record shown to the bank in the Client Portal.</p>
+        <div id="det-clock-ledger">
+          <div class="text-[11px] text-slate-400">Loading clock breakdown…</div>
+        </div>
+        <div id="det-clock-segments" class="mt-4"></div>
+      </div>
+
+      <!-- Parts Requests -->
+      <div id="det-parts-section" class="hidden bg-white rounded-xl shadow-sm border border-slate-200 p-4 sm:p-6">
+        <h2 class="text-sm font-bold text-slate-900 uppercase tracking-wider mb-3">Parts Requests (SCM Indents) Linked To This Docket</h2>
+        <div class="overflow-x-auto">
+          <table class="w-full text-xs">
+            <thead class="bg-slate-50 text-slate-500 uppercase text-[10px]">
+              <tr>
+                <th class="px-2 py-2 text-left">Indent</th>
+                <th class="px-2 py-2 text-left">Part</th>
+                <th class="px-2 py-2 text-left">Source</th>
+                <th class="px-2 py-2 text-left">Status</th>
+                <th class="px-2 py-2 text-left">ETA</th>
+                <th class="px-2 py-2 text-left">Approved By</th>
+              </tr>
+            </thead>
+            <tbody id="det-parts-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Activity Log -->
+      <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4 sm:p-6">
+        <h2 class="text-sm font-bold text-slate-900 uppercase tracking-wider mb-3">Full Activity Log (Immutable Audit Trail)</h2>
+        <div id="det-activity-log" class="space-y-2 text-xs"></div>
+      </div>
+
+    </div>
+
+    <div id="error-state" class="hidden bg-white rounded-xl shadow-sm border border-red-200 p-10 text-center text-sm text-red-600"></div>
+
+  </main>
+
+  <script>
+    var currentDocketId = null;
+    var currentDocket = null;
+
+    document.addEventListener('DOMContentLoaded', async function () {
+      if (typeof checkAuth === 'function') {
+        checkAuth(['admin', 'callcentre', 'techsupport', 'rm', 'regionalhead', 'unithead']);
+      }
+      if (typeof buildNav === 'function') {
+        buildNav('dockets.html');
+      }
+
+      var params = new URLSearchParams(window.location.search);
+      currentDocketId = params.get('id');
+
+      if (!currentDocketId) {
+        showError('No docket ID given in the link.');
+        return;
+      }
+
+      await loadDocket();
+    });
+
+    async function loadDocket() {
+      try {
+        var doc = await db.collection('dockets').doc(currentDocketId).get();
+        if (!doc.exists) {
+          showError('Docket "' + currentDocketId + '" was not found. It may have been removed, or the link is incorrect.');
+          return;
+        }
+        currentDocket = doc.data();
+        currentDocket.id = doc.id;
+        renderDocket();
+        document.getElementById('loading-state').classList.add('hidden');
+        document.getElementById('detail-content').classList.remove('hidden');
+
+        // These can load independently and don't need to block first paint
+        renderClockLedger();
+        loadParts();
+        loadActivityLog();
+      } catch (err) {
+        console.error('Docket load error:', err);
+        showError('Could not load this docket: ' + err.message + ' (you may not have permission to view it).');
+      }
+    }
+
+    function showError(msg) {
+      document.getElementById('loading-state').classList.add('hidden');
+      var box = document.getElementById('error-state');
+      box.textContent = msg;
+      box.classList.remove('hidden');
+    }
+
+    function renderDocket() {
+      var d = currentDocket;
+      document.getElementById('det-docket-no').textContent = d.docketNo || d.id;
+      document.getElementById('det-atm-line').textContent =
+        (d.atmId || '--') + ' • ' + (d.city || d.state || '--') + ' (' + (d.locationCategory || 'Metro') + ')';
+
+      if (d.isRepeat) document.getElementById('det-repeat-badge').classList.remove('hidden');
+      if (d.isClosed) {
+        document.getElementById('det-closed-badge').classList.remove('hidden');
+      } else {
+        document.getElementById('det-open-badge').classList.remove('hidden');
+      }
+
+      var sla = slaStatus(d);
+      var slaEl = document.getElementById('det-sla-status');
+      var countdownText = slaCountdownText(sla.minsRemaining);
+      slaEl.textContent = countdownText;
+      slaEl.className = 'text-lg font-mono font-bold ' + (sla.breached ? 'text-red-600' : (sla.ragColour === 'red' ? 'text-red-600' : (sla.ragColour === 'amber' ? 'text-amber-600' : 'text-emerald-600')));
+
+      document.getElementById('det-bank').textContent = d.bank || d.bankName || '--';
+      document.getElementById('det-call-type').textContent = (d.callType || '--') + (d.subCallType ? ' - ' + d.subCallType : '');
+      document.getElementById('det-dependency').textContent = d.currentDependency || '--';
+      document.getElementById('det-ageing').textContent = d.ageingBucket || ageingBucketDays(ageingHours(d.callDateTime));
+      document.getElementById('det-engineer').textContent = d.assignedEngineerName || 'UNASSIGNED';
+      document.getElementById('det-ro').textContent = d.ro || '--';
+      document.getElementById('det-call-time').textContent = fmtDateTime(d.callDateTime);
+      document.getElementById('det-sla-target').textContent = (d.resolutionTargetMins || 120) + ' mins';
+      document.getElementById('det-diagnosis').textContent = d.diagnosis || d.remarks || 'No diagnosis logged yet.';
+
+      var resBox = document.getElementById('det-resolution-box');
+      if (d.resolutionNotes || d.closureRemarks) {
+        resBox.classList.remove('hidden');
+        document.getElementById('det-resolution-text').textContent = d.resolutionNotes || d.closureRemarks;
+      }
+
+      document.getElementById('det-assign-link').href = 'dockets.html?search=' + encodeURIComponent(d.docketNo || d.id);
+
+      renderTimeline(d);
+    }
+
+    function renderTimeline(d) {
+      var milestones = [
+        { label: '1. Call Logged & Registered', time: d.callDateTime, done: true },
+        { label: '2. Engineer Assigned / Dispatched', time: d.travelStartedAt || d.assignedAt, done: !!(d.travelStartedAt || d.assignedEngineerName) },
+        { label: '3. Reached ATM Site (GPS Verified)', time: d.reachedSiteAt, done: !!d.reachedSiteAt },
+        { label: '4. CRA Slot Confirmed', time: d.craSlotConfirmedAt, done: !!d.craSlotConfirmedAt },
+        { label: '5. Diagnosis & Work In Progress', time: d.workStartedAt || d.diagnosisCompletedAt, done: !!(d.workStartedAt || d.diagnosisCompletedAt || d.isClosed) },
+        { label: '6. Call Resolved & Closed', time: d.closedAt, done: !!(d.isClosed || d.closedAt) }
+      ];
+
+      var html = milestones.map(function (m) {
+        var dotClass = m.done ? 'bg-emerald-500 ring-4 ring-emerald-100' : 'bg-slate-300';
+        var timeStr = m.time ? fmtDateTime(m.time) : (m.done ? 'In Progress' : 'Pending / Not Yet Reached');
+        var textClass = m.done ? 'text-slate-900 font-bold' : 'text-slate-400 font-medium';
+        return (
+          '<div class="relative flex flex-col sm:flex-row sm:items-center justify-between pb-2 gap-0.5">' +
+            '<div class="flex items-center gap-2.5">' +
+              '<span class="h-3 w-3 rounded-full ' + dotClass + ' -ml-[23px] shrink-0"></span>' +
+              '<span class="text-xs ' + textClass + '">' + m.label + '</span>' +
+            '</div>' +
+            '<span class="text-[11px] font-mono text-slate-500 sm:pl-2">' + timeStr + '</span>' +
+          '</div>'
+        );
+      }).join('');
+
+      document.getElementById('det-timeline').innerHTML = html;
+    }
+
+    // Same clock-ownership visual used in the Clock Ledger report and the
+    // Client Portal -- staff see it here per-docket, right next to everything
+    // else about the call, so it can be pulled up live in a client discussion.
+    async function renderClockLedger() {
+      var box = document.getElementById('det-clock-ledger');
+      var segBox = document.getElementById('det-clock-segments');
+      try {
+        var t = await ledgerComputeTotals(currentDocketId);
+        if (!t.mttrMinutes) {
+          box.innerHTML = '<div class="text-[11px] text-slate-400">No clock activity recorded yet on this docket.</div>';
+          return;
+        }
+        var headingColor = {
+          TSPL_ACTIVE: '#4F46E5', AWAITING_PARTS_TSPL: '#A5A0F0',
+          AWAITING_CRA: '#D97706', AWAITING_PARTS_CLIENT: '#F3C480'
+        };
+        var segsHtml = '';
+        var cursor = 0;
+        Object.keys(t.byHeading).forEach(function (h) {
+          var mins = t.byHeading[h];
+          var pct = (mins / t.mttrMinutes * 100);
+          segsHtml += '<div class="absolute top-0 bottom-0" style="left:' + (cursor / t.mttrMinutes * 100) + '%;width:' + pct + '%;background:' + (headingColor[h] || '#94a3b8') + '" title="' + clockHeadingLabel(h) + ': ' + Math.round(mins) + ' min"></div>';
+          cursor += mins;
+        });
+        box.innerHTML =
+          '<div class="relative h-7 bg-slate-200 rounded overflow-hidden mb-2">' + segsHtml + '</div>' +
+          '<div class="flex items-center justify-between text-xs">' +
+            '<span class="font-bold" style="color:#4F46E5">TSPL: ' + Math.round(t.tsplMinutes) + ' min (' + t.tsplPercent + '%)</span>' +
+            '<span class="font-bold text-amber-600">Client/CRA: ' + Math.round(t.clientMinutes) + ' min (' + t.clientPercent + '%)</span>' +
+            '<span class="font-bold text-slate-700">Total MTTR: ' + Math.round(t.mttrMinutes) + ' min</span>' +
+          '</div>';
+
+        // Per-heading breakdown table -- the exact "% attributable to TSPL vs
+        // Client, by heading/reason" the Sep 2026 process review asked for.
+        var rows = Object.keys(t.byHeading).map(function (h) {
+          var mins = Math.round(t.byHeading[h]);
+          var pct = t.mttrMinutes ? Math.round((mins / t.mttrMinutes) * 1000) / 10 : 0;
+          var owner = clockHeadingOwner(h);
+          var ownerClass = owner === 'CLIENT' ? 'text-amber-700 bg-amber-50' : 'text-indigo-700 bg-indigo-50';
+          return (
+            '<tr class="border-t border-slate-100">' +
+              '<td class="px-2 py-1.5"><span class="inline-block h-2.5 w-2.5 rounded-full mr-1.5" style="background:' + (headingColor[h] || '#94a3b8') + '"></span>' + clockHeadingLabel(h) + '</td>' +
+              '<td class="px-2 py-1.5"><span class="' + ownerClass + ' px-1.5 py-0.5 rounded font-bold text-[10px]">' + owner + '</span></td>' +
+              '<td class="px-2 py-1.5 text-right font-mono">' + mins + ' min</td>' +
+              '<td class="px-2 py-1.5 text-right font-mono font-bold">' + pct + '%</td>' +
+            '</tr>'
+          );
+        }).join('');
+        segBox.innerHTML =
+          '<table class="w-full text-xs mt-1">' +
+            '<thead class="text-slate-400 uppercase text-[10px]"><tr><th class="px-2 py-1 text-left">Heading / Reason</th><th class="px-2 py-1 text-left">Owner</th><th class="px-2 py-1 text-right">Minutes</th><th class="px-2 py-1 text-right">% of MTTR</th></tr></thead>' +
+            '<tbody>' + rows + '</tbody>' +
+          '</table>';
+      } catch (err) {
+        box.innerHTML = '<div class="text-[11px] text-red-500">Could not load clock breakdown: ' + err.message + '</div>';
+      }
+    }
+
+    async function loadParts() {
+      try {
+        var snap = await db.collection('partsIndent').where('docketId', '==', currentDocketId).get();
+        if (snap.empty) return;
+
+        var rows = [];
+        snap.forEach(function (doc) {
+          var p = doc.data();
+          rows.push(
+            '<tr class="border-t border-slate-100">' +
+              '<td class="px-2 py-2 font-mono">' + (p.indentNo || doc.id.slice(0, 8)) + '</td>' +
+              '<td class="px-2 py-2">' + (p.partName || p.partDescription || '--') + '</td>' +
+              '<td class="px-2 py-2">' + (p.source || '--') + '</td>' +
+              '<td class="px-2 py-2">' + (p.status || '--') + '</td>' +
+              '<td class="px-2 py-2 font-mono">' + (p.eta ? fmtDateTime(p.eta) : '--') + '</td>' +
+              '<td class="px-2 py-2">' + (p.approvedBy || '--') + '</td>' +
+            '</tr>'
+          );
+        });
+        document.getElementById('det-parts-tbody').innerHTML = rows.join('');
+        document.getElementById('det-parts-section').classList.remove('hidden');
+      } catch (err) {
+        console.warn('Parts load error:', err);
+      }
+    }
+
+    async function loadActivityLog() {
+      var box = document.getElementById('det-activity-log');
+      try {
+        var snap = await db.collection('docketActivity')
+          .where('docketId', '==', currentDocketId)
+          .orderBy('timestamp', 'desc')
+          .limit(100)
+          .get();
+
+        if (snap.empty) {
+          box.innerHTML = '<div class="text-slate-400">No activity logged yet.</div>';
+          return;
+        }
+
+        var rows = [];
+        snap.forEach(function (doc) {
+          var a = doc.data();
+          rows.push(
+            '<div class="flex items-start justify-between gap-3 border-b border-slate-100 pb-2">' +
+              '<div>' +
+                '<span class="font-bold text-slate-800">' + (a.action || '--') + '</span>' +
+                (a.notes ? '<p class="text-slate-500 mt-0.5">' + a.notes + '</p>' : '') +
+                '<p class="text-slate-400 text-[10px] mt-0.5">' + (a.performedBy || '--') + (a.role ? ' (' + a.role + ')' : '') + '</p>' +
+              '</div>' +
+              '<span class="text-[10px] font-mono text-slate-400 whitespace-nowrap">' + fmtDateTime(a.timestamp) + '</span>' +
+            '</div>'
+          );
+        });
+        box.innerHTML = rows.join('');
+      } catch (err) {
+        // Likely a missing composite index on first-ever use -- fail soft.
+        box.innerHTML = '<div class="text-slate-400">Activity log unavailable: ' + err.message + '</div>';
+      }
+    }
+  </script>
+</body>
+</html>
